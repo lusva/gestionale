@@ -1,0 +1,56 @@
+name: Deploy to Ubuntu server
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: SSH deploy
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout (per audit log della pipeline)
+        uses: actions/checkout@v4
+
+      - name: Deploy via SSH (password auth)
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          port: ${{ secrets.SSH_PORT }}
+          password: ${{ secrets.SSH_PASSWORD }}
+          script_stop: true
+          script: |
+            set -euo pipefail
+
+            cd "${{ secrets.DEPLOY_PATH }}"
+
+            echo "==> Pull ultimo commit dal branch main"
+            git fetch --all --prune
+            git reset --hard origin/main
+
+            echo "==> Attivo virtualenv"
+            source venv/bin/activate
+
+            echo "==> Aggiorno dipendenze"
+            pip install --upgrade pip
+            pip install -r requirements.txt
+
+            echo "==> Applico migrazioni database"
+            python manage.py migrate --noinput
+
+            echo "==> Raccolgo file statici"
+            python manage.py collectstatic --noinput
+
+            echo "==> Riavvio gunicorn"
+            systemctl restart "${{ secrets.SERVICE_NAME }}"
+
+            echo "==> Stato servizio"
+            systemctl is-active "${{ secrets.SERVICE_NAME }}"

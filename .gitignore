@@ -1,0 +1,114 @@
+# ==========================================================================
+# Python
+# ==========================================================================
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+dist/
+*.egg-info/
+.eggs/
+pip-wheel-metadata/
+
+# Virtual environments
+venv/
+env/
+.venv/
+.env/
+
+# ==========================================================================
+# Django
+# ==========================================================================
+*.log
+local_settings.py
+db.sqlite3
+db.sqlite3-journal
+db.sqlite3-wal
+db.sqlite3-shm
+
+# File caricati dagli utenti / generati dalla webapp
+media/
+
+# Static collezionati (vanno generati in deploy con `collectstatic`)
+staticfiles/
+
+# Backup di fixture / dump
+*.json.bak
+*.sql
+*.sql.gz
+*.dump
+
+# ==========================================================================
+# Variabili d'ambiente / segreti
+# ==========================================================================
+.env
+.env.*
+!.env.example
+secrets.json
+
+# Certificati firma digitale PDF (P12/PFX) e chiavi private
+*.p12
+*.pfx
+*.pem
+*.key
+*.crt
+
+# ==========================================================================
+# Test, coverage, type-check, linter
+# ==========================================================================
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+.tox/
+.nox/
+.mypy_cache/
+.dmypy.json
+.ruff_cache/
+.pyre/
+.pytype/
+.hypothesis/
+
+# ==========================================================================
+# IDE / editor
+# ==========================================================================
+.idea/
+.vscode/
+*.swp
+*.swo
+*.sublime-project
+*.sublime-workspace
+.history/
+.claude/
+
+# ==========================================================================
+# OS
+# ==========================================================================
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# ==========================================================================
+# Node / frontend (se mai aggiunto)
+# ==========================================================================
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# ==========================================================================
+# Misc
+# ==========================================================================
+*.bak
+*.tmp
+*.orig
+celerybeat-schedule
+celerybeat.pid
