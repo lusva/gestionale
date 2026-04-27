@@ -1,0 +1,7 @@
+from django.apps import AppConfig
+
+
+class AnagraficheConfig(AppConfig):
+    default_auto_field = 'django.db.models.BigAutoField'
+    name = 'anagrafiche'
+    verbose_name = 'Anagrafiche fiscali'

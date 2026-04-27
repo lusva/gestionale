@@ -1,0 +1,12 @@
+Django>=5.2,<5.3
+django-htmx>=1.17
+Pillow>=10.0
+python-stdnum>=1.20
+xhtml2pdf>=0.2.16
+# reportlab 4.4 introduce un bug in tables.py che rompe xhtml2pdf 0.2.17
+# (negative availWidth + max() su [None, None]). Pin a 4.3.x finché
+# xhtml2pdf non rilascia un fix compatibile.
+reportlab<4.4
+lxml>=5.2
+pyHanko>=0.25
+pyhanko-certvalidator>=0.26

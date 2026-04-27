@@ -1,0 +1,48 @@
+{% load static humanize %}<!DOCTYPE html>
+<html lang="it" data-theme="{{ ui_theme }}" data-density="{{ ui_density }}">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>{% block title %}Gestionale CRM{% endblock %} — AIGIS lab</title>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+
+  <link rel="stylesheet" href="{% static 'css/app.css' %}" />
+  <link rel="icon" type="image/png" href="{% static 'img/logo.png' %}" />
+  {% block extra_css %}{% endblock %}
+</head>
+<body>
+
+{% block body %}
+<div class="app" data-layout="{{ layout|default:'default' }}">
+  {% include 'components/_sidebar.html' %}
+  <div style="min-width: 0;">
+    {% include 'components/_topbar.html' %}
+    {% if messages %}
+      <div class="toast-layer" id="server-toast-layer">
+        {% for m in messages %}
+          <div class="toast {{ m.tags|default:'info' }}">{{ m.message }}</div>
+        {% endfor %}
+      </div>
+    {% endif %}
+    {% block content %}{% endblock %}
+  </div>
+</div>
+{% endblock %}
+
+<script src="https://unpkg.com/htmx.org@1.9.12/dist/htmx.min.js" defer></script>
+<script defer src="https://unpkg.com/alpinejs@3.14.1/dist/cdn.min.js"></script>
+<script src="{% static 'js/app.js' %}" defer></script>
+{% block extra_js %}{% endblock %}
+
+<script>
+  // Auto-dismiss server toasts after 4s
+  setTimeout(() => {
+    const layer = document.getElementById('server-toast-layer');
+    if (layer) layer.remove();
+  }, 4000);
+</script>
+</body>
+</html>

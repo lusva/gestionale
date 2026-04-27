@@ -1,0 +1,119 @@
+{% extends 'settings/_settings_base.html' %}
+
+{% block title %}Impostazioni · API & Webhook{% endblock %}
+
+{% block settings_content %}
+<div class="card" style="padding:24px;">
+  <div class="flex-between mb-16">
+    <div>
+      <div style="font: 600 16px var(--font-display);">Token API</div>
+      <div style="font: 13px var(--font-body); color: var(--ink-3); margin-top:2px;">
+        Usali con <code class="mono">Authorization: Bearer &lt;token&gt;</code> sugli endpoint <code class="mono">/api/v1/…</code>.
+      </div>
+    </div>
+  </div>
+
+  {% if new_token_value %}
+    <div class="card" style="padding:16px; border-left:3px solid var(--success); margin-bottom:16px;">
+      <div style="font: 500 13px var(--font-body); margin-bottom:6px;">Token appena creato — <strong>copialo ora</strong>, non sarà più visibile:</div>
+      <code class="mono" style="display:block; word-break:break-all; background:var(--surface-2); padding:10px; border-radius:6px; font-size:12px;">{{ new_token_value }}</code>
+    </div>
+  {% endif %}
+
+  <form method="post" style="display:flex; gap:8px; margin-bottom:16px;">
+    {% csrf_token %}
+    <input type="hidden" name="action" value="create_token" />
+    <input type="text" name="name" class="input" placeholder="Nome token (es. Zapier, Make)" required style="flex:1;" />
+    <button type="submit" class="btn btn-brand">{% icon 'plus' size=13 %} Crea token</button>
+  </form>
+
+  <table class="tbl">
+    <thead>
+      <tr><th>Nome</th><th>Creato</th><th>Ultimo uso</th><th>Stato</th><th></th></tr>
+    </thead>
+    <tbody>
+      {% for t in tokens %}
+        <tr>
+          <td style="font-weight:500;">{{ t.name }}</td>
+          <td style="color: var(--ink-3); font:11px var(--font-mono);">{{ t.created_at|date:'d/m/Y H:i' }}</td>
+          <td style="color: var(--ink-3); font:11px var(--font-mono);">{% if t.last_used_at %}{{ t.last_used_at|timesince }} fa{% else %}—{% endif %}</td>
+          <td>
+            {% if t.revoked %}{% stato_badge 'inattivo' 'Revocato' %}
+            {% else %}{% stato_badge 'attivo' 'Attivo' %}{% endif %}
+          </td>
+          <td style="text-align:right;">
+            {% if not t.revoked %}
+              <form method="post" style="display:inline;">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="revoke_token" />
+                <input type="hidden" name="token_id" value="{{ t.pk }}" />
+                <button class="btn btn-ghost" style="height:28px;">Revoca</button>
+              </form>
+            {% endif %}
+          </td>
+        </tr>
+      {% empty %}
+        <tr><td colspan="5"><div class="empty">Nessun token creato.</div></td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<div class="card" style="padding:24px;">
+  <div class="flex-between mb-16">
+    <div>
+      <div style="font: 600 16px var(--font-display);">Webhook</div>
+      <div style="font: 13px var(--font-body); color: var(--ink-3); margin-top:2px;">
+        Gestionale CRM invia POST JSON al tuo URL quando accadono eventi selezionati.
+      </div>
+    </div>
+  </div>
+
+  <form method="post" style="display:grid; grid-template-columns: 1fr 2fr 1fr; gap:8px; margin-bottom:16px; align-items:start;">
+    {% csrf_token %}
+    <input type="hidden" name="action" value="create_webhook" />
+    <input type="text" name="wh_name" class="input" placeholder="Nome (es. Slack bot)" required />
+    <input type="url" name="wh_url" class="input" placeholder="https://…" required />
+    <input type="text" name="wh_secret" class="input mono" placeholder="Secret HMAC (opzionale)" />
+    <div style="grid-column: 1 / -1; display:flex; flex-wrap:wrap; gap:4px; font-size:12px;">
+      <span style="font: 500 12px var(--font-body); color: var(--ink-2); width:100%;">Eventi (seleziona o lascia vuoto per tutti):</span>
+      {% for val, label in eventi_choices %}
+        <label class="filter-chip" style="cursor:pointer;">
+          <input type="checkbox" name="wh_eventi" value="{{ val }}" style="margin-right:4px;" />
+          {{ label }}
+        </label>
+      {% endfor %}
+    </div>
+    <button type="submit" class="btn btn-brand" style="grid-column: 1 / -1; justify-self:start;">{% icon 'plus' size=13 %} Aggiungi webhook</button>
+  </form>
+
+  <table class="tbl">
+    <thead><tr><th>Nome</th><th>URL</th><th>Eventi</th><th>Ultimo</th><th></th></tr></thead>
+    <tbody>
+      {% for w in webhooks %}
+        <tr>
+          <td style="font-weight:500;">{{ w.name }} {% if not w.attivo %}<span style="color:var(--ink-4);">(disattivato)</span>{% endif %}</td>
+          <td style="font: 11px var(--font-mono); color: var(--ink-3); max-width:260px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">{{ w.url }}</td>
+          <td style="font-size:11px;">{{ w.eventi|join:', '|default:'tutti' }}</td>
+          <td style="font-size:11px;">
+            {% if w.ultimo_tentativo_at %}
+              {{ w.ultimo_tentativo_at|date:'d/m H:i' }} · <code class="mono">{{ w.ultimo_status|default:'err' }}</code>
+              {% if w.ultimo_errore %}<div style="color:var(--danger); max-width:220px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="{{ w.ultimo_errore }}">{{ w.ultimo_errore|truncatechars:40 }}</div>{% endif %}
+            {% else %}—{% endif %}
+          </td>
+          <td style="text-align:right;">
+            <form method="post" style="display:inline;">
+              {% csrf_token %}
+              <input type="hidden" name="action" value="delete_webhook" />
+              <input type="hidden" name="webhook_id" value="{{ w.pk }}" />
+              <button class="btn btn-ghost" style="height:28px;">Rimuovi</button>
+            </form>
+          </td>
+        </tr>
+      {% empty %}
+        <tr><td colspan="5"><div class="empty">Nessun webhook configurato.</div></td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

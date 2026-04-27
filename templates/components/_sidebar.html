@@ -1,0 +1,190 @@
+{% load static %}
+<aside class="sidebar">
+  <div class="sidebar-brand">
+    <img src="{% static 'img/logo.png' %}" alt="AIGIS lab" />
+    <div>
+      <div class="name">AIGIS <span style="color: var(--brand-teal); font-weight: 500;">lab</span></div>
+      <div class="org">{{ org_suborg }}</div>
+    </div>
+  </div>
+
+  <details class="sidebar-group" data-group="principale"
+    {% if active_nav == 'dashboard' or active_nav == 'contatti' or active_nav == 'opportunita' %}open{% endif %}>
+    <summary class="sidebar-section">
+      <span>Principale</span>
+      {% icon 'chevronRight' size=12 %}
+    </summary>
+    <div class="sidebar-group-items">
+      <a href="{% url 'dashboard:home' %}" class="nav-item {% if active_nav == 'dashboard' %}active{% endif %}">
+        {% icon 'dashboard' size=16 %}<span>Dashboard</span>
+      </a>
+      <a href="{% url 'clienti:contatti_list' %}" class="nav-item {% if active_nav == 'contatti' %}active{% endif %}">
+        {% icon 'user' size=16 %}<span>Contatti</span>
+        {% if nav_counts.contatti %}<span class="count">{{ nav_counts.contatti|default:0 }}</span>{% endif %}
+      </a>
+      <a href="{% url 'opportunita:list' %}" class="nav-item {% if active_nav == 'opportunita' %}active{% endif %}">
+        {% icon 'target' size=16 %}<span>Opportunità</span>
+        {% if nav_counts.opportunita %}<span class="count">{{ nav_counts.opportunita|default:0 }}</span>{% endif %}
+      </a>
+    </div>
+  </details>
+
+  <details class="sidebar-group" data-group="documenti"
+    {% if active_nav == 'dashboard_doc' %}open{% endif %}>
+    <summary class="sidebar-section">
+      <span>Documenti</span>
+      {% icon 'chevronRight' size=12 %}
+    </summary>
+    <div class="sidebar-group-items">
+      <a href="{% url 'documenti:dashboard' %}" class="nav-item {% if active_nav == 'dashboard_doc' %}active{% endif %}">
+        {% icon 'dashboard' size=16 %}<span>Dashboard documenti</span>
+      </a>
+    </div>
+  </details>
+
+  <details class="sidebar-group" data-group="ciclo_attivo"
+    {% if active_nav == 'offerte' or active_nav == 'ordini' or active_nav == 'ddt' or active_nav == 'fatture' or active_nav == 'note_credito' %}open{% endif %}>
+    <summary class="sidebar-section">
+      <span>Ciclo attivo</span>
+      {% icon 'chevronRight' size=12 %}
+    </summary>
+    <div class="sidebar-group-items">
+      <a href="{% url 'documenti:offerta_list' %}" class="nav-item {% if active_nav == 'offerte' %}active{% endif %}">
+        {% icon 'doc' size=16 %}<span>Offerte</span>
+      </a>
+      <a href="{% url 'documenti:ordine_list' %}" class="nav-item {% if active_nav == 'ordini' %}active{% endif %}">
+        {% icon 'doc' size=16 %}<span>Ordini</span>
+      </a>
+      <a href="{% url 'documenti:ddt_list' %}" class="nav-item {% if active_nav == 'ddt' %}active{% endif %}">
+        {% icon 'doc' size=16 %}<span>DDT</span>
+      </a>
+      <a href="{% url 'documenti:fattura_list' %}" class="nav-item {% if active_nav == 'fatture' %}active{% endif %}">
+        {% icon 'doc' size=16 %}<span>Fatture</span>
+      </a>
+      <a href="{% url 'documenti:nota_credito_list' %}" class="nav-item {% if active_nav == 'note_credito' %}active{% endif %}">
+        {% icon 'doc' size=16 %}<span>Note credito</span>
+      </a>
+    </div>
+  </details>
+
+  <details class="sidebar-group" data-group="ciclo_passivo"
+    {% if active_nav == 'ddt_fornitore' or active_nav == 'fatture_acquisto' or active_nav == 'magazzino' %}open{% endif %}>
+    <summary class="sidebar-section">
+      <span>Ciclo passivo</span>
+      {% icon 'chevronRight' size=12 %}
+    </summary>
+    <div class="sidebar-group-items">
+      <a href="{% url 'documenti:ddt_fornitore_list' %}" class="nav-item {% if active_nav == 'ddt_fornitore' %}active{% endif %}">
+        {% icon 'doc' size=16 %}<span>DDT fornitore</span>
+      </a>
+      <a href="{% url 'documenti:fattura_acquisto_list' %}" class="nav-item {% if active_nav == 'fatture_acquisto' %}active{% endif %}">
+        {% icon 'doc' size=16 %}<span>Fatture acquisto</span>
+      </a>
+      {% if modulo_magazzino_attivo %}
+        <a href="{% url 'magazzino:stock' %}" class="nav-item {% if active_nav == 'magazzino' %}active{% endif %}">
+          {% icon 'grid' size=16 %}<span>Magazzino</span>
+        </a>
+      {% endif %}
+    </div>
+  </details>
+
+  <details class="sidebar-group" data-group="analisi"
+    {% if active_nav == 'scadenziario' or active_nav == 'scadenziario_passivo' or active_nav == 'vendite' or active_nav == 'costi' or active_nav == 'margine' or active_nav == 'top_articoli' or active_nav == 'provvigioni' or active_nav == 'report' or active_nav == 'attivita' %}open{% endif %}>
+    <summary class="sidebar-section">
+      <span>Analisi</span>
+      {% icon 'chevronRight' size=12 %}
+    </summary>
+    <div class="sidebar-group-items">
+      <a href="{% url 'documenti:scadenziario_attivo' %}" class="nav-item {% if active_nav == 'scadenziario' %}active{% endif %}">
+        {% icon 'clock' size=16 %}<span>Scadenziario attivo</span>
+      </a>
+      <a href="{% url 'documenti:scadenziario_passivo' %}" class="nav-item {% if active_nav == 'scadenziario_passivo' %}active{% endif %}">
+        {% icon 'clock' size=16 %}<span>Scadenziario passivo</span>
+      </a>
+      <a href="{% url 'documenti:vendite_per_cliente' %}" class="nav-item {% if active_nav == 'vendite' %}active{% endif %}">
+        {% icon 'chart' size=16 %}<span>Vendite per cliente</span>
+      </a>
+      <a href="{% url 'documenti:costi_per_categoria' %}" class="nav-item {% if active_nav == 'costi' %}active{% endif %}">
+        {% icon 'chart' size=16 %}<span>Costi per categoria</span>
+      </a>
+      <a href="{% url 'documenti:margine_articoli' %}" class="nav-item {% if active_nav == 'margine' %}active{% endif %}">
+        {% icon 'trendUp' size=16 %}<span>Margine articoli</span>
+      </a>
+      <a href="{% url 'documenti:top_articoli' %}" class="nav-item {% if active_nav == 'top_articoli' %}active{% endif %}">
+        {% icon 'star' size=16 %}<span>Top articoli</span>
+      </a>
+      <a href="{% url 'documenti:provvigioni_agenti' %}" class="nav-item {% if active_nav == 'provvigioni' %}active{% endif %}">
+        {% icon 'briefcase' size=16 %}<span>Provvigioni agenti</span>
+      </a>
+      <a href="{% url 'reports:index' %}" class="nav-item {% if active_nav == 'report' %}active{% endif %}">
+        {% icon 'chart' size=16 %}<span>Report</span>
+      </a>
+      <a href="{% url 'attivita:list' %}" class="nav-item {% if active_nav == 'attivita' %}active{% endif %}">
+        {% icon 'calendar' size=16 %}<span>Attività</span>
+      </a>
+    </div>
+  </details>
+
+  <details class="sidebar-group" data-group="anagrafiche"
+    {% if active_nav == 'clienti' or active_nav == 'fornitori' or active_nav == 'articoli' or active_nav == 'posizioni_iva' or active_nav == 'forme_pagamento' or active_nav == 'categorie_costo' or active_nav == 'anagrafica_azienda' %}open{% endif %}>
+    <summary class="sidebar-section">
+      <span>Anagrafiche</span>
+      {% icon 'chevronRight' size=12 %}
+    </summary>
+    <div class="sidebar-group-items">
+      <a href="{% url 'clienti:list' %}" class="nav-item {% if active_nav == 'clienti' %}active{% endif %}">
+        {% icon 'users' size=16 %}<span>Clienti</span>
+        {% if nav_counts.clienti %}<span class="count">{{ nav_counts.clienti|default:0 }}</span>{% endif %}
+      </a>
+      <a href="{% url 'anagrafiche:fornitore_list' %}" class="nav-item {% if active_nav == 'fornitori' %}active{% endif %}">
+        {% icon 'building' size=16 %}<span>Fornitori</span>
+      </a>
+      <a href="{% url 'anagrafiche:articolo_list' %}" class="nav-item {% if active_nav == 'articoli' %}active{% endif %}">
+        {% icon 'tag' size=16 %}<span>Articoli</span>
+      </a>
+      <a href="{% url 'anagrafiche:posizione_iva_list' %}" class="nav-item {% if active_nav == 'posizioni_iva' %}active{% endif %}">
+        {% icon 'briefcase' size=16 %}<span>Posizioni IVA</span>
+      </a>
+      <a href="{% url 'anagrafiche:forme_pagamento_list' %}" class="nav-item {% if active_nav == 'forme_pagamento' %}active{% endif %}">
+        {% icon 'euro' size=16 %}<span>Forme pagamento</span>
+      </a>
+      <a href="{% url 'anagrafiche:categoria_costo_list' %}" class="nav-item {% if active_nav == 'categorie_costo' %}active{% endif %}">
+        {% icon 'tag' size=16 %}<span>Categorie costo</span>
+      </a>
+      <a href="{% url 'anagrafiche:anagrafica_azienda' %}" class="nav-item {% if active_nav == 'anagrafica_azienda' %}active{% endif %}">
+        {% icon 'building' size=16 %}<span>Anagrafica azienda</span>
+      </a>
+    </div>
+  </details>
+
+  <details class="sidebar-group" data-group="sistema"
+    {% if active_nav == 'impostazioni' %}open{% endif %}>
+    <summary class="sidebar-section">
+      <span>Sistema</span>
+      {% icon 'chevronRight' size=12 %}
+    </summary>
+    <div class="sidebar-group-items">
+      <a href="{% url 'settings:utenti' %}" class="nav-item {% if active_nav == 'impostazioni' %}active{% endif %}">
+        {% icon 'settings' size=16 %}<span>Impostazioni</span>
+      </a>
+    </div>
+  </details>
+
+  <div style="margin-top: auto; border-top: 1px solid var(--border); padding-top: 12px; display: flex; align-items: center; gap: 10px;">
+    {% if user.is_authenticated %}
+      {% with p=user.profile %}
+        {% avatar p.iniziali|default:user.username|slice:':2' 'sm' 'brand' %}
+        <div style="flex: 1; min-width: 0;">
+          <div style="font: 500 13px var(--font-body); color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+            {{ user.get_full_name|default:user.username }}
+          </div>
+          <div style="font: 11px var(--font-body); color: var(--ink-3);">{{ p.ruolo_label|default:'Utente' }}</div>
+        </div>
+      {% endwith %}
+      <form action="{% url 'accounts:logout' %}" method="post" style="margin: 0;">
+        {% csrf_token %}
+        <button class="btn-icon" type="submit" title="Esci">{% icon 'logout' size=14 %}</button>
+      </form>
+    {% endif %}
+  </div>
+</aside>

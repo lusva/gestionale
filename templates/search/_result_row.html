@@ -1,0 +1,52 @@
+{% load search_extras %}
+<div style="display:flex; gap:12px; align-items:flex-start; padding:10px 0; border-top:1px solid var(--border);">
+  {% if kind == 'clienti' %}
+    <a href="{{ item.get_absolute_url }}" style="color:inherit; text-decoration:none; flex:1;">
+      <div style="font: 500 13px var(--font-body);">{{ item.ragione_sociale|highlight:q }}</div>
+      <div style="font: 11px var(--font-mono); color: var(--ink-3);">
+        {{ item.partita_iva|highlight:q }}{% if item.citta %} · {{ item.citta|highlight:q }}{% endif %}{% if item.settore %} · {{ item.settore.nome }}{% endif %}
+      </div>
+    </a>
+    {% stato_badge item.stato item.get_stato_display %}
+  {% elif kind == 'contatti' %}
+    <a href="{{ item.cliente.get_absolute_url }}?tab=contatti" style="color:inherit; text-decoration:none; flex:1;">
+      <div style="font: 500 13px var(--font-body);">{{ item.nome_completo|highlight:q }}</div>
+      <div style="font: 11px var(--font-body); color: var(--ink-3);">
+        {{ item.ruolo|default:'—' }} · {{ item.email|default:item.telefono|default:'—'|highlight:q }}
+      </div>
+    </a>
+    <a href="{{ item.cliente.get_absolute_url }}" style="font: 12px var(--font-body); color: var(--ink-3); text-decoration:none;">
+      {{ item.cliente.ragione_sociale }}
+    </a>
+  {% elif kind == 'opportunita' %}
+    <a href="{{ item.get_absolute_url }}" style="color:inherit; text-decoration:none; flex:1;">
+      <div style="font: 500 13px var(--font-body);">{{ item.titolo|highlight:q }}</div>
+      <div style="font: 11px var(--font-body); color: var(--ink-3);">
+        {{ item.cliente.ragione_sociale|highlight:q }} · {{ item.valore|euro }}
+      </div>
+    </a>
+    {% stadio_badge item.stadio item.get_stadio_display %}
+  {% elif kind == 'attivita' %}
+    <a href="{% url 'attivita:detail' item.pk %}" style="color:inherit; text-decoration:none; flex:1;">
+      <div style="font: 500 13px var(--font-body);">{{ item.titolo|highlight:q }}</div>
+      <div style="font: 11px var(--font-body); color: var(--ink-3);">
+        {{ item.get_tipo_display }} · {{ item.data|date:'d/m/Y H:i' }}
+        {% if item.cliente %} · {{ item.cliente.ragione_sociale|highlight:q }}{% endif %}
+      </div>
+    </a>
+    {% if item.completata %}{% stato_badge 'attivo' 'Completata' %}{% endif %}
+  {% elif kind == 'documenti' %}
+    <a href="{{ item.url }}" style="color:inherit; text-decoration:none; flex:1;">
+      <div style="font: 500 13px var(--font-body);">
+        <span class="badge badge-neutral" style="margin-right: 6px;">{{ item.tipo }}</span>
+        {% if item.sezionale %}<span class="badge badge-info" style="margin-right: 4px;">{{ item.sezionale }}</span>{% endif %}
+        <span class="mono">{{ item.numero }}/{{ item.anno }}</span>
+      </div>
+      <div style="font: 11px var(--font-body); color: var(--ink-3);">
+        {% if item.cliente %}{{ item.cliente.ragione_sociale|highlight:q }} · {% endif %}
+        {% if item.data %}{{ item.data|date:'d/m/Y' }}{% endif %}
+        {% if item.totale %} · {{ item.totale|euro:2 }}{% endif %}
+      </div>
+    </a>
+  {% endif %}
+</div>

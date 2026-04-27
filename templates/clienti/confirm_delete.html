@@ -1,0 +1,25 @@
+{% extends 'base.html' %}
+
+{% block title %}Elimina {{ object.ragione_sociale }}{% endblock %}
+{% block content %}
+<div class="page" style="max-width: 560px; margin: 40px auto;">
+  <div class="card" style="padding: 32px;">
+    <div style="display: flex; gap: 14px; align-items: flex-start;">
+      <div style="width: 40px; height: 40px; border-radius: 12px; background: var(--danger-bg); color: var(--danger); display: inline-flex; align-items: center; justify-content: center;">
+        {% icon 'trash' size=18 %}
+      </div>
+      <div style="flex: 1;">
+        <h1 style="font: 600 20px var(--font-display); margin: 0 0 6px;">Eliminare {{ object.ragione_sociale }}?</h1>
+        <p style="color: var(--ink-3); font-size: 14px; margin: 0 0 18px;">
+          L'operazione è irreversibile. Saranno eliminati anche tutti i contatti, le opportunità e le attività collegate.
+        </p>
+        <form method="post" style="display: flex; gap: 8px; justify-content: flex-end;">
+          {% csrf_token %}
+          <a href="{{ object.get_absolute_url }}" class="btn btn-ghost">Annulla</a>
+          <button type="submit" class="btn" style="background: var(--danger); color: white;">{% icon 'trash' size=14 %} Elimina</button>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

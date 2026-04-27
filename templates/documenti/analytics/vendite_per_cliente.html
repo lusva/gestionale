@@ -1,0 +1,68 @@
+{% extends 'base.html' %}
+
+{% block title %}Vendite per cliente{% endblock %}
+{% block crumb_current %}Vendite per cliente{% endblock %}
+
+{% block content %}
+<div class="page">
+  <div class="page-header">
+    <div>
+      <h1 class="page-title">Vendite per cliente</h1>
+      <p class="page-subtitle">Imponibile delle fatture cliente · totale: <strong class="mono">{{ totale_complessivo|euro:2 }}</strong></p>
+    </div>
+  </div>
+
+  <form method="get" class="filters">
+    <select name="anno" class="select" onchange="this.form.submit()">
+      <option value="">Tutti gli anni</option>
+      {% for a in anni_choices %}
+        <option value="{{ a }}" {% if anno_sel == a|stringformat:'s' %}selected{% endif %}>{{ a }}</option>
+      {% endfor %}
+    </select>
+  </form>
+
+  <div class="card" style="border-top-left-radius: 0; border-top-right-radius: 0; padding: 0; overflow: hidden;">
+    <table class="tbl">
+      <thead>
+        <tr>
+          <th>Cliente</th>
+          <th style="width: 80px; text-align: right;">Fatture</th>
+          <th style="width: 130px; text-align: right;">Totale</th>
+          <th style="width: 130px; text-align: right;">Pagato</th>
+          <th style="width: 100px; text-align: right;">% pagato</th>
+          <th style="width: 200px;">Peso</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in rows %}
+          <tr>
+            <td>
+              <a href="{% url 'clienti:detail' r.cliente.pk %}" style="color: inherit; text-decoration: none;">
+                <div style="font: 500 13px var(--font-body);">{{ r.cliente.ragione_sociale }}</div>
+                <div style="font: 11px var(--font-mono); color: var(--ink-3);">{{ r.cliente.partita_iva|default:'' }}</div>
+              </a>
+            </td>
+            <td class="mono" style="text-align: right; color: var(--ink-3);">{{ r.count }}</td>
+            <td class="mono" style="text-align: right; font-weight: 500;">{{ r.totale|euro:2 }}</td>
+            <td class="mono" style="text-align: right; color: var(--success);">{{ r.pagato|euro:2 }}</td>
+            <td class="mono" style="text-align: right;">{{ r.pagato_pct|floatformat:0 }}%</td>
+            <td>
+              <div style="background: var(--surface-2); border-radius: 4px; height: 8px; overflow: hidden;">
+                <div style="background: var(--brand-teal); height: 100%; width: {{ r.pct|floatformat:0 }}%;"></div>
+              </div>
+              <div style="font: 10px var(--font-body); color: var(--ink-4); margin-top: 2px;">{{ r.pct|floatformat:1 }}%</div>
+            </td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="6">
+            <div class="empty">
+              <div class="ico">{% icon 'chart' size=20 %}</div>
+              <div style="font: 500 14px var(--font-body);">Nessuna fattura emessa</div>
+            </div>
+          </td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

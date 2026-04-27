@@ -1,0 +1,51 @@
+{% extends 'base.html' %}
+{% load humanize %}
+
+{% block title %}{{ anag_label_plural }}{% endblock %}
+{% block crumb_current %}{{ anag_label_plural }}{% endblock %}
+
+{% block content %}
+<div class="page">
+  <div class="page-header">
+    <div>
+      <h1 class="page-title">{{ anag_label_plural }}</h1>
+      <p class="page-subtitle">{{ paginator.count|intcomma }} totali</p>
+    </div>
+    <div style="display: flex; gap: 8px;">
+      {% if user_perms_map|get_item:'clienti.importa' %}
+        {% if active_nav == 'articoli' %}
+          <a href="{% url 'anagrafiche:articoli_import' %}" class="btn btn-ghost">
+            {% icon 'upload' size=14 %} Importa CSV
+          </a>
+        {% elif active_nav == 'fornitori' %}
+          <a href="{% url 'anagrafiche:fornitori_import' %}" class="btn btn-ghost">
+            {% icon 'upload' size=14 %} Importa CSV
+          </a>
+        {% endif %}
+      {% endif %}
+      {% if user_perms_map|get_item:'clienti.modifica' %}
+        <a href="{% url urls.create %}" class="btn btn-brand">
+          {% icon 'plus' size=14 %} Nuovo
+        </a>
+      {% endif %}
+    </div>
+  </div>
+
+  <form method="get" class="filters">
+    <div class="search" style="flex: 0 0 320px;">
+      {% icon 'search' size=14 %}
+      <input type="search" name="q" value="{{ q }}" placeholder="Cerca…" />
+    </div>
+    {% if filter_field %}
+      <select name="{{ filter_field }}" class="select" onchange="this.form.requestSubmit()" style="width: 200px;">
+        <option value="">Tutti</option>
+        {% for val, label in filter_choices %}
+          <option value="{{ val }}" {% if filter_value == val %}selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+      </select>
+    {% endif %}
+  </form>
+
+  {% include 'anagrafiche/_anag_table.html' %}
+</div>
+{% endblock %}

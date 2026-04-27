@@ -1,0 +1,91 @@
+{% extends 'settings/_settings_base.html' %}
+
+{% block title %}Impostazioni · Audit log{% endblock %}
+
+{% block settings_content %}
+<div class="card" style="padding:24px;">
+  <div class="flex-between mb-16">
+    <div>
+      <div style="font: 600 16px var(--font-display);">Audit log</div>
+      <div style="font: 13px var(--font-body); color: var(--ink-3); margin-top:2px;">
+        Eventi tracciati: create/update/delete su Clienti, Opportunità, Attività, Utenti + login/logout.
+      </div>
+    </div>
+  </div>
+
+  <form method="get" class="filters" style="margin-bottom:12px;">
+    <input type="search" name="q" value="{{ q }}" class="input" placeholder="Cerca per actor o target…" style="min-width:240px;" />
+    <select name="azione" class="select" onchange="this.form.submit()">
+      <option value="">Tutte le azioni</option>
+      {% for val, label in azioni_choices %}
+        <option value="{{ val }}" {% if val == azione %}selected{% endif %}>{{ label }}</option>
+      {% endfor %}
+    </select>
+    <select name="target_type" class="select" onchange="this.form.submit()">
+      <option value="">Tutti i tipi</option>
+      {% for t in target_types %}
+        <option value="{{ t }}" {% if t == target_type %}selected{% endif %}>{{ t }}</option>
+      {% endfor %}
+    </select>
+    <button type="submit" class="btn btn-subtle">Filtra</button>
+    {% if q or azione or target_type %}
+      <a href="{% url 'settings:audit' %}" class="btn btn-ghost">Azzera</a>
+    {% endif %}
+    <div style="margin-left:auto; font: 12px var(--font-body); color: var(--ink-3);">
+      {{ paginator.count }} evento{{ paginator.count|pluralize }}
+    </div>
+  </form>
+
+  <table class="tbl">
+    <thead>
+      <tr>
+        <th>Data</th>
+        <th>Azione</th>
+        <th>Target</th>
+        <th>Actor</th>
+        <th>IP</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for ev in page_obj.object_list %}
+        <tr>
+          <td style="color: var(--ink-3); font: 11px var(--font-mono);">{{ ev.created_at|date:'d/m/Y H:i:s' }}</td>
+          <td>
+            {% if ev.azione == 'create' %}{% stato_badge 'attivo' 'Creato' %}
+            {% elif ev.azione == 'update' %}{% stato_badge 'prospect' 'Modificato' %}
+            {% elif ev.azione == 'delete' %}{% stato_badge 'inattivo' 'Eliminato' %}
+            {% elif ev.azione == 'login' %}{% stato_badge 'attivo' 'Login' %}
+            {% elif ev.azione == 'logout' %}{% stato_badge 'attesa' 'Logout' %}
+            {% elif ev.azione == 'login_failed' %}{% stato_badge 'inattivo' 'Login fallito' %}
+            {% else %}{% stato_badge 'attesa' ev.get_azione_display %}{% endif %}
+          </td>
+          <td>
+            <div style="font: 500 13px var(--font-body);">{{ ev.target_label|default:'—' }}</div>
+            <div style="font: 11px var(--font-mono); color: var(--ink-3);">{{ ev.target_type }}{% if ev.target_id %} #{{ ev.target_id }}{% endif %}</div>
+          </td>
+          <td style="font-size:12px;">{{ ev.actor_label|default:'—' }}</td>
+          <td style="font: 11px var(--font-mono); color: var(--ink-3);">{{ ev.ip|default:'—' }}</td>
+        </tr>
+      {% empty %}
+        <tr><td colspan="5"><div class="empty">Nessun evento registrato.</div></td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  {% if paginator.num_pages > 1 %}
+    <div style="display:flex; justify-content:space-between; align-items:center; padding-top:12px; margin-top:8px; border-top:1px solid var(--border);">
+      <div style="font: 12px var(--font-body); color: var(--ink-3);">
+        Pagina {{ page_obj.number }} di {{ paginator.num_pages }}
+      </div>
+      <div class="pager">
+        {% if page_obj.has_previous %}
+          <a href="?{% if q %}q={{ q }}&{% endif %}{% if azione %}azione={{ azione }}&{% endif %}{% if target_type %}target_type={{ target_type }}&{% endif %}page={{ page_obj.previous_page_number }}">«</a>
+        {% endif %}
+        {% if page_obj.has_next %}
+          <a href="?{% if q %}q={{ q }}&{% endif %}{% if azione %}azione={{ azione }}&{% endif %}{% if target_type %}target_type={{ target_type }}&{% endif %}page={{ page_obj.next_page_number }}">»</a>
+        {% endif %}
+      </div>
+    </div>
+  {% endif %}
+</div>
+{% endblock %}

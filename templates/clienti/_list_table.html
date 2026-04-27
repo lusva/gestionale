@@ -1,0 +1,111 @@
+{% load humanize %}
+
+<div class="card" style="border-top-left-radius: 0; border-top-right-radius: 0; overflow: hidden;">
+  <table class="tbl">
+    <thead>
+      <tr>
+        <th style="width: 36px;"><input type="checkbox" /></th>
+        <th>Ragione sociale</th>
+        <th>Settore</th>
+        <th>Referente</th>
+        <th>Città</th>
+        <th style="text-align: right;">Fatturato</th>
+        <th>Stato</th>
+        <th>Ultimo contatto</th>
+        <th style="width: 40px;"></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for c in clienti %}
+        <tr class="clickable" onclick="if (!event.target.closest('a,button,input')) window.location='{% url 'clienti:detail' c.pk %}'">
+          <td><input type="checkbox" /></td>
+          <td>
+            <div style="display: flex; align-items: center; gap: 10px;">
+              {% if c.is_azienda %}
+                {% avatar c.iniziali 'sm' 'brand' %}
+              {% else %}
+                {% avatar c.iniziali 'sm' 'neutral' %}
+              {% endif %}
+              <div>
+                <div style="font: 500 13px var(--font-body); color: var(--ink);">
+                  <a href="{% url 'clienti:detail' c.pk %}" style="color: inherit; text-decoration: none;">{{ c.ragione_sociale }}</a>
+                </div>
+                <div style="font: 11px var(--font-mono); color: var(--ink-3);">{{ c.partita_iva }}</div>
+              </div>
+            </div>
+          </td>
+          <td>{{ c.settore.nome|default:'—' }}</td>
+          <td>
+            {% with p=c.contatti.all|first %}
+              {% if p %}{{ p.nome_completo }}{% else %}—{% endif %}
+            {% endwith %}
+          </td>
+          <td>{{ c.citta|default:'—' }}</td>
+          <td class="mono" style="text-align: right; font-weight: 500;">{{ c.fatturato_totale|euro }}</td>
+          <td>{% stato_badge c.stato c.get_stato_display %}</td>
+          <td style="color: var(--ink-3);">
+            {% if c.ultimo_contatto %}{{ c.ultimo_contatto|timesince }} fa{% else %}—{% endif %}
+          </td>
+          <td>
+            <div x-data="{ open: false }" style="position: relative;">
+              <button type="button" class="btn-icon" @click.stop="open = !open">{% icon 'more' size=14 %}</button>
+              <div class="menu" x-show="open" @click.outside="open = false" x-cloak>
+                <a href="{% url 'clienti:detail' c.pk %}">{% icon 'eye' size=13 %} Vedi</a>
+                {% if user_perms_map|get_item:'clienti.modifica' %}
+                  <a href="{% url 'clienti:update' c.pk %}">{% icon 'edit' size=13 %} Modifica</a>
+                {% endif %}
+                {% if user_perms_map|get_item:'opportunita.modifica' %}
+                  <a href="{% url 'opportunita:create' %}?cliente={{ c.pk }}">{% icon 'plus' size=13 %} Opportunità</a>
+                {% endif %}
+                {% if user_perms_map|get_item:'clienti.elimina' %}
+                  <div class="sep"></div>
+                  <a href="{% url 'clienti:delete' c.pk %}" class="danger">{% icon 'trash' size=13 %} Elimina</a>
+                {% endif %}
+              </div>
+            </div>
+          </td>
+        </tr>
+      {% empty %}
+        <tr>
+          <td colspan="9">
+            <div class="empty">
+              <div class="ico">{% icon 'users' size=20 %}</div>
+              <div style="font: 500 14px var(--font-body); margin-bottom: 4px;">Nessun cliente trovato</div>
+              <div style="font: 12px var(--font-body); color: var(--ink-4); margin-bottom: 16px;">Prova a rimuovere qualche filtro o aggiungi il primo cliente.</div>
+              <a href="{% url 'clienti:create' %}" class="btn btn-brand">{% icon 'plus' size=14 %} Nuovo cliente</a>
+            </div>
+          </td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  {% if is_paginated %}
+    <div style="display: flex; justify-content: space-between; align-items: center; padding: 12px 16px; border-top: 1px solid var(--border); background: var(--surface-2);">
+      <div style="font: 12px var(--font-body); color: var(--ink-3);">
+        {{ page_obj.start_index }}–{{ page_obj.end_index }} di {{ paginator.count|intcomma }}
+      </div>
+      <div class="pager">
+        {% if page_obj.has_previous %}
+          <a href="?{% if q %}q={{ q }}&{% endif %}page={{ page_obj.previous_page_number }}">«</a>
+        {% else %}<span>«</span>{% endif %}
+
+        {% for n in paginator.page_range %}
+          {% if n == page_obj.number %}
+            <span class="current">{{ n }}</span>
+          {% elif n <= 3 or n > paginator.num_pages|add:-2 or n == page_obj.number|add:-1 or n == page_obj.number|add:1 %}
+            <a href="?{% if q %}q={{ q }}&{% endif %}page={{ n }}">{{ n }}</a>
+          {% elif n == 4 and page_obj.number > 4 %}
+            <span>…</span>
+          {% elif n == paginator.num_pages|add:-2 and page_obj.number < paginator.num_pages|add:-3 %}
+            <span>…</span>
+          {% endif %}
+        {% endfor %}
+
+        {% if page_obj.has_next %}
+          <a href="?{% if q %}q={{ q }}&{% endif %}page={{ page_obj.next_page_number }}">»</a>
+        {% else %}<span>»</span>{% endif %}
+      </div>
+    </div>
+  {% endif %}
+</div>

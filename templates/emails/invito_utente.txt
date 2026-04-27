@@ -1,0 +1,19 @@
+Ciao {{ nome|default:'collega' }},
+
+{{ inviter_nome|default:'Il team' }} ti ha invitato a unirti a {{ org_nome }}
+su Gestionale CRM.
+
+Accedi con le seguenti credenziali temporanee:
+
+  URL:       {{ login_url }}
+  Username:  {{ email }}
+  Password:  {{ password }}
+
+Al primo accesso ti consigliamo di cambiarla da Impostazioni → Profilo.
+
+Il tuo ruolo è: {{ ruolo_label }}.
+
+Se non ti aspettavi questa email, ignorala pure.
+
+—
+{{ org_nome }}

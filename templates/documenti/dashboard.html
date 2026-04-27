@@ -1,0 +1,137 @@
+{% extends 'base.html' %}
+{% load humanize %}
+
+{% block title %}Dashboard documenti{% endblock %}
+{% block crumb_current %}Dashboard documenti{% endblock %}
+
+{% block content %}
+<div class="page">
+  <div class="page-header">
+    <div>
+      <h1 class="page-title">Dashboard documenti</h1>
+      <p class="page-subtitle">Riepilogo del ciclo attivo, passivo e scadenze al {{ today|date:'d/m/Y' }}</p>
+    </div>
+  </div>
+
+  {# === KPI principali === #}
+  <div class="grid" style="grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 16px;">
+    <div class="card" style="padding: 18px;">
+      <div style="font: 500 11px var(--font-body); color: var(--ink-3); text-transform: uppercase;">Fatturato mese</div>
+      <div class="mono" style="font: 600 22px var(--font-display); color: var(--brand-teal);">{{ fatt_mese|euro:2 }}</div>
+      {% if delta_mese_pct is not None %}
+        <div style="font: 11px var(--font-body); color: {% if delta_mese_pct >= 0 %}var(--success){% else %}var(--danger){% endif %}; margin-top: 4px;">
+          {% if delta_mese_pct >= 0 %}▲{% else %}▼{% endif %} {{ delta_mese_pct|floatformat:1 }}% vs mese prec.
+        </div>
+      {% endif %}
+    </div>
+    <div class="card" style="padding: 18px;">
+      <div style="font: 500 11px var(--font-body); color: var(--ink-3); text-transform: uppercase;">Fatturato anno</div>
+      <div class="mono" style="font: 600 22px var(--font-display);">{{ fatt_anno|euro:2 }}</div>
+      {% if delta_anno_pct is not None %}
+        <div style="font: 11px var(--font-body); color: {% if delta_anno_pct >= 0 %}var(--success){% else %}var(--danger){% endif %}; margin-top: 4px;">
+          {% if delta_anno_pct >= 0 %}▲{% else %}▼{% endif %} {{ delta_anno_pct|floatformat:1 }}% vs anno prec.
+        </div>
+      {% endif %}
+    </div>
+    <div class="card" style="padding: 18px;">
+      <div style="font: 500 11px var(--font-body); color: var(--ink-3); text-transform: uppercase;">Crediti scaduti</div>
+      <div class="mono" style="font: 600 22px var(--font-display); color: var(--danger);">{{ ar_scaduto|euro:2 }}</div>
+      <div style="font: 11px var(--font-body); color: var(--ink-3); margin-top: 4px;">
+        + {{ ar_in_scadenza_30|euro:2 }} entro 30gg
+      </div>
+    </div>
+    <div class="card" style="padding: 18px;">
+      <div style="font: 500 11px var(--font-body); color: var(--ink-3); text-transform: uppercase;">Debiti scaduti</div>
+      <div class="mono" style="font: 600 22px var(--font-display); color: var(--warn);">{{ ap_scaduto|euro:2 }}</div>
+      <div style="font: 11px var(--font-body); color: var(--ink-3); margin-top: 4px;">
+        + {{ ap_in_scadenza_30|euro:2 }} entro 30gg
+      </div>
+    </div>
+  </div>
+
+  <div class="grid" style="grid-template-columns: 2fr 1fr; gap: 24px;">
+    {# === Bar chart fatturato 6 mesi + Top clienti === #}
+    <div class="flex-col gap-16">
+      <div class="card" style="padding: 24px;">
+        <div class="section-title">Fatturato ultimi 6 mesi</div>
+        <div style="display: flex; align-items: flex-end; gap: 12px; height: 180px; padding: 16px 0; border-bottom: 1px solid var(--border);">
+          {% for b in barchart %}
+            <div style="flex: 1; display: flex; flex-direction: column; align-items: center; gap: 4px; height: 100%;">
+              <div style="flex: 1; display: flex; align-items: flex-end; width: 100%;">
+                <div style="width: 100%; background: linear-gradient(180deg, var(--brand-teal) 0%, var(--brand) 100%); height: {{ b.pct|floatformat:0 }}%; border-radius: 6px 6px 0 0; min-height: 2px;"
+                     title="{{ b.mese }} {{ b.anno }}: {{ b.valore|euro:2 }}"></div>
+              </div>
+              <div style="font: 11px var(--font-body); color: var(--ink-3); text-transform: uppercase;">{{ b.mese }}</div>
+              <div class="mono" style="font: 10px var(--font-mono); color: var(--ink-4);">{{ b.valore|euro:0 }}</div>
+            </div>
+          {% endfor %}
+        </div>
+      </div>
+
+      <div class="card" style="padding: 24px;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+          <div class="section-title" style="margin: 0;">Top clienti anno</div>
+          <a href="{% url 'documenti:vendite_per_cliente' %}" style="font: 12px var(--font-body); color: var(--brand-teal);">Vedi tutto →</a>
+        </div>
+        <table class="tbl">
+          <thead>
+            <tr>
+              <th>Cliente</th>
+              <th style="width: 80px; text-align: right;">Fatture</th>
+              <th style="width: 130px; text-align: right;">Totale</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for r in top_clienti %}
+              <tr>
+                <td>
+                  <a href="{% url 'clienti:detail' r.cliente.pk %}" style="color: inherit; text-decoration: none;">
+                    <div style="font: 500 13px var(--font-body);">{{ r.cliente.ragione_sociale }}</div>
+                  </a>
+                </td>
+                <td class="mono" style="text-align: right; color: var(--ink-3);">{{ r.count }}</td>
+                <td class="mono" style="text-align: right; font-weight: 500;">{{ r.totale|euro:2 }}</td>
+              </tr>
+            {% empty %}
+              <tr><td colspan="3" style="text-align: center; color: var(--ink-4); padding: 16px;">Nessuna fattura quest'anno</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    {# === Sidebar: costi mese + fatture recenti === #}
+    <div class="flex-col gap-16">
+      <div class="card" style="padding: 18px;">
+        <div style="font: 500 11px var(--font-body); color: var(--ink-3); text-transform: uppercase;">Costi del mese</div>
+        <div class="mono" style="font: 600 22px var(--font-display); color: var(--ink);">{{ costi_mese|euro:2 }}</div>
+        <a href="{% url 'documenti:costi_per_categoria' %}" style="font: 11px var(--font-body); color: var(--brand-teal);">
+          Dettaglio per categoria →
+        </a>
+      </div>
+
+      <div class="card" style="padding: 18px;">
+        <div style="font: 600 14px var(--font-display); margin-bottom: 12px;">Fatture recenti</div>
+        {% for f in fatture_recenti %}
+          <a href="{% url 'documenti:fattura_detail' f.pk %}"
+             style="display: block; padding: 8px 0; border-bottom: 1px solid var(--border); color: inherit; text-decoration: none;">
+            <div style="display: flex; justify-content: space-between; gap: 8px;">
+              <div style="min-width: 0;">
+                <div class="mono" style="font: 500 12px var(--font-mono);">{{ f.numero }}/{{ f.anno }}</div>
+                <div style="font: 12px var(--font-body); color: var(--ink-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+                  {{ f.cliente.ragione_sociale|default:'—'|truncatechars:24 }}
+                </div>
+              </div>
+              <div class="mono" style="font: 12px var(--font-mono); color: var(--ink); white-space: nowrap;">
+                {{ f.imponibile|euro:0 }}
+              </div>
+            </div>
+          </a>
+        {% empty %}
+          <div style="font: 12px var(--font-body); color: var(--ink-4);">Nessuna fattura</div>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

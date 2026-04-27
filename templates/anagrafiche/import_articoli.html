@@ -1,0 +1,35 @@
+{% extends 'base.html' %}
+
+{% block title %}Importa articoli{% endblock %}
+{% block crumb_current %}Importa articoli{% endblock %}
+
+{% block content %}
+<div class="page" style="max-width: 720px;">
+  <div class="page-header">
+    <div>
+      <h1 class="page-title">Importa articoli da CSV</h1>
+      <p class="page-subtitle">
+        Header obbligatorio: <code>codice</code>. Colonne opzionali:
+        <code>descrizione, um, prezzo_listino, scelta, obsoleto</code>.
+        Codici esistenti vengono aggiornati (upsert).
+      </p>
+    </div>
+  </div>
+
+  <form method="post" enctype="multipart/form-data" class="card" style="padding: 24px;">
+    {% csrf_token %}
+    <div class="field" style="margin-bottom: 20px;">
+      <label for="file">File CSV</label>
+      <input type="file" name="file" id="file" accept=".csv" required
+             style="display: block; width: 100%; padding: 10px; border: 1px dashed var(--border); border-radius: 6px; background: var(--surface-2);" />
+      <div class="help-inline" style="margin-top: 6px;">
+        Encoding UTF-8 / Latin-1, separatore <code>,</code> o <code>;</code> auto-rilevato.
+      </div>
+    </div>
+    <div style="display: flex; justify-content: flex-end; gap: 8px;">
+      <a href="{% url 'anagrafiche:articolo_list' %}" class="btn btn-ghost">Annulla</a>
+      <button type="submit" class="btn btn-brand">{% icon 'upload' size=14 %} Importa</button>
+    </div>
+  </form>
+</div>
+{% endblock %}

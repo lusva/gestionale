@@ -1,0 +1,130 @@
+{% extends 'base.html' %}
+{% load humanize %}
+
+{% block title %}Fatture acquisto{% endblock %}
+{% block crumb_current %}Fatture acquisto{% endblock %}
+
+{% block content %}
+<div class="page">
+  <div class="page-header">
+    <div>
+      <h1 class="page-title">Fatture acquisto</h1>
+      <p class="page-subtitle">{{ paginator.count|intcomma }} totali · ciclo passivo</p>
+    </div>
+    <div style="display: flex; gap: 8px;">
+      {% if user_perms_map|get_item:'documenti.modifica' %}
+        <a href="{% url 'documenti:fattura_acquisto_import_xml' %}" class="btn btn-brand">
+          {% icon 'upload' size=14 %} Importa XML
+        </a>
+      {% endif %}
+    </div>
+  </div>
+
+  <form method="get" class="filters">
+    <div class="search" style="flex: 0 0 280px;">
+      {% icon 'search' size=14 %}
+      <input type="search" name="q" value="{{ q }}" placeholder="Numero, fornitore, P.IVA…" />
+    </div>
+    <select name="anno" class="select" onchange="this.form.requestSubmit()" style="width: 110px;">
+      <option value="">Tutti gli anni</option>
+      {% for a in anni_choices %}
+        <option value="{{ a }}" {% if anno == a|stringformat:'s' %}selected{% endif %}>{{ a }}</option>
+      {% endfor %}
+    </select>
+    <select name="stato" class="select" onchange="this.form.requestSubmit()" style="width: 130px;">
+      <option value="">Tutti gli stati</option>
+      {% for val, label in stato_choices %}
+        <option value="{{ val }}" {% if stato == val %}selected{% endif %}>{{ label }}</option>
+      {% endfor %}
+    </select>
+    <select name="pagata" class="select" onchange="this.form.requestSubmit()" style="width: 130px;">
+      <option value="">Tutte</option>
+      <option value="si" {% if pagata == 'si' %}selected{% endif %}>Pagate</option>
+      <option value="no" {% if pagata == 'no' %}selected{% endif %}>Da pagare</option>
+    </select>
+  </form>
+
+  <div class="card" style="border-top-left-radius: 0; border-top-right-radius: 0; overflow: hidden;">
+    <table class="tbl">
+      <thead>
+        <tr>
+          <th style="width: 110px;">Numero</th>
+          <th style="width: 120px;">Data</th>
+          <th>Fornitore</th>
+          <th style="width: 130px;">Rif. fornitore</th>
+          <th style="width: 90px;">Stato</th>
+          <th style="text-align: right; width: 130px;">Totale</th>
+          <th style="width: 90px;">Pagamento</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for f in fatture %}
+          <tr class="clickable" onclick="if (!event.target.closest('a,button,input')) window.location='{% url 'documenti:fattura_acquisto_detail' f.pk %}'">
+            <td class="mono" style="font-weight: 500;">
+              <a href="{% url 'documenti:fattura_acquisto_detail' f.pk %}" style="color: inherit; text-decoration: none;">
+                {{ f.numero }}/{{ f.anno }}
+              </a>
+            </td>
+            <td>{{ f.data_documento|date:'d/m/Y' }}</td>
+            <td>
+              {% if f.fornitore %}
+                <div style="font: 500 13px var(--font-body);">{{ f.fornitore.ragione_sociale }}</div>
+                <div style="font: 11px var(--font-mono); color: var(--ink-3);">{{ f.fornitore.partita_iva|default:'' }}</div>
+              {% else %}—{% endif %}
+            </td>
+            <td class="mono" style="color: var(--ink-3);">
+              {{ f.numero_fornitore|default:'—' }}<br/>
+              <span style="font: 10px var(--font-body);">{{ f.data_fornitore|date:'d/m/Y'|default:'' }}</span>
+            </td>
+            <td>
+              {% if f.stato == 'bozza' %}
+                <span class="badge badge-warn">Bozza</span>
+              {% elif f.stato == 'confermata' %}
+                <span class="badge badge-success">Confermata</span>
+              {% else %}
+                <span class="badge badge-neutral">Annullata</span>
+              {% endif %}
+            </td>
+            <td class="mono" style="text-align: right; font-weight: 500;">{{ f.totale_documento|euro:2 }}</td>
+            <td>
+              {% if f.pagata %}
+                <span class="badge badge-success">Pagata</span>
+              {% else %}
+                <span class="badge badge-warn">Da pagare</span>
+              {% endif %}
+            </td>
+          </tr>
+        {% empty %}
+          <tr>
+            <td colspan="7">
+              <div class="empty">
+                <div class="ico">{% icon 'doc' size=20 %}</div>
+                <div style="font: 500 14px var(--font-body); margin-bottom: 4px;">Nessuna fattura acquisto</div>
+                <div style="font: 12px var(--font-body); color: var(--ink-4); margin-bottom: 16px;">
+                  Importa un XML FatturaPA ricevuto dal SDI.
+                </div>
+                <a href="{% url 'documenti:fattura_acquisto_import_xml' %}" class="btn btn-brand">
+                  {% icon 'upload' size=14 %} Importa XML
+                </a>
+              </div>
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+
+    {% if is_paginated %}
+      <div style="display: flex; justify-content: space-between; align-items: center; padding: 12px 16px; border-top: 1px solid var(--border); background: var(--surface-2);">
+        <div style="font: 12px var(--font-body); color: var(--ink-3);">
+          {{ page_obj.start_index }}–{{ page_obj.end_index }} di {{ paginator.count|intcomma }}
+        </div>
+        <div class="pager">
+          {% if page_obj.has_previous %}<a href="?page={{ page_obj.previous_page_number }}">«</a>{% else %}<span>«</span>{% endif %}
+          <span class="current">{{ page_obj.number }} / {{ paginator.num_pages }}</span>
+          {% if page_obj.has_next %}<a href="?page={{ page_obj.next_page_number }}">»</a>{% else %}<span>»</span>{% endif %}
+        </div>
+      </div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

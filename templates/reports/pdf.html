@@ -1,0 +1,88 @@
+{% load humanize %}<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="utf-8">
+  <title>Report {{ periodo_label }}</title>
+  <style>
+    @page { size: A4; margin: 20mm 16mm; }
+    body { font-family: Helvetica, Arial, sans-serif; color: #1F1B2E; font-size: 10pt; }
+    h1 { font-size: 18pt; margin: 0 0 4px; color: #1F1B2E; }
+    .sub { color: #7A7590; font-size: 10pt; margin-bottom: 18px; }
+    .grid { width: 100%; border-collapse: separate; border-spacing: 6px; margin-bottom: 16px; }
+    .grid td { background: #F5F1E8; border-radius: 6px; padding: 10px; width: 25%; vertical-align: top; }
+    .label { color: #7A7590; font-size: 9pt; text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 4px; }
+    .value { font-size: 18pt; font-weight: 600; color: #1F1B2E; }
+    .delta { color: #3FA89A; font-size: 9pt; margin-top: 2px; }
+    .delta.down { color: #C8553D; }
+    h2 { font-size: 12pt; margin: 18px 0 8px; }
+    table.tbl { width: 100%; border-collapse: collapse; font-size: 9pt; }
+    table.tbl th, table.tbl td { padding: 6px 8px; border-bottom: 1px solid #E4DFD1; text-align: left; }
+    table.tbl th { background: #F5F1E8; color: #4A4560; font-weight: 600; }
+    .right { text-align: right; }
+    .mono { font-family: 'Courier', monospace; }
+    .sector-row { padding: 4px 0; border-bottom: 1px solid #EEE8DA; }
+    .swatch { display: inline-block; width: 9px; height: 9px; border-radius: 2px; vertical-align: middle; margin-right: 6px; }
+    .footer { position: fixed; bottom: 10mm; left: 16mm; right: 16mm; color: #A8A3B8; font-size: 8pt; border-top: 1px solid #E4DFD1; padding-top: 4px; }
+  </style>
+</head>
+<body>
+  <h1>Report commerciale</h1>
+  <div class="sub">{{ periodo_label }} · generato il {{ today|date:'d/m/Y H:i' }}</div>
+
+  <table class="grid">
+    <tr>
+      <td><div class="label">Ricavi</div><div class="value">{{ kpi_ricavi|euro_compact }}</div></td>
+      <td><div class="label">Nuovi clienti</div><div class="value">{{ kpi_nuovi_clienti|intcomma }}</div></td>
+      <td><div class="label">Valore medio</div><div class="value">{{ kpi_valore_medio|euro_compact }}</div></td>
+      <td><div class="label">Churn rate</div><div class="value">{{ kpi_churn }}%</div></td>
+    </tr>
+  </table>
+
+  <h2>Fatturato per settore (top 5)</h2>
+  {% for s in sectors %}
+    <div class="sector-row">
+      <span class="swatch" style="background:#8B5FBF;"></span>
+      <strong>{{ s.label }}</strong> —
+      <span class="mono">€ {{ s.val|floatformat:0|intcomma }}</span>
+      <span style="color:#7A7590;"> ({{ s.pct }}%)</span>
+    </div>
+  {% empty %}
+    <div style="color:#A8A3B8;">Nessun dato nel periodo.</div>
+  {% endfor %}
+
+  <h2>Top 5 clienti per fatturato</h2>
+  <table class="tbl">
+    <thead>
+      <tr>
+        <th>#</th><th>Cliente</th><th>Settore</th>
+        <th class="right">Fatturato</th><th class="right">% sul totale</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for r in top5 %}
+        <tr>
+          <td>{{ r.rank }}</td>
+          <td>{{ r.cliente.ragione_sociale }}</td>
+          <td>{{ r.cliente.settore|default:'—' }}</td>
+          <td class="right mono">{{ r.fatturato|euro }}</td>
+          <td class="right">{{ r.pct }}%</td>
+        </tr>
+      {% empty %}
+        <tr><td colspan="5" style="color:#A8A3B8; text-align:center;">Nessun cliente con fatturato</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  <h2>Fatturato per mese</h2>
+  <table class="tbl">
+    <thead><tr>
+      {% for m in bar_labels %}<th class="right">{{ m }}</th>{% endfor %}
+    </tr></thead>
+    <tbody><tr>
+      {% for b in bar_data %}<td class="right mono">{{ b }}%</td>{% endfor %}
+    </tr></tbody>
+  </table>
+
+  <div class="footer">Gestionale CRM · AIGIS lab</div>
+</body>
+</html>

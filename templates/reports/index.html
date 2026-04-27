@@ -1,0 +1,118 @@
+{% extends 'base.html' %}
+{% load humanize %}
+
+{% block title %}Report{% endblock %}
+{% block crumb_current %}Report{% endblock %}
+
+{% block content %}
+<div class="page">
+  <div class="page-header">
+    <div>
+      <h1 class="page-title">Report</h1>
+      <p class="page-subtitle">Analisi commerciale · {{ periodo_label }}</p>
+    </div>
+    <form method="get" style="display: flex; gap: 8px; align-items: center;">
+      <select name="periodo" class="select" style="height: 36px;" onchange="this.form.submit()">
+        <option value="30g" {% if periodo == '30g' %}selected{% endif %}>Ultimi 30 giorni</option>
+        <option value="q2" {% if periodo == 'q2' %}selected{% endif %}>Q2 {{ today|date:'Y' }}</option>
+        <option value="anno" {% if periodo == 'anno' %}selected{% endif %}>Anno corrente</option>
+      </select>
+      {% if user_perms_map|get_item:'report.esporta' %}
+        <a href="{% url 'reports:pdf' %}?periodo={{ periodo }}" class="btn btn-ghost">{% icon 'download' size=14 %} Esporta PDF</a>
+      {% endif %}
+    </form>
+  </div>
+
+  <div class="grid grid-4 mb-24">
+    <div class="kpi accent">
+      <div class="kpi-label">Ricavi</div>
+      <div class="kpi-value">{{ kpi_ricavi|euro_compact }}</div>
+      <div class="kpi-delta up">{% icon 'trendUp' size=12 %} Periodo</div>
+    </div>
+    <div class="kpi">
+      <div class="kpi-label">Nuovi clienti</div>
+      <div class="kpi-value">{{ kpi_nuovi_clienti|intcomma }}</div>
+      <div class="kpi-delta up">{% icon 'trendUp' size=12 %} Acquisiti nel periodo</div>
+    </div>
+    <div class="kpi">
+      <div class="kpi-label">Valore medio</div>
+      <div class="kpi-value">{{ kpi_valore_medio|euro_compact }}</div>
+      <div class="kpi-delta up">{% icon 'trendUp' size=12 %} per opportunità vinta</div>
+    </div>
+    <div class="kpi">
+      <div class="kpi-label">Churn rate</div>
+      <div class="kpi-value">{{ kpi_churn }}%</div>
+      <div class="kpi-delta {% if kpi_churn < 5 %}up{% else %}down{% endif %}">
+        {% if kpi_churn < 5 %}{% icon 'trendUp' size=12 %}{% else %}{% icon 'trendDown' size=12 %}{% endif %}
+        Opportunità perse
+      </div>
+    </div>
+  </div>
+
+  <div class="grid mb-24" style="grid-template-columns: 2fr 1fr;">
+    <div class="card" style="padding: 20px;">
+      <div class="flex-between mb-16">
+        <div style="font: 600 15px var(--font-display);">Andamento fatturato vs obiettivo</div>
+        <div style="display: flex; gap: 12px; font-size: 12px;">
+          <span style="display: inline-flex; align-items: center; gap: 5px;"><span style="width: 10px; height: 10px; border-radius: 2px; background: var(--brand-grad);"></span>Effettivo</span>
+          <span style="display: inline-flex; align-items: center; gap: 5px; color: var(--ink-3);"><span style="width: 10px; height: 2px; border-top: 2px dashed var(--ink-3);"></span>Target</span>
+        </div>
+      </div>
+      {% include 'components/_barchart.html' with bars=bar_data labels=bar_labels %}
+    </div>
+
+    <div class="card" style="padding: 20px;">
+      <div style="font: 600 15px var(--font-display); margin-bottom: 12px;">Fatturato per settore</div>
+      <div style="display: flex; align-items: center; gap: 20px;">
+        <svg width="160" height="160" viewBox="0 0 160 160">
+          {% for arc in donut_arcs %}
+            <path d="{{ arc.path }}" fill="{{ arc.color }}"></path>
+          {% endfor %}
+          <circle cx="80" cy="80" r="40" fill="var(--surface)"></circle>
+          <text x="80" y="78" text-anchor="middle" style="font: 600 20px var(--font-display); fill: var(--ink);">{{ kpi_ricavi|euro_compact }}</text>
+          <text x="80" y="94" text-anchor="middle" style="font: 10px var(--font-body); fill: var(--ink-3);">{{ periodo_label }}</text>
+        </svg>
+        <div style="flex: 1;">
+          {% for s in sectors %}
+            <div style="display: flex; align-items: center; gap: 8px; padding: 5px 0;">
+              <span style="width: 9px; height: 9px; border-radius: 2px; background: {{ s.color }};"></span>
+              <span style="font: 13px var(--font-body); flex: 1;">{{ s.label }}</span>
+              <span class="mono" style="font: 12px var(--font-mono); color: var(--ink-3);">{{ s.pct }}%</span>
+            </div>
+          {% empty %}
+            <div style="font: 12px var(--font-body); color: var(--ink-4);">Nessun dato nel periodo</div>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card" style="padding: 20px;">
+    <div class="flex-between mb-16">
+      <div style="font: 600 15px var(--font-display);">Top 5 clienti per fatturato</div>
+      <a href="{% url 'clienti:list' %}" class="btn btn-subtle" style="height: 28px; padding: 0 10px; font-size: 12px;">Vedi tutti</a>
+    </div>
+    <table class="tbl">
+      <thead>
+        <tr><th>#</th><th>Cliente</th><th>Settore</th><th style="text-align: right;">Fatturato</th><th style="text-align: right;">% sul totale</th><th>Trend</th></tr>
+      </thead>
+      <tbody>
+        {% for r in top5 %}
+          <tr>
+            <td style="color: var(--ink-3); font-weight: 500;">{{ r.rank }}</td>
+            <td style="font-weight: 500;">
+              <a href="{{ r.cliente.get_absolute_url }}" style="color: inherit; text-decoration: none;">{{ r.cliente.ragione_sociale }}</a>
+            </td>
+            <td>{{ r.cliente.settore|default:'—' }}</td>
+            <td class="mono" style="text-align: right; font-weight: 500;">{{ r.fatturato|euro }}</td>
+            <td class="mono" style="text-align: right; color: var(--ink-3);">{{ r.pct }}%</td>
+            <td>{% if r.up %}{% icon 'trendUp' size=14 cls='text-success' %}{% else %}{% icon 'trendDown' size=14 cls='text-danger' %}{% endif %}</td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="6"><div class="empty">Nessun cliente con fatturato</div></td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

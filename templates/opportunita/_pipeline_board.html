@@ -1,0 +1,38 @@
+{# Kanban pipeline. Expects: pipeline_cols (list of columns with items) #}
+<div class="pipeline" id="pipeline-board">
+  {% for col in pipeline_cols %}
+    <div class="pipe-col" data-stadio="{{ col.id }}">
+      <div class="pipe-head">
+        <span style="display: flex; align-items: center; gap: 6px;">
+          <span style="width: 6px; height: 6px; border-radius: 50%; background: {{ col.color }};"></span>
+          {{ col.label }}
+        </span>
+        <span class="count">{{ col.count }} · {{ col.total|euro_compact }}</span>
+      </div>
+
+      {% for o in col.items %}
+        <a href="{% url 'opportunita:detail' o.pk %}" class="pipe-card" draggable="true" data-opp-id="{{ o.pk }}" style="text-decoration: none; color: inherit; display: block;">
+          <div class="cli">{{ o.cliente.ragione_sociale|truncatechars:30 }}</div>
+          <div style="font: 500 11px var(--font-body); color: var(--ink-3); margin-top: 2px;">{{ o.titolo|truncatechars:32 }}</div>
+          <div class="val" style="margin-top: 4px;">{{ o.valore|euro }}</div>
+          <div class="meta">
+            <span style="display: inline-flex; align-items: center; gap: 4px;">
+              {% icon 'clock' size=11 %}{{ o.giorni_in_stadio }}g
+            </span>
+            {% if o.owner %}
+              {% with p=o.owner.profile %}
+                {% avatar p.iniziali|default:o.owner.username|slice:':2' 'sm' 'brand' %}
+              {% endwith %}
+            {% endif %}
+          </div>
+        </a>
+      {% empty %}
+        <div style="text-align: center; font: 500 11px var(--font-body); color: var(--ink-4); padding: 18px 4px;">—</div>
+      {% endfor %}
+
+      <a href="{% url 'opportunita:create' %}?cliente=&stadio={{ col.id }}" class="btn btn-subtle" style="width: 100%; height: 30px; justify-content: center; font-size: 12px; margin-top: 4px; padding: 0 10px;">
+        {% icon 'plus' size=12 %} Nuova
+      </a>
+    </div>
+  {% endfor %}
+</div>

@@ -1,0 +1,15 @@
+{# Render a bar chart. Params: bars (list of heights 0-100), labels (list of month labels) #}
+<div class="chart">
+  <div class="chart-yaxis">
+    <span>120k</span><span>90k</span><span>60k</span><span>30k</span><span>0</span>
+  </div>
+  <div class="chart-grid"><div></div><div></div><div></div><div></div></div>
+  <div class="chart-bars">
+    {% for h in bars %}
+      <div class="bar" style="height: {{ h }}%;" title="{{ labels|index:forloop.counter0 }}: {{ h }}%"></div>
+    {% endfor %}
+  </div>
+  <div class="chart-xaxis">
+    {% for l in labels %}<span>{{ l }}</span>{% endfor %}
+  </div>
+</div>

@@ -1,0 +1,118 @@
+{% extends 'base.html' %}
+
+{% block title %}{% if is_create %}Nuova forma di pagamento{% else %}Forma di pagamento — {{ object }}{% endif %}{% endblock %}
+
+{% block content %}
+<form method="post" class="page" style="max-width: 880px;">
+  {% csrf_token %}
+  <div class="page-header">
+    <div>
+      <h1 class="page-title">{% if is_create %}Nuova forma di pagamento{% else %}{{ object }}{% endif %}</h1>
+      <p class="page-subtitle">Imposta la modalità SDI e le scadenze (somma percentuali = 100%).</p>
+    </div>
+    <div style="display: flex; gap: 8px;">
+      <a href="{% url 'anagrafiche:forme_pagamento_list' %}" class="btn btn-ghost">Annulla</a>
+      <button type="submit" class="btn btn-brand">{% icon 'check' size=14 %} Salva</button>
+    </div>
+  </div>
+
+  {% if form.non_field_errors or scad_formset.non_form_errors %}
+    <div class="callout warn mb-24"><div class="ico">{% icon 'x' size=14 %}</div><div>
+      {{ form.non_field_errors }}{{ scad_formset.non_form_errors }}
+    </div></div>
+  {% endif %}
+
+  <div class="card" style="padding: 24px; margin-bottom: 16px;">
+    <div class="section-title">Forma di pagamento</div>
+    <div class="grid grid-2" style="gap: 16px;">
+      <div class="field">
+        <label for="{{ form.tipo_pagamento.id_for_label }}">{{ form.tipo_pagamento.label }}</label>
+        {{ form.tipo_pagamento }}
+        {{ form.tipo_pagamento.errors }}
+      </div>
+      <div class="field">
+        <label for="{{ form.modalita_pagamento.id_for_label }}">{{ form.modalita_pagamento.label }}</label>
+        {{ form.modalita_pagamento }}
+        {{ form.modalita_pagamento.errors }}
+      </div>
+    </div>
+    <label class="checkbox-inline" style="margin-top: 16px;">
+      {{ form.conto_corrente_cliente }}
+      <span>{{ form.conto_corrente_cliente.label }}</span>
+    </label>
+    {{ form.conto_corrente_cliente.errors }}
+  </div>
+
+  <div class="card" style="padding: 24px;" x-data="formsetMgr('scad', {{ scad_formset.total_form_count }})">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+      <div class="section-title" style="margin: 0;">Scadenze</div>
+      <button type="button" class="btn btn-ghost" @click="addRow()">{% icon 'plus' size=14 %} Aggiungi</button>
+    </div>
+
+    {{ scad_formset.management_form }}
+
+    <table class="tbl scad-tbl">
+      <thead>
+        <tr>
+          <th>Giorni</th>
+          <th>%</th>
+          <th class="col-flag">Fine mese</th>
+          <th>Giorni dopo FM</th>
+          <th class="col-action"></th>
+        </tr>
+      </thead>
+      <tbody id="scad-rows">
+        {% for sf in scad_formset %}
+          <tr data-form-row>
+            {% for hidden in sf.hidden_fields %}{{ hidden }}{% endfor %}
+            <td>{{ sf.numero_giorni }}{{ sf.numero_giorni.errors }}</td>
+            <td>{{ sf.percentuale }}{{ sf.percentuale.errors }}</td>
+            <td class="col-flag">{{ sf.fine_mese }}</td>
+            <td>{{ sf.numero_giorni_fm }}</td>
+            <td class="col-action">
+              {% if sf.DELETE %}
+                <span style="display: none;">{{ sf.DELETE }}</span>
+                <button type="button" class="btn-icon" title="Rimuovi riga" @click="removeRow($event)" style="color: var(--danger);">{% icon 'trash' size=14 %}</button>
+              {% endif %}
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+
+    <template id="scad-empty-template"><tr data-form-row>{% for hidden in scad_formset.empty_form.hidden_fields %}{{ hidden }}{% endfor %}<td>{{ scad_formset.empty_form.numero_giorni }}</td><td>{{ scad_formset.empty_form.percentuale }}</td><td class="col-flag">{{ scad_formset.empty_form.fine_mese }}</td><td>{{ scad_formset.empty_form.numero_giorni_fm }}</td><td class="col-action"><span style="display: none;">{{ scad_formset.empty_form.DELETE }}</span><button type="button" class="btn-icon" title="Rimuovi riga" @click="removeRow($event)" style="color: var(--danger);">{% icon 'trash' size=14 %}</button></td></tr></template>
+  </div>
+</form>
+
+<script>
+function formsetMgr(prefix, initialTotal) {
+  return {
+    prefix, total: initialTotal,
+    addRow() {
+      const tpl = document.getElementById(prefix + '-empty-template');
+      const rows = document.getElementById(prefix + '-rows');
+      if (!tpl || !rows) return;
+      const html = tpl.innerHTML.replaceAll('__prefix__', this.total);
+      const wrapper = document.createElement('tbody');
+      wrapper.innerHTML = html;
+      while (wrapper.firstChild) rows.appendChild(wrapper.firstChild);
+      this.total += 1;
+      const t = document.querySelector('input[name="' + prefix + '-TOTAL_FORMS"]');
+      if (t) t.value = this.total;
+    },
+    removeRow(ev) {
+      const tr = ev.currentTarget.closest('tr[data-form-row]');
+      if (!tr) return;
+      const del = tr.querySelector('input[type="checkbox"][name$="-DELETE"]');
+      const pk = tr.querySelector('input[name$="-id"]');
+      if (del && pk && pk.value) {
+        del.checked = true;
+        tr.style.display = 'none';
+      } else {
+        tr.remove();
+      }
+    },
+  };
+}
+</script>
+{% endblock %}

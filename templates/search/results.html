@@ -1,0 +1,107 @@
+{% extends 'base.html' %}
+{% load search_extras %}
+
+{% block title %}Ricerca · {{ q|default:'' }}{% endblock %}
+{% block crumb_current %}Ricerca{% endblock %}
+
+{% block content %}
+<div class="page">
+  <div class="page-header">
+    <div>
+      <h1 class="page-title">Risultati</h1>
+      <p class="page-subtitle">
+        {% if not q %}
+          Inserisci un termine di ricerca nella barra in alto.
+        {% elif mode == 'focus' %}
+          {{ total_focus }} risultat{{ total_focus|pluralize:'o,i' }} in {{ focus_label }} per "<strong>{{ q }}</strong>"
+          · <a href="?q={{ q|urlencode }}">Torna alla panoramica</a>
+        {% else %}
+          {{ total }} risultat{{ total|pluralize:'o,i' }} totali per "<strong>{{ q }}</strong>"
+        {% endif %}
+      </p>
+    </div>
+    <form method="get" action="{% url 'search:cerca' %}" style="display:flex; gap:8px;">
+      <input type="search" class="input" name="q" value="{{ q }}"
+             placeholder="Cerca clienti, opportunità, contatti, attività…"
+             style="min-width:320px;" autofocus />
+      <button type="submit" class="btn btn-brand">{% icon 'search' size=14 %} Cerca</button>
+    </form>
+  </div>
+
+  {% if q and mode == 'overview' and total == 0 %}
+    <div class="card" style="padding:32px;">
+      <div class="empty">
+        <div class="ico">{% icon 'search' size=20 %}</div>
+        <div style="font: 500 14px var(--font-body); margin-bottom:4px;">Nessun risultato</div>
+        <div style="font: 12px var(--font-body); color: var(--ink-4);">
+          Prova termini diversi o meno specifici.
+        </div>
+      </div>
+    </div>
+  {% endif %}
+
+  {% if mode == 'focus' %}
+    <div class="card" style="padding:16px 20px;">
+      <div class="flex-between mb-12">
+        <div style="font: 600 14px var(--font-display); display:flex; align-items:center; gap:8px;">
+          {% icon focus_icon size=16 %} {{ focus_label }}
+          <span style="font: 500 12px var(--font-body); color: var(--ink-3);">{{ total_focus }}</span>
+        </div>
+      </div>
+      <div style="display:flex; flex-direction:column;">
+        {% for item in items %}
+          {% include 'search/_result_row.html' with kind=focus_group item=item q=q %}
+        {% endfor %}
+      </div>
+
+      {% if paginator.num_pages > 1 %}
+        <div style="display:flex; justify-content:space-between; align-items:center; padding-top:14px; margin-top:4px; border-top:1px solid var(--border);">
+          <div style="font: 12px var(--font-body); color: var(--ink-3);">
+            {{ page_obj.start_index }}–{{ page_obj.end_index }} di {{ paginator.count }}
+          </div>
+          <div class="pager">
+            {% if page_obj.has_previous %}
+              <a href="?q={{ q|urlencode }}&group={{ focus_group }}&page={{ page_obj.previous_page_number }}">«</a>
+            {% else %}<span>«</span>{% endif %}
+            {% for n in paginator.page_range %}
+              {% if n == page_obj.number %}<span class="current">{{ n }}</span>
+              {% else %}<a href="?q={{ q|urlencode }}&group={{ focus_group }}&page={{ n }}">{{ n }}</a>
+              {% endif %}
+            {% endfor %}
+            {% if page_obj.has_next %}
+              <a href="?q={{ q|urlencode }}&group={{ focus_group }}&page={{ page_obj.next_page_number }}">»</a>
+            {% else %}<span>»</span>{% endif %}
+          </div>
+        </div>
+      {% endif %}
+    </div>
+  {% else %}
+    {% for g in groups %}
+      {% if g.count %}
+        <div class="card" style="padding:16px 20px; margin-bottom:16px;">
+          <div class="flex-between mb-12">
+            <div style="font: 600 14px var(--font-display); display:flex; align-items:center; gap:8px;">
+              {% icon g.icon size=16 %} {{ g.label }}
+              <span style="font: 500 12px var(--font-body); color: var(--ink-3);">{{ g.count }}</span>
+            </div>
+            {% if g.overflow %}
+              <a href="?q={{ q|urlencode }}&group={{ g.kind }}" class="btn btn-subtle" style="height:28px; padding:0 10px; font-size:12px;">
+                Vedi tutti ({{ g.count }})
+              </a>
+            {% endif %}
+          </div>
+          <div style="display:flex; flex-direction:column;">
+            {% for item in g.items %}
+              {% include 'search/_result_row.html' with kind=g.kind item=item q=q %}
+            {% endfor %}
+          </div>
+        </div>
+      {% endif %}
+    {% endfor %}
+  {% endif %}
+</div>
+
+<style>
+  mark { background: color-mix(in oklab, var(--brand-violet) 28%, transparent); color: inherit; padding: 0 2px; border-radius: 2px; }
+</style>
+{% endblock %}

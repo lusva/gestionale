@@ -1,0 +1,74 @@
+{% extends 'base.html' %}
+
+{% block title %}Importa fattura acquisto (XML){% endblock %}
+{% block crumb_current %}Import fattura acquisto{% endblock %}
+
+{% block content %}
+<div class="page" style="max-width: 720px;">
+  <div class="page-header">
+    <div>
+      <h1 class="page-title">Importa fattura acquisto</h1>
+      <p class="page-subtitle">Carica un XML FatturaPA 1.2 ricevuto da SDI. Verrà creata una fattura in <em>bozza</em>.</p>
+    </div>
+  </div>
+
+  {% if result %}
+    <div class="card" style="padding: 24px;">
+      <div class="callout" style="margin-bottom: 16px;">
+        <div class="ico">{% icon 'check' size=16 %}</div>
+        <div>
+          <div style="font: 600 14px var(--font-display); margin-bottom: 4px;">Import completato</div>
+          <div>
+            Fattura acquisto <strong>#{{ result.numero_protocollo }}/{{ result.anno_protocollo }}</strong> creata in bozza
+            da <code>{{ filename }}</code>.
+          </div>
+        </div>
+      </div>
+
+      {% if result.fornitore_creato %}
+        <div class="callout warn" style="margin-bottom: 12px;">
+          <div class="ico">{% icon 'zap' size=15 %}</div>
+          <div>Fornitore creato automaticamente dall'XML — verifica i dati in anagrafica.</div>
+        </div>
+      {% endif %}
+
+      {% if result.warnings %}
+        <div style="font: 500 13px var(--font-display); margin-bottom: 8px;">Avvisi:</div>
+        <ul style="margin: 0 0 16px 16px; padding: 0; font: 12px var(--font-body); color: var(--ink-2);">
+          {% for w in result.warnings %}
+            <li>{{ w }}</li>
+          {% endfor %}
+        </ul>
+      {% endif %}
+
+      <div style="display: flex; gap: 8px;">
+        <a href="/admin/documenti/testatafatturaacquisto/{{ result.id }}/change/" class="btn btn-brand" target="_blank">
+          {% icon 'eye' size=14 %} Apri in admin
+        </a>
+        <a href="{% url 'documenti:fattura_acquisto_import_xml' %}" class="btn btn-ghost">
+          Importa un'altra
+        </a>
+      </div>
+    </div>
+  {% else %}
+    <form method="post" enctype="multipart/form-data" class="card" style="padding: 24px;">
+      {% csrf_token %}
+      <div class="field" style="margin-bottom: 20px;">
+        <label for="xml_file">File XML FatturaPA</label>
+        <input type="file" name="xml_file" id="xml_file" accept=".xml" required
+               style="display: block; width: 100%; padding: 10px; border: 1px dashed var(--border); border-radius: 6px; background: var(--surface-2);" />
+        <div class="help-inline" style="margin-top: 6px;">
+          Max 10 MB. File firmati <code>.p7m</code> non supportati — estrai prima l'XML.
+        </div>
+      </div>
+
+      <div style="display: flex; justify-content: flex-end; gap: 8px;">
+        <a href="{% url 'documenti:fattura_list' %}" class="btn btn-ghost">Annulla</a>
+        <button type="submit" class="btn btn-brand">
+          {% icon 'upload' size=14 %} Importa
+        </button>
+      </div>
+    </form>
+  {% endif %}
+</div>
+{% endblock %}

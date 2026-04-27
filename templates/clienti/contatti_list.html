@@ -1,0 +1,72 @@
+{% extends 'base.html' %}
+{% load humanize %}
+
+{% block title %}Contatti{% endblock %}
+{% block crumb_current %}Contatti{% endblock %}
+
+{% block content %}
+<div class="page">
+  <div class="page-header">
+    <div>
+      <h1 class="page-title">Contatti</h1>
+      <p class="page-subtitle">{{ paginator.count|intcomma }} contatti totali</p>
+    </div>
+  </div>
+
+  <form method="get" class="filters">
+    <div class="search" style="flex: 0 0 320px; max-width: none;">
+      {% icon 'search' size=14 %}
+      <input type="search" name="q" value="{{ q }}" placeholder="Cerca per nome, email o cliente…" />
+    </div>
+  </form>
+
+  <div class="card" style="border-top-left-radius: 0; border-top-right-radius: 0; overflow: hidden;">
+    <table class="tbl">
+      <thead>
+        <tr><th>Nome</th><th>Ruolo</th><th>Email</th><th>Telefono</th><th>Cliente</th><th></th></tr>
+      </thead>
+      <tbody>
+        {% for c in contatti %}
+          <tr>
+            <td>
+              <div style="display: flex; align-items: center; gap: 10px;">
+                {% avatar c.iniziali 'sm' 'neutral' %}
+                <div>
+                  <div style="font: 500 13px var(--font-body);">{{ c.nome_completo }}{% if c.primary %} {% icon 'star' size=11 %}{% endif %}</div>
+                </div>
+              </div>
+            </td>
+            <td>{{ c.ruolo|default:'—' }}</td>
+            <td>{{ c.email|default:'—' }}</td>
+            <td>{{ c.telefono|default:'—' }}</td>
+            <td><a href="{{ c.cliente.get_absolute_url }}?tab=contatti" style="color: inherit; text-decoration: none;">{{ c.cliente.ragione_sociale|truncatechars:28 }}</a></td>
+            <td>
+              <div style="display: flex; gap: 4px; justify-content: flex-end;">
+                <a href="{{ c.cliente.get_absolute_url }}?tab=contatti" class="btn-icon" title="Apri cliente">{% icon 'chevronRight' size=14 %}</a>
+                <form method="post" action="{% url 'clienti:contatto_delete' c.pk %}" style="margin: 0;"
+                      onsubmit="return confirm('Eliminare il contatto {{ c.nome_completo|escapejs }}?');">
+                  {% csrf_token %}
+                  <input type="hidden" name="next" value="{{ request.get_full_path }}">
+                  <button type="submit" class="btn-icon" title="Elimina contatto" style="color: var(--danger);">{% icon 'trash' size=14 %}</button>
+                </form>
+              </div>
+            </td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="6"><div class="empty"><div class="ico">{% icon 'user' size=18 %}</div>Nessun contatto trovato</div></td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% if is_paginated %}
+      <div style="display: flex; justify-content: space-between; align-items: center; padding: 12px 16px; border-top: 1px solid var(--border); background: var(--surface-2);">
+        <div style="font: 12px var(--font-body); color: var(--ink-3);">{{ page_obj.start_index }}–{{ page_obj.end_index }} di {{ paginator.count|intcomma }}</div>
+        <div class="pager">
+          {% if page_obj.has_previous %}<a href="?{% if q %}q={{ q }}&{% endif %}page={{ page_obj.previous_page_number }}">«</a>{% else %}<span>«</span>{% endif %}
+          <span class="current">{{ page_obj.number }}</span>
+          {% if page_obj.has_next %}<a href="?{% if q %}q={{ q }}&{% endif %}page={{ page_obj.next_page_number }}">»</a>{% else %}<span>»</span>{% endif %}
+        </div>
+      </div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

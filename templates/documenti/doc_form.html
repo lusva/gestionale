@@ -1,0 +1,97 @@
+{% extends 'base.html' %}
+
+{% block title %}{% if is_create %}Nuova {{ doc_label|lower }}{% else %}{{ doc_label }} {{ documento.numero }}/{{ documento.anno }}{% endif %}{% endblock %}
+{% block breadcrumb %}
+  <span class="sep">{% icon 'chevronRight' size=14 %}</span>
+  <a href="{% url urls.list %}" style="color: inherit; text-decoration: none;">{{ doc_label_plural }}</a>
+  <span class="sep">{% icon 'chevronRight' size=14 %}</span>
+  <span class="current">{% if is_create %}Nuova{% else %}{{ documento.numero }}/{{ documento.anno }}{% endif %}</span>
+{% endblock %}
+
+{% block content %}
+<form method="post" class="page">
+  {% csrf_token %}
+  <div class="page-header">
+    <div>
+      <h1 class="page-title">{% if is_create %}Nuova {{ doc_label|lower }}{% else %}{{ doc_label }} {{ documento.numero }}/{{ documento.anno }}{% endif %}</h1>
+      <p class="page-subtitle">Compila testata e righe — il numero viene assegnato automaticamente.</p>
+    </div>
+    <div style="display: flex; gap: 8px;">
+      <a href="{% if is_create %}{% url urls.list %}{% else %}{% url urls.detail documento.pk %}{% endif %}" class="btn btn-ghost">Annulla</a>
+      <button type="submit" class="btn btn-brand">{% icon 'check' size=14 %} Salva</button>
+    </div>
+  </div>
+
+  {% if form.non_field_errors or righe_formset.non_form_errors %}
+    <div class="callout warn mb-24">
+      <div class="ico">{% icon 'x' size=14 %}</div>
+      <div>{{ form.non_field_errors }}{{ righe_formset.non_form_errors }}</div>
+    </div>
+  {% endif %}
+
+  <div class="grid" style="grid-template-columns: 1fr; gap: 24px;">
+    <div class="card" style="padding: 24px;">
+      <div class="section-title">Testata</div>
+      <div class="grid grid-2" style="gap: 16px;">
+        {% for f in form.visible_fields %}
+          <div class="field {% if f.name == 'note' %}grid-col-full{% endif %}" {% if f.name == 'note' %}style="grid-column: 1 / -1;"{% endif %}>
+            <label for="{{ f.id_for_label }}">{{ f.label }}</label>
+            {{ f }}
+            {% if f.errors %}{{ f.errors }}{% endif %}
+          </div>
+        {% endfor %}
+      </div>
+    </div>
+
+    <div class="card" style="padding: 24px;" x-data="formsetMgr('righe', {{ righe_formset.total_form_count }})">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+        <div class="section-title" style="margin: 0;">Righe</div>
+        <button type="button" class="btn btn-ghost" @click="addRow()">{% icon 'plus' size=14 %} Aggiungi riga</button>
+      </div>
+
+      {{ righe_formset.management_form }}
+
+      <table class="tbl">
+        <thead>
+          <tr>
+            <th style="width: 56px;">#</th>
+            <th>Articolo / descrizione</th>
+            <th style="width: 100px;">Quantità</th>
+            <th style="width: 80px;">UM</th>
+            <th style="width: 110px;">Prezzo</th>
+            <th>IVA</th>
+            <th style="width: 30px;"></th>
+          </tr>
+        </thead>
+        <tbody id="righe-rows">
+          {% for rf in righe_formset %}
+            {% include 'documenti/_riga_row.html' with form=rf %}
+          {% endfor %}
+        </tbody>
+      </table>
+
+      <template id="righe-empty-template">{% include 'documenti/_riga_row.html' with form=righe_formset.empty_form %}</template>
+    </div>
+  </div>
+</form>
+
+<script>
+function formsetMgr(prefix, initialTotal) {
+  return {
+    prefix, total: initialTotal,
+    addRow() {
+      const tpl = document.getElementById(prefix + '-empty-template');
+      const rows = document.getElementById(prefix + '-rows');
+      if (!tpl || !rows) return;
+      const html = tpl.innerHTML.replaceAll('__prefix__', this.total);
+      const wrapper = document.createElement('tbody');
+      wrapper.innerHTML = html;
+      while (wrapper.firstChild) rows.appendChild(wrapper.firstChild);
+      this.total += 1;
+      const totalInput = document.querySelector('input[name="' + prefix + '-TOTAL_FORMS"]');
+      if (totalInput) totalInput.value = this.total;
+    },
+  };
+}
+</script>
+{% endblock %}

@@ -1,0 +1,72 @@
+{% extends 'base.html' %}
+
+{% block title %}Top articoli venduti{% endblock %}
+{% block crumb_current %}Top articoli{% endblock %}
+
+{% block content %}
+<div class="page">
+  <div class="page-header">
+    <div>
+      <h1 class="page-title">Top articoli venduti</h1>
+      <p class="page-subtitle">Ricavi totali: <strong class="mono">{{ totale_ricavi|euro:2 }}</strong> (fatture cliente)</p>
+    </div>
+  </div>
+
+  <form method="get" class="filters">
+    <select name="anno" class="select" onchange="this.form.submit()">
+      <option value="">Tutti gli anni</option>
+      {% for a in anni_choices %}
+        <option value="{{ a }}" {% if anno_sel == a|stringformat:'s' %}selected{% endif %}>{{ a }}</option>
+      {% endfor %}
+    </select>
+    <select name="sort" class="select" onchange="this.form.submit()">
+      <option value="ricavi" {% if sort == 'ricavi' %}selected{% endif %}>Ordina per ricavi</option>
+      <option value="quantita" {% if sort == 'quantita' %}selected{% endif %}>Ordina per quantità</option>
+    </select>
+  </form>
+
+  <div class="card" style="border-top-left-radius: 0; border-top-right-radius: 0; padding: 0; overflow: hidden;">
+    <table class="tbl">
+      <thead>
+        <tr>
+          <th style="width: 40px;">#</th>
+          <th>Articolo</th>
+          <th style="width: 80px; text-align: right;">Righe</th>
+          <th style="width: 100px; text-align: right;">Quantità</th>
+          <th style="width: 130px; text-align: right;">Ricavi</th>
+          <th style="width: 200px;">Peso</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in rows %}
+          <tr>
+            <td class="mono" style="color: var(--ink-3);">{{ forloop.counter }}</td>
+            <td>
+              <div style="font: 500 13px var(--font-body);">{{ r.label }}</div>
+              {% if r.articolo and r.articolo.um %}
+                <div style="font: 11px var(--font-body); color: var(--ink-3);">UM: {{ r.articolo.um }}</div>
+              {% endif %}
+            </td>
+            <td class="mono" style="text-align: right; color: var(--ink-3);">{{ r.count }}</td>
+            <td class="mono" style="text-align: right;">{{ r.quantita }}</td>
+            <td class="mono" style="text-align: right; font-weight: 500;">{{ r.ricavi|euro:2 }}</td>
+            <td>
+              <div style="background: var(--surface-2); border-radius: 4px; height: 8px; overflow: hidden;">
+                <div style="background: var(--brand-teal); height: 100%; width: {{ r.pct|floatformat:0 }}%;"></div>
+              </div>
+              <div style="font: 10px var(--font-body); color: var(--ink-4); margin-top: 2px;">{{ r.pct|floatformat:1 }}%</div>
+            </td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="6">
+            <div class="empty">
+              <div class="ico">{% icon 'chart' size=20 %}</div>
+              <div style="font: 500 14px var(--font-body);">Nessuna riga su fatture cliente</div>
+            </div>
+          </td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

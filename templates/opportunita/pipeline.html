@@ -1,0 +1,19 @@
+{% extends 'base.html' %}
+{% load humanize %}
+
+{% block title %}Pipeline opportunità{% endblock %}
+{% block crumb_current %}Opportunità{% endblock %}
+
+{% block content %}
+<div class="page">
+  <div class="page-header">
+    <div>
+      <h1 class="page-title">Pipeline opportunità</h1>
+      <p class="page-subtitle">{{ pipeline_count }} opportunità · valore totale {{ pipeline_total|euro }} — trascina le card per cambiare stadio</p>
+    </div>
+    <a href="{% url 'opportunita:create' %}" class="btn btn-brand">{% icon 'plus' size=14 %} Nuova opportunità</a>
+  </div>
+
+  {% include 'opportunita/_pipeline_board.html' %}
+</div>
+{% endblock %}

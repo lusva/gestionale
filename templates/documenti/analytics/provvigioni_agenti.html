@@ -1,0 +1,76 @@
+{% extends 'base.html' %}
+
+{% block title %}Provvigioni agenti{% endblock %}
+{% block crumb_current %}Provvigioni{% endblock %}
+
+{% block content %}
+<div class="page">
+  <div class="page-header">
+    <div>
+      <h1 class="page-title">Provvigioni agenti</h1>
+      <p class="page-subtitle">Totale maturato: <strong class="mono">{{ totale_provvigioni|euro:2 }}</strong></p>
+    </div>
+  </div>
+
+  <form method="get" class="filters">
+    <select name="anno" class="select" onchange="this.form.submit()">
+      <option value="">Tutti gli anni</option>
+      {% for a in anni_choices %}
+        <option value="{{ a }}" {% if anno_sel == a|stringformat:'s' %}selected{% endif %}>{{ a }}</option>
+      {% endfor %}
+    </select>
+  </form>
+
+  {% for r in rows %}
+    <div class="card" style="padding: 24px; margin-bottom: 16px;">
+      <div style="display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 12px;">
+        <div>
+          <h3 style="font: 600 16px var(--font-display); margin: 0;">{{ r.agente }}</h3>
+          <div style="font: 12px var(--font-body); color: var(--ink-3); margin-top: 2px;">
+            Imponibile mediato: {{ r.imponibile_totale|euro:2 }}
+          </div>
+        </div>
+        <div class="mono" style="font: 600 22px var(--font-display); color: var(--brand-teal);">
+          {{ r.provvigione_totale|euro:2 }}
+        </div>
+      </div>
+      <table class="tbl">
+        <thead>
+          <tr>
+            <th style="width: 110px;">Fattura</th>
+            <th>Cliente</th>
+            <th style="width: 130px; text-align: right;">Imponibile</th>
+            <th style="width: 80px; text-align: right;">%</th>
+            <th style="width: 130px; text-align: right;">Provvigione</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for f in r.fatture %}
+            <tr>
+              <td class="mono">
+                <a href="{% url 'documenti:fattura_detail' f.fattura.pk %}" style="color: inherit; text-decoration: none;">
+                  {{ f.fattura.numero }}/{{ f.fattura.anno }}
+                </a>
+              </td>
+              <td>{{ f.fattura.cliente.ragione_sociale|default:'—' }}</td>
+              <td class="mono" style="text-align: right;">{{ f.imponibile|euro:2 }}</td>
+              <td class="mono" style="text-align: right;">{{ f.percentuale }}%</td>
+              <td class="mono" style="text-align: right; font-weight: 500;">{{ f.provvigione|euro:2 }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% empty %}
+    <div class="card" style="padding: 24px;">
+      <div class="empty">
+        <div class="ico">{% icon 'chart' size=20 %}</div>
+        <div style="font: 500 14px var(--font-body);">Nessuna provvigione registrata</div>
+        <div style="font: 12px var(--font-body); color: var(--ink-4); margin-top: 4px;">
+          Associa agenti alle fatture (admin → Agenti fattura) per vedere i dati qui.
+        </div>
+      </div>
+    </div>
+  {% endfor %}
+</div>
+{% endblock %}

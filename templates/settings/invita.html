@@ -1,0 +1,35 @@
+{% extends 'settings/_settings_base.html' %}
+
+{% block title %}Impostazioni · Invita utente{% endblock %}
+
+{% block settings_content %}
+<form method="post" class="card" style="padding: 24px; max-width: 560px;">
+  {% csrf_token %}
+  <div class="flex-between mb-16">
+    <div>
+      <div style="font: 600 16px var(--font-display);">Invita utente</div>
+      <div style="font: 13px var(--font-body); color: var(--ink-3);">L'utente riceverà un'email di benvenuto con le istruzioni per impostare la password.</div>
+    </div>
+  </div>
+
+  <div class="grid grid-2" style="gap: 16px;">
+    <div class="field" style="grid-column: 1 / -1;">
+      <label>Email *</label>
+      <input class="input" type="email" name="email" required placeholder="collega@azienda.it" />
+    </div>
+    <div class="field"><label>Nome</label><input class="input" name="first_name" /></div>
+    <div class="field"><label>Cognome</label><input class="input" name="last_name" /></div>
+    <div class="field" style="grid-column: 1 / -1;">
+      <label>Ruolo</label>
+      <select class="select" name="ruolo">
+        {% for val, label in ruoli_choices %}<option value="{{ val }}">{{ label }}</option>{% endfor %}
+      </select>
+    </div>
+  </div>
+
+  <div style="display: flex; gap: 8px; justify-content: flex-end; margin-top: 20px;">
+    <a href="{% url 'settings:utenti' %}" class="btn btn-ghost">Annulla</a>
+    <button type="submit" class="btn btn-brand">{% icon 'mail' size=14 %} Invia invito</button>
+  </div>
+</form>
+{% endblock %}

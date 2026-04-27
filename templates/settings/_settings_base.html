@@ -1,0 +1,43 @@
+{% extends 'base.html' %}
+{% load humanize %}
+
+{% block crumb_current %}Impostazioni{% endblock %}
+
+{% block content %}
+<div class="page">
+  <div class="page-header">
+    <div>
+      <h1 class="page-title">Impostazioni</h1>
+      <p class="page-subtitle">Configura l'area di lavoro e i permessi del team</p>
+    </div>
+  </div>
+
+  <div class="grid" style="grid-template-columns: 220px 1fr; gap: 24px; align-items: start;">
+    <aside class="flex-col gap-4">
+      {% for key, label in sections %}
+        {% if key == 'organizzazione' %}
+          <a href="{% url 'settings:organizzazione' %}" class="nav-item {% if active_section == 'organizzazione' %}active{% endif %}" style="padding: 8px 12px;">{{ label }}</a>
+        {% elif key == 'utenti' %}
+          <a href="{% url 'settings:utenti' %}" class="nav-item {% if active_section == 'utenti' %}active{% endif %}" style="padding: 8px 12px;">{{ label }}</a>
+        {% elif key == 'ruoli' %}
+          <a href="{% url 'settings:ruoli' %}" class="nav-item {% if active_section == 'ruoli' %}active{% endif %}" style="padding: 8px 12px;">{{ label }}</a>
+        {% elif key == 'integrazioni' %}
+          <a href="{% url 'settings:integrazioni' %}" class="nav-item {% if active_section == 'integrazioni' %}active{% endif %}" style="padding: 8px 12px;">{{ label }}</a>
+        {% elif key == 'fatturazione' %}
+          <a href="{% url 'settings:fatturazione' %}" class="nav-item {% if active_section == 'fatturazione' %}active{% endif %}" style="padding: 8px 12px;">{{ label }}</a>
+        {% elif key == 'api' %}
+          <a href="{% url 'settings:api' %}" class="nav-item {% if active_section == 'api' %}active{% endif %}" style="padding: 8px 12px;">{{ label }}</a>
+        {% elif key == 'audit' %}
+          <a href="{% url 'settings:audit' %}" class="nav-item {% if active_section == 'audit' %}active{% endif %}" style="padding: 8px 12px;">{{ label }}</a>
+        {% elif key == 'backup' %}
+          <a href="{% url 'settings:backup' %}" class="nav-item {% if active_section == 'backup' %}active{% endif %}" style="padding: 8px 12px;">{{ label }}</a>
+        {% endif %}
+      {% endfor %}
+    </aside>
+
+    <div class="flex-col gap-16">
+      {% block settings_content %}{% endblock %}
+    </div>
+  </div>
+</div>
+{% endblock %}

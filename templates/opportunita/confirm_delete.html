@@ -1,0 +1,15 @@
+{% extends 'base.html' %}
+{% block title %}Elimina opportunità{% endblock %}
+{% block content %}
+<div class="page" style="max-width: 520px; margin: 40px auto;">
+  <div class="card" style="padding: 32px;">
+    <h1 style="font: 600 20px var(--font-display); margin: 0 0 8px;">Eliminare «{{ object.titolo }}»?</h1>
+    <p style="color: var(--ink-3); font-size: 14px; margin: 0 0 18px;">L'operazione è irreversibile.</p>
+    <form method="post" style="display: flex; gap: 8px; justify-content: flex-end;">
+      {% csrf_token %}
+      <a href="{{ object.get_absolute_url }}" class="btn btn-ghost">Annulla</a>
+      <button type="submit" class="btn" style="background: var(--danger); color: white;">{% icon 'trash' size=14 %} Elimina</button>
+    </form>
+  </div>
+</div>
+{% endblock %}

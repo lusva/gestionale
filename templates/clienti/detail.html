@@ -1,0 +1,269 @@
+{% extends 'base.html' %}
+{% load humanize %}
+
+{% block title %}{{ cliente.ragione_sociale }}{% endblock %}
+{% block breadcrumb %}
+  <span class="sep">{% icon 'chevronRight' size=14 %}</span>
+  <a href="{% url 'clienti:list' %}" style="color: inherit; text-decoration: none;">Clienti</a>
+  <span class="sep">{% icon 'chevronRight' size=14 %}</span>
+  <span class="current">{{ cliente.ragione_sociale|truncatechars:42 }}</span>
+{% endblock %}
+
+{% block content %}
+<div class="page">
+  <div class="page-header">
+    <div style="display: flex; align-items: center; gap: 16px;">
+      {% if cliente.is_azienda %}{% avatar cliente.iniziali 'lg' 'brand' %}{% else %}{% avatar cliente.iniziali 'lg' 'neutral' %}{% endif %}
+      <div>
+        <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 4px;">
+          <h1 class="page-title" style="margin: 0;">{{ cliente.ragione_sociale }}</h1>
+          {% stato_badge cliente.stato cliente.get_stato_display %}
+        </div>
+        <p class="page-subtitle" style="margin: 0;">
+          <span class="mono" style="color: var(--ink-3);">{{ cliente.partita_iva }}</span>
+          {% if cliente.settore %} · {{ cliente.settore }}{% endif %}
+          {% if cliente.cliente_dal %} · Cliente dal {{ cliente.cliente_dal|date:'d F Y' }}{% endif %}
+        </p>
+      </div>
+    </div>
+    <div style="display: flex; gap: 8px;">
+      {% with primary=cliente.contatti.all|first %}
+        {% if primary and primary.email %}
+          <a href="mailto:{{ primary.email }}" class="btn btn-ghost">{% icon 'mail' size=14 %} Email</a>
+        {% endif %}
+        {% if primary and primary.telefono %}
+          <a href="tel:{{ primary.telefono }}" class="btn btn-ghost">{% icon 'phone' size=14 %} Chiama</a>
+        {% endif %}
+      {% endwith %}
+      <a href="{% url 'opportunita:create' %}?cliente={{ cliente.pk }}" class="btn btn-brand">{% icon 'plus' size=14 %} Nuova opportunità</a>
+      <div x-data="{ open: false }" style="position: relative;">
+        <button class="btn btn-ghost" type="button" @click="open = !open">{% icon 'more' size=14 %}</button>
+        <div class="menu" x-show="open" @click.outside="open = false" x-cloak>
+          <a href="{% url 'clienti:update' cliente.pk %}">{% icon 'edit' size=13 %} Modifica</a>
+          <a href="{% url 'clienti:contatto_create' cliente.pk %}">{% icon 'user' size=13 %} Aggiungi contatto</a>
+          <div class="sep"></div>
+          <a href="{% url 'clienti:delete' cliente.pk %}" class="danger">{% icon 'trash' size=13 %} Elimina</a>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="grid" style="grid-template-columns: 1fr 320px; gap: 20px;">
+    <div class="flex-col gap-16">
+      <div class="tabs">
+        {% with at=active_tab %}
+          <a class="tab {% if at == 'panoramica' %}active{% endif %}" href="?tab=panoramica">Panoramica</a>
+          <a class="tab {% if at == 'opportunita' %}active{% endif %}" href="?tab=opportunita">Opportunità ({{ opportunita_count }})</a>
+          <a class="tab {% if at == 'contatti' %}active{% endif %}" href="?tab=contatti">Contatti ({{ contatti|length }})</a>
+          <a class="tab {% if at == 'attivita' %}active{% endif %}" href="?tab=attivita">Attività</a>
+          <a class="tab {% if at == 'documenti' %}active{% endif %}" href="?tab=documenti">Documenti</a>
+          <a class="tab {% if at == 'note' %}active{% endif %}" href="?tab=note">Note</a>
+        {% endwith %}
+      </div>
+
+      {% if active_tab == 'panoramica' or not active_tab %}
+        <div class="grid grid-3" style="gap: 12px;">
+          <div class="card" style="padding: 14px;">
+            <div class="kpi-label">Fatturato totale</div>
+            <div style="font: 600 22px var(--font-display); margin-top: 6px;">{{ fatturato_totale|euro_compact }}</div>
+          </div>
+          <div class="card" style="padding: 14px;">
+            <div class="kpi-label">Opportunità aperte</div>
+            <div style="font: 600 22px var(--font-display); margin-top: 6px;">
+              {{ opportunita_attive|length }}
+              <span style="color: var(--ink-3); font-size: 13px; font-weight: 400;">
+                · {% with s=0 %}{% for o in opportunita_attive %}{% endfor %}{% endwith %}
+                {{ opportunita_attive|length|multiply:0 }}
+              </span>
+            </div>
+          </div>
+          <div class="card" style="padding: 14px;">
+            <div class="kpi-label">Tasso chiusura</div>
+            <div style="font: 600 22px var(--font-display); margin-top: 6px;">{{ tasso_chiusura }}%</div>
+          </div>
+        </div>
+
+        <div class="card" style="padding: 20px;">
+          <div style="font: 600 14px var(--font-display); margin-bottom: 14px;">Anagrafica</div>
+          <div class="grid grid-2" style="gap: 16px;">
+            <div>
+              <div style="font: 500 11px var(--font-body); letter-spacing: 0.03em; text-transform: uppercase; color: var(--ink-3); margin-bottom: 4px;">Ragione sociale</div>
+              <div>{{ cliente.ragione_sociale }}</div>
+            </div>
+            <div>
+              <div style="font: 500 11px var(--font-body); letter-spacing: 0.03em; text-transform: uppercase; color: var(--ink-3); margin-bottom: 4px;">Partita IVA</div>
+              <div class="mono">{{ cliente.partita_iva }}</div>
+            </div>
+            <div>
+              <div style="font: 500 11px var(--font-body); letter-spacing: 0.03em; text-transform: uppercase; color: var(--ink-3); margin-bottom: 4px;">Codice fiscale</div>
+              <div class="mono">{{ cliente.codice_fiscale|default:'—' }}</div>
+            </div>
+            <div>
+              <div style="font: 500 11px var(--font-body); letter-spacing: 0.03em; text-transform: uppercase; color: var(--ink-3); margin-bottom: 4px;">Tipo</div>
+              <div>{{ cliente.get_tipo_display }}</div>
+            </div>
+            <div>
+              <div style="font: 500 11px var(--font-body); letter-spacing: 0.03em; text-transform: uppercase; color: var(--ink-3); margin-bottom: 4px;">Settore</div>
+              <div>{{ cliente.settore|default:'—' }}</div>
+            </div>
+            <div>
+              <div style="font: 500 11px var(--font-body); letter-spacing: 0.03em; text-transform: uppercase; color: var(--ink-3); margin-bottom: 4px;">Sede legale</div>
+              <div>{{ cliente.indirizzo|default:'—' }}{% if cliente.citta %}, {{ cliente.citta }}{% endif %} {{ cliente.cap }} {% if cliente.provincia %}({{ cliente.provincia }}){% endif %}</div>
+            </div>
+            <div>
+              <div style="font: 500 11px var(--font-body); letter-spacing: 0.03em; text-transform: uppercase; color: var(--ink-3); margin-bottom: 4px;">Codice SDI</div>
+              <div class="mono">{{ cliente.codice_sdi|default:'—' }}</div>
+            </div>
+            <div>
+              <div style="font: 500 11px var(--font-body); letter-spacing: 0.03em; text-transform: uppercase; color: var(--ink-3); margin-bottom: 4px;">PEC</div>
+              <div>{{ cliente.pec|default:'—' }}</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card" style="padding: 20px;">
+          <div class="flex-between mb-16">
+            <div style="font: 600 14px var(--font-display);">Opportunità attive</div>
+            <a href="{% url 'opportunita:create' %}?cliente={{ cliente.pk }}" class="btn btn-subtle" style="height: 28px; padding: 0 10px; font-size: 12px;">{% icon 'plus' size=12 %} Nuova</a>
+          </div>
+          {% for o in opportunita_attive %}
+            <a href="{% url 'opportunita:detail' o.pk %}" style="text-decoration: none; color: inherit;">
+              <div style="padding: 14px; border-radius: var(--r-sm); border: 1px solid var(--border); margin-bottom: {% if not forloop.last %}10px{% else %}0{% endif %}; display: grid; grid-template-columns: 1fr auto auto; align-items: center; gap: 16px;">
+                <div>
+                  <div style="font: 500 14px var(--font-body); color: var(--ink);">{{ o.titolo }}</div>
+                  <div style="font: 12px var(--font-body); color: var(--ink-3); margin-top: 3px;">
+                    {% if o.chiusura_prevista %}Chiusura prevista: {{ o.chiusura_prevista|date:'d M Y' }}{% else %}Senza data di chiusura{% endif %}
+                  </div>
+                </div>
+                <div style="text-align: right;">
+                  <div class="mono" style="font: 600 15px var(--font-display); color: var(--ink);">{{ o.valore|euro }}</div>
+                  <div style="font: 11px var(--font-body); color: var(--ink-3); margin-top: 2px;">{{ o.probabilita }}% probabilità</div>
+                </div>
+                {% stadio_badge o.stadio o.get_stadio_display %}
+              </div>
+            </a>
+          {% empty %}
+            <div class="empty" style="padding: 24px;">Nessuna opportunità aperta</div>
+          {% endfor %}
+        </div>
+      {% elif active_tab == 'opportunita' %}
+        <div class="card" style="padding: 20px;">
+          <div class="block-title">Tutte le opportunità ({{ cliente.opportunita.all|length }})</div>
+          <table class="tbl">
+            <thead><tr><th>Titolo</th><th>Stadio</th><th>Probabilità</th><th>Chiusura</th><th style="text-align: right;">Valore</th></tr></thead>
+            <tbody>
+              {% for o in cliente.opportunita.all %}
+                <tr><td><a href="{% url 'opportunita:detail' o.pk %}" style="color: inherit;">{{ o.titolo }}</a></td>
+                <td>{% stadio_badge o.stadio o.get_stadio_display %}</td>
+                <td class="mono">{{ o.probabilita }}%</td>
+                <td>{{ o.chiusura_prevista|date:'d M Y'|default:'—' }}</td>
+                <td class="mono" style="text-align: right;">{{ o.valore|euro }}</td></tr>
+              {% empty %}
+                <tr><td colspan="5"><div class="empty">Nessuna opportunità</div></td></tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      {% elif active_tab == 'contatti' %}
+        <div class="card" style="padding: 20px;">
+          <div class="flex-between mb-16">
+            <div class="block-title" style="margin: 0;">Contatti</div>
+            <a href="{% url 'clienti:contatto_create' cliente.pk %}" class="btn btn-subtle">{% icon 'plus' size=12 %} Aggiungi</a>
+          </div>
+          {% for c in contatti %}
+            <div style="display: flex; gap: 12px; align-items: center; padding: 12px 0; {% if not forloop.last %}border-bottom: 1px solid var(--border);{% endif %}">
+              {% avatar c.iniziali 'md' 'neutral' %}
+              <div style="flex: 1;">
+                <div style="font: 500 14px var(--font-body);">{{ c.nome_completo }}{% if c.primary %} {% icon 'star' size=12 cls='text-warn' %}{% endif %}</div>
+                <div style="font: 12px var(--font-body); color: var(--ink-3);">{{ c.ruolo|default:'—' }}</div>
+                <div style="font: 12px var(--font-body); color: var(--ink-3); margin-top: 2px;">{{ c.email }} {% if c.telefono %}· {{ c.telefono }}{% endif %}</div>
+              </div>
+              <form method="post" action="{% url 'clienti:contatto_delete' c.pk %}" style="margin: 0;"
+                    onsubmit="return confirm('Eliminare il contatto {{ c.nome_completo|escapejs }}?');">
+                {% csrf_token %}
+                <input type="hidden" name="next" value="{{ cliente.get_absolute_url }}?tab=contatti">
+                <button type="submit" class="btn-icon" title="Elimina contatto" style="color: var(--danger);">{% icon 'trash' size=14 %}</button>
+              </form>
+            </div>
+          {% empty %}
+            <div class="empty">Nessun contatto</div>
+          {% endfor %}
+        </div>
+      {% elif active_tab == 'attivita' %}
+        <div class="card" style="padding: 20px;">
+          <div class="flex-between mb-16">
+            <div class="block-title" style="margin: 0;">Attività</div>
+            <a href="{% url 'attivita:create' %}?cliente={{ cliente.pk }}" class="btn btn-subtle">{% icon 'plus' size=12 %} Nuova</a>
+          </div>
+          <table class="tbl">
+            <thead><tr><th>Tipo</th><th>Titolo</th><th>Data</th><th>Stato</th></tr></thead>
+            <tbody>
+              {% for a in cliente.attivita.all %}
+                <tr><td>{% icon a.icon size=14 %} {{ a.get_tipo_display }}</td>
+                <td>{{ a.titolo }}</td>
+                <td>{{ a.data|date:'d M Y H:i' }}</td>
+                <td>{% if a.completata %}{% stato_badge 'attivo' 'Completata' %}{% else %}{% stato_badge 'prospect' 'Da fare' %}{% endif %}</td></tr>
+              {% empty %}
+                <tr><td colspan="4"><div class="empty">Nessuna attività</div></td></tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      {% elif active_tab == 'documenti' %}
+        <div class="card" style="padding: 40px;">
+          <div class="empty">
+            <div class="ico">{% icon 'doc' size=22 %}</div>
+            Area documenti — in costruzione
+          </div>
+        </div>
+      {% elif active_tab == 'note' %}
+        <div class="card" style="padding: 20px;">
+          <div class="block-title">Note</div>
+          <div style="font: 14px var(--font-body); color: var(--ink-2); white-space: pre-line;">
+            {{ cliente.note|default:'Nessuna nota — aggiungine una dalla pagina di modifica.' }}
+          </div>
+        </div>
+      {% endif %}
+    </div>
+
+    <div class="flex-col gap-16">
+      <div class="card" style="padding: 18px;">
+        <div style="font: 600 14px var(--font-display); margin-bottom: 14px;">Contatti</div>
+        {% for c in contatti %}
+          <div style="display: flex; gap: 10px; padding: 10px 0; {% if not forloop.first %}border-top: 1px solid var(--border);{% endif %}">
+            {% avatar c.iniziali 'sm' 'neutral' %}
+            <div style="flex: 1; min-width: 0;">
+              <div style="display: flex; align-items: center; gap: 6px;">
+                <span style="font: 500 13px var(--font-body);">{{ c.nome_completo }}</span>
+                {% if c.primary %}{% icon 'star' size=11 cls='text-warn' %}{% endif %}
+              </div>
+              <div style="font: 11px var(--font-body); color: var(--ink-3);">{{ c.ruolo|default:'—' }}</div>
+              <div style="font: 11px var(--font-body); color: var(--ink-3); margin-top: 2px;">{{ c.email }}</div>
+            </div>
+          </div>
+        {% empty %}
+          <div style="font: 12px var(--font-body); color: var(--ink-4);">Nessun contatto</div>
+        {% endfor %}
+      </div>
+
+      <div class="card" style="padding: 18px;">
+        <div style="font: 600 14px var(--font-display); margin-bottom: 14px;">Prossime attività</div>
+        {% for a in prossime_attivita %}
+          <div style="display: flex; gap: 10px; padding: 8px 0; {% if not forloop.first %}border-top: 1px solid var(--border);{% endif %}">
+            <div style="width: 38px; text-align: center; flex-shrink: 0;">
+              <div style="font: 600 13px var(--font-display); color: var(--brand-purple);">{{ a.data|date:'d' }}</div>
+              <div style="font: 10px var(--font-body); color: var(--ink-3); text-transform: uppercase;">{{ a.data|date:'M' }}</div>
+            </div>
+            <div style="flex: 1;">
+              <div style="font: 500 13px var(--font-body);">{{ a.titolo }}</div>
+              <div style="font: 11px var(--font-body); color: var(--ink-3); margin-top: 2px;">{{ a.data|date:'H:i' }}</div>
+            </div>
+          </div>
+        {% empty %}
+          <div style="font: 12px var(--font-body); color: var(--ink-4);">Nessuna attività pianificata</div>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

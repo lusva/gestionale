@@ -1,0 +1,266 @@
+{% extends 'base.html' %}
+{% load humanize %}
+
+{% block title %}Fattura {{ fattura.numero }}/{{ fattura.anno }}{% endblock %}
+{% block breadcrumb %}
+  <span class="sep">{% icon 'chevronRight' size=14 %}</span>
+  <a href="{% url 'documenti:fattura_list' %}" style="color: inherit; text-decoration: none;">Fatture</a>
+  <span class="sep">{% icon 'chevronRight' size=14 %}</span>
+  <span class="current">{{ fattura.numero }}/{{ fattura.anno }}</span>
+{% endblock %}
+
+{% block content %}
+<div class="page">
+  <div class="page-header">
+    <div>
+      <h1 class="page-title">Fattura {{ fattura.numero }}/{{ fattura.anno }}</h1>
+      <p class="page-subtitle">
+        {% if fattura.cliente %}{{ fattura.cliente.ragione_sociale }}{% else %}—{% endif %}
+        · {{ fattura.data_documento|date:'d F Y' }}
+        · {{ fattura.tipo_documento }}
+      </p>
+    </div>
+    <div style="display: flex; gap: 8px;">
+      <a href="{% url 'documenti:fattura_pdf' fattura.pk %}" target="_blank" class="btn btn-ghost">
+        {% icon 'download' size=14 %} PDF
+      </a>
+      <a href="{% url 'documenti:fattura_pdf_firmato' fattura.pk %}" target="_blank" class="btn btn-ghost"
+         title="Richiede certificato P12 caricato sull'anagrafica azienda">
+        {% icon 'lock' size=14 %} PDF firmato
+      </a>
+      <a href="{% url 'documenti:fattura_xml' fattura.pk %}" class="btn btn-ghost">
+        {% icon 'download' size=14 %} XML FatturaPA
+      </a>
+      {% if user_perms_map|get_item:'documenti.modifica' and fattura.sdi_stato == 'non_inviata' %}
+        <form method="post" action="{% url 'documenti:fattura_invia_sdi' fattura.pk %}" style="margin: 0;"
+              onsubmit="return confirm('Inviare la fattura al Sistema di Interscambio?');">
+          {% csrf_token %}
+          <button type="submit" class="btn btn-brand">{% icon 'upload' size=14 %} Invia a SDI</button>
+        </form>
+      {% endif %}
+      {% if user_perms_map|get_item:'documenti.modifica' %}
+        <form method="post" action="{% url 'documenti:fattura_invia_email' fattura.pk %}" style="margin: 0;"
+              onsubmit="return confirm('Inviare la fattura per email al cliente?');">
+          {% csrf_token %}
+          <button type="submit" class="btn btn-ghost">{% icon 'mail' size=14 %} Invia email</button>
+        </form>
+      {% endif %}
+      {% if user_perms_map|get_item:'documenti.modifica' %}
+        <form method="post" action="{% url 'documenti:fattura_toggle_pagata' fattura.pk %}" style="margin: 0;">
+          {% csrf_token %}
+          <button type="submit" class="btn btn-ghost">
+            {% if fattura.pagata %}{% icon 'x' size=14 %} Segna non pagata{% else %}{% icon 'check' size=14 %} Segna pagata{% endif %}
+          </button>
+        </form>
+        <form method="post" action="{% url 'documenti:fattura_to_nota_credito' fattura.pk %}" style="margin: 0;"
+              onsubmit="return confirm('Genero la nota di credito (TD04) con copia delle righe?');">
+          {% csrf_token %}
+          <button type="submit" class="btn btn-ghost">{% icon 'arrowRight' size=14 %} Nota di credito</button>
+        </form>
+        <a href="{% url 'documenti:fattura_update' fattura.pk %}" class="btn btn-brand">
+          {% icon 'edit' size=14 %} Modifica
+        </a>
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="grid" style="grid-template-columns: 1fr 320px; gap: 24px;">
+    <div class="flex-col gap-16">
+      <div class="card" style="padding: 24px;">
+        <div class="section-title">Righe documento</div>
+        <table class="tbl" style="margin-top: 8px;">
+          <thead>
+            <tr>
+              <th style="width: 36px;">#</th>
+              <th>Descrizione</th>
+              <th style="width: 70px;">UM</th>
+              <th style="width: 90px; text-align: right;">Quantità</th>
+              <th style="width: 100px; text-align: right;">Prezzo</th>
+              <th style="width: 90px;">IVA</th>
+              <th style="width: 110px; text-align: right;">Imponibile</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for r in righe %}
+              <tr>
+                <td class="mono">{{ r.numero_riga|default:forloop.counter }}</td>
+                <td>
+                  {% if r.articolo %}
+                    <div style="font: 500 13px var(--font-body);">{{ r.articolo.codice }}</div>
+                    <div style="font: 12px var(--font-body); color: var(--ink-3);">{{ r.articolo.descrizione }}</div>
+                  {% endif %}
+                  {% if r.descrizione_libera %}
+                    <div>{{ r.descrizione_libera }}</div>
+                  {% endif %}
+                </td>
+                <td>{{ r.um|default:'—' }}</td>
+                <td class="mono" style="text-align: right;">{{ r.quantita }}</td>
+                <td class="mono" style="text-align: right;">{{ r.importo_unitario|euro:2 }}</td>
+                <td>{{ r.iva.descrizione|default:'—' }}</td>
+                <td class="mono" style="text-align: right; font-weight: 500;">{{ r.imponibile|euro:2 }}</td>
+              </tr>
+            {% empty %}
+              <tr>
+                <td colspan="7" style="text-align: center; color: var(--ink-4); padding: 16px;">
+                  Nessuna riga
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+
+      {% if scadenze %}
+        <div class="card" style="padding: 24px;">
+          <div class="section-title">Scadenze</div>
+          <table class="tbl" style="margin-top: 8px;">
+            <thead>
+              <tr>
+                <th>Data</th>
+                <th style="text-align: right;">Importo</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for s in scadenze %}
+                <tr>
+                  <td>{{ s.data|date:'d/m/Y' }}</td>
+                  <td class="mono" style="text-align: right;">{{ s.importo|euro:2 }}</td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      {% endif %}
+
+      {% if messaggi_sdi %}
+        <div class="card" style="padding: 24px;">
+          <div class="section-title">Messaggi SDI</div>
+          <table class="tbl" style="margin-top: 8px;">
+            <thead>
+              <tr>
+                <th style="width: 130px;">Data/ora</th>
+                <th style="width: 80px;">Tipo</th>
+                <th style="width: 60px;">Verso</th>
+                <th>Descrizione</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for m in messaggi_sdi %}
+                <tr>
+                  <td>{{ m.timestamp|date:'d/m/Y H:i' }}</td>
+                  <td><span class="badge badge-neutral">{{ m.tipo }}</span></td>
+                  <td>
+                    {% if m.direzione == 'out' %}
+                      <span style="color: var(--brand-teal);">↑</span>
+                    {% else %}
+                      <span style="color: var(--success);">↓</span>
+                    {% endif %}
+                  </td>
+                  <td>
+                    {{ m.descrizione|truncatechars:100|default:'—' }}
+                    {% if m.id_trasmissione %}
+                      <div style="font: 10px var(--font-mono); color: var(--ink-3);">ID: {{ m.id_trasmissione }}</div>
+                    {% endif %}
+                  </td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      {% endif %}
+
+      {% if fattura.note %}
+        <div class="card" style="padding: 24px;">
+          <div class="section-title">Note</div>
+          <div style="white-space: pre-line; font: 13px var(--font-body); color: var(--ink-2);">{{ fattura.note }}</div>
+        </div>
+      {% endif %}
+    </div>
+
+    <div class="flex-col gap-16">
+      <div class="card" style="padding: 18px;">
+        <div style="font: 600 14px var(--font-display); margin-bottom: 12px;">Totali</div>
+        <div style="display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid var(--border);">
+          <span style="color: var(--ink-3);">Imponibile</span>
+          <span class="mono" style="font-weight: 500;">{{ imponibile_calc|euro:2 }}</span>
+        </div>
+        <div style="display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid var(--border);">
+          <span style="color: var(--ink-3);">IVA</span>
+          <span class="mono" style="font-weight: 500;">{{ imposta_calc|euro:2 }}</span>
+        </div>
+        <div style="display: flex; justify-content: space-between; padding: 8px 0; font-weight: 600;">
+          <span>Totale</span>
+          <span class="mono">{{ totale_calc|euro:2 }}</span>
+        </div>
+      </div>
+
+      <div class="card" style="padding: 18px;">
+        <div style="font: 600 14px var(--font-display); margin-bottom: 12px;">Stato</div>
+        <div style="margin-bottom: 8px;">
+          {% if fattura.pagata %}
+            <span class="badge badge-success">Pagata{% if fattura.data_pagamento %} il {{ fattura.data_pagamento|date:'d/m/Y' }}{% endif %}</span>
+          {% else %}
+            <span class="badge badge-warn">Da pagare</span>
+          {% endif %}
+        </div>
+        <div style="margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--border);">
+          <div style="font: 11px var(--font-body); color: var(--ink-3); text-transform: uppercase; margin-bottom: 4px;">SDI</div>
+          {% if fattura.sdi_stato == 'non_inviata' %}
+            <span class="badge badge-neutral">Non inviata</span>
+          {% elif fattura.sdi_stato == 'inviata' %}
+            <span class="badge badge-info">Inviata{% if fattura.sdi_data_invio %} il {{ fattura.sdi_data_invio|date:'d/m/Y H:i' }}{% endif %}</span>
+          {% elif fattura.sdi_stato == 'ricevuta_sdi' %}
+            <span class="badge badge-info">Ricevuta SDI</span>
+          {% elif fattura.sdi_stato == 'accettata' %}
+            <span class="badge badge-success">Accettata / Consegnata</span>
+          {% elif fattura.sdi_stato == 'scartata' %}
+            <span class="badge badge-danger">Scartata</span>
+          {% elif fattura.sdi_stato == 'mancata_consegna' %}
+            <span class="badge badge-warn">Mancata consegna</span>
+          {% endif %}
+          {% if fattura.sdi_id_trasmissione %}
+            <div style="font: 10px var(--font-mono); color: var(--ink-3); margin-top: 4px;">ID: {{ fattura.sdi_id_trasmissione }}</div>
+          {% endif %}
+          {% if fattura.sdi_ultimo_messaggio %}
+            <div style="font: 11px var(--font-body); color: var(--ink-2); margin-top: 4px;">{{ fattura.sdi_ultimo_messaggio|truncatechars:120 }}</div>
+          {% endif %}
+        </div>
+        {% if fattura.forme_pagamento %}
+          <div style="font: 12px var(--font-body); color: var(--ink-3); margin-top: 6px;">
+            Forma pagamento: <span style="color: var(--ink);">{{ fattura.forme_pagamento }}</span>
+          </div>
+        {% endif %}
+        {% if fattura.conto_corrente %}
+          <div style="font: 12px var(--font-body); color: var(--ink-3); margin-top: 4px;">
+            IBAN: <span class="mono" style="color: var(--ink);">{{ fattura.conto_corrente.iban }}</span>
+          </div>
+        {% endif %}
+      </div>
+
+      {% if chain %}
+        <div class="card" style="padding: 18px;">
+          <div style="font: 600 14px var(--font-display); margin-bottom: 12px;">Documenti collegati</div>
+          {% for c in chain %}
+            <a href="{% url c.url_name c.doc.pk %}"
+               style="display: flex; gap: 8px; padding: 8px 10px; border: 1px solid var(--border); border-radius: 6px; margin-bottom: 6px; color: inherit; text-decoration: none; align-items: center;">
+              <span style="font: 11px var(--font-body); color: var(--ink-3);">
+                {% if c.verso == 'indietro' %}← origine{% else %}→ derivato{% endif %}
+              </span>
+              <span style="font: 500 12px var(--font-display); flex: 1;">
+                {{ c.tipo }} {{ c.doc.numero }}/{{ c.doc.anno }}
+              </span>
+            </a>
+          {% endfor %}
+        </div>
+      {% endif %}
+
+      {% if user_perms_map|get_item:'documenti.elimina' %}
+        <a href="{% url 'documenti:fattura_delete' fattura.pk %}" class="btn btn-ghost"
+           style="justify-content: center; color: var(--danger); border-color: color-mix(in oklab, var(--danger) 30%, var(--border));">
+          {% icon 'trash' size=14 %} Elimina fattura
+        </a>
+      {% endif %}
+    </div>
+  </div>
+</div>
+{% endblock %}

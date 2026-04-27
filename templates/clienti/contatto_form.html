@@ -1,0 +1,38 @@
+{% extends 'base.html' %}
+
+{% block title %}Nuovo contatto — {{ cliente.ragione_sociale }}{% endblock %}
+{% block breadcrumb %}
+  <span class="sep">{% icon 'chevronRight' size=14 %}</span>
+  <a href="{% url 'clienti:list' %}" style="color: inherit; text-decoration: none;">Clienti</a>
+  <span class="sep">{% icon 'chevronRight' size=14 %}</span>
+  <a href="{{ cliente.get_absolute_url }}" style="color: inherit; text-decoration: none;">{{ cliente.ragione_sociale|truncatechars:24 }}</a>
+  <span class="sep">{% icon 'chevronRight' size=14 %}</span>
+  <span class="current">Nuovo contatto</span>
+{% endblock %}
+
+{% block content %}
+<div class="page" style="max-width: 720px; margin: 0 auto;">
+  <form method="post">
+    {% csrf_token %}
+    <div class="page-header">
+      <h1 class="page-title">Nuovo contatto</h1>
+      <div style="display: flex; gap: 8px;">
+        <a href="{{ cliente.get_absolute_url }}?tab=contatti" class="btn btn-ghost">Annulla</a>
+        <button type="submit" class="btn btn-brand">{% icon 'check' size=14 %} Salva</button>
+      </div>
+    </div>
+
+    <div class="card" style="padding: 24px;">
+      <div class="grid grid-2" style="gap: 16px;">
+        <div class="field"><label>Nome</label>{{ form.nome }}{{ form.nome.errors }}</div>
+        <div class="field"><label>Cognome</label>{{ form.cognome }}{{ form.cognome.errors }}</div>
+        <div class="field"><label>Ruolo</label>{{ form.ruolo }}</div>
+        <div class="field"><label>Email</label>{{ form.email }}{{ form.email.errors }}</div>
+        <div class="field"><label>Telefono</label>{{ form.telefono }}</div>
+        <div class="field"><label>Contatto primario</label><label style="display:flex;gap:8px;align-items:center;font:13px var(--font-body);color:var(--ink-2);">{{ form.primary }} Rendi contatto principale</label></div>
+        <div class="field" style="grid-column: 1 / -1;"><label>Note</label>{{ form.note }}</div>
+      </div>
+    </div>
+  </form>
+</div>
+{% endblock %}

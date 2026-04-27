@@ -1,0 +1,12 @@
+{# Render a KPI card. Params: label, value, delta, up (bool), accent (bool), spark (iterable of numbers) #}
+<div class="kpi {% if accent %}accent{% endif %}">
+  <div class="kpi-label">{{ label }}</div>
+  <div class="kpi-value">{{ value }}</div>
+  {% if delta %}
+    <div class="kpi-delta {% if up %}up{% else %}down{% endif %}">
+      {% if up %}{% icon 'trendUp' size=12 %}{% else %}{% icon 'trendDown' size=12 %}{% endif %}
+      {{ delta }}
+    </div>
+  {% endif %}
+  {% if spark %}<div class="kpi-spark">{% sparkline spark up=up %}</div>{% endif %}
+</div>

@@ -1,0 +1,43 @@
+{% load humanize %}<!DOCTYPE html>
+<html lang="it">
+<body style="font-family: 'Plus Jakarta Sans', Arial, sans-serif; background:#FBF8F1; margin:0; padding:32px; color:#1F1B2E;">
+  <div style="max-width:520px; margin:0 auto; background:#FFFFFF; border-radius:14px; padding:28px; box-shadow:0 4px 12px rgba(31,27,46,.06);">
+    <div style="font-family:'Outfit', Arial, sans-serif; font-size:20px; font-weight:600; margin-bottom:4px;">
+      Benvenuto in {{ org_nome }}
+    </div>
+    <div style="font-size:13px; color:#7A7590; margin-bottom:20px;">
+      {{ inviter_nome|default:'Il team' }} ti ha invitato a unirti.
+    </div>
+
+    <p>Ciao {{ nome|default:'collega' }},</p>
+    <p>Hai ricevuto un invito per accedere a <strong>Gestionale CRM</strong>.
+       Usa le credenziali qui sotto per il primo accesso — ti consigliamo di
+       cambiare password subito dopo.</p>
+
+    <table style="width:100%; font-size:13px; border-collapse:collapse; margin:16px 0;">
+      <tr><td style="padding:6px 0; color:#7A7590;">URL</td>
+          <td style="padding:6px 0;"><a href="{{ login_url }}" style="color:#8B5FBF;">{{ login_url }}</a></td></tr>
+      <tr><td style="padding:6px 0; color:#7A7590;">Username</td>
+          <td style="padding:6px 0; font-family: 'JetBrains Mono', monospace;">{{ email }}</td></tr>
+      <tr><td style="padding:6px 0; color:#7A7590;">Password temporanea</td>
+          <td style="padding:6px 0; font-family: 'JetBrains Mono', monospace;">{{ password }}</td></tr>
+      <tr><td style="padding:6px 0; color:#7A7590;">Ruolo</td>
+          <td style="padding:6px 0;">{{ ruolo_label }}</td></tr>
+    </table>
+
+    <div style="margin-top:22px;">
+      <a href="{{ login_url }}"
+         style="background: linear-gradient(90deg,#8B5FBF,#5EC4B6); color:#fff; text-decoration:none;
+                padding:12px 18px; border-radius:10px; font-weight:500; display:inline-block;">
+        Accedi
+      </a>
+    </div>
+
+    <hr style="border:none; border-top:1px solid #E4DFD1; margin:24px 0;">
+    <div style="font-size:11px; color:#A8A3B8;">
+      Se non ti aspettavi questa email, ignorala. Non verrà creato alcun account attivo
+      finché non effettui il primo login.
+    </div>
+  </div>
+</body>
+</html>

@@ -1,0 +1,83 @@
+{% extends 'base.html' %}
+{% load humanize %}
+
+{% block title %}Fatture{% endblock %}
+{% block crumb_current %}Fatture{% endblock %}
+
+{% block content %}
+<div class="page">
+  <div class="page-header">
+    <div>
+      <h1 class="page-title">Fatture</h1>
+      <p class="page-subtitle">
+        {{ kpi_count|intcomma }} fatture totali
+        · imponibile complessivo {{ kpi_totale|euro }}
+        · {{ kpi_da_pagare }} da pagare
+      </p>
+    </div>
+    <div style="display: flex; gap: 8px;">
+      <a href="{% url 'documenti:fatture_export' %}?{{ request.GET.urlencode }}" class="btn btn-ghost">
+        {% icon 'download' size=14 %} Esporta CSV
+      </a>
+      <a href="{% url 'documenti:fatture_zip' %}?{{ request.GET.urlencode }}" class="btn btn-ghost"
+         title="Scarica un ZIP con i PDF delle fatture filtrate (max 200)">
+        {% icon 'download' size=14 %} ZIP PDF
+      </a>
+      {% if user_perms_map|get_item:'documenti.modifica' %}
+        <a href="{% url 'documenti:fattura_create' %}" class="btn btn-brand">
+          {% icon 'plus' size=14 %} Nuova fattura
+        </a>
+      {% endif %}
+    </div>
+  </div>
+
+  <form method="get" class="filters" id="fatture-filters">
+    <div class="search" style="flex: 0 0 280px; max-width: none;">
+      {% icon 'search' size=14 %}
+      <input type="search" name="q" value="{{ q }}" placeholder="Numero, cliente, P.IVA…" />
+    </div>
+
+    <select name="anno" class="select" onchange="this.form.requestSubmit()" style="width: 110px;">
+      <option value="">Tutti gli anni</option>
+      {% for a in anni_choices %}
+        <option value="{{ a }}" {% if anno == a|stringformat:'s' %}selected{% endif %}>{{ a }}</option>
+      {% endfor %}
+    </select>
+
+    <select name="pagata" class="select" onchange="this.form.requestSubmit()" style="width: 130px;">
+      <option value="">Tutte</option>
+      <option value="si" {% if pagata == 'si' %}selected{% endif %}>Pagate</option>
+      <option value="no" {% if pagata == 'no' %}selected{% endif %}>Da pagare</option>
+    </select>
+
+    <select name="tipo" class="select" onchange="this.form.requestSubmit()" style="width: 240px;">
+      <option value="">Tutti i tipi documento</option>
+      {% for val, label in tipi_choices %}
+        <option value="{{ val }}" {% if tipo == val %}selected{% endif %}>{{ label }}</option>
+      {% endfor %}
+    </select>
+
+    {% if sezionali_choices %}
+      <select name="sezionale" class="select" onchange="this.form.requestSubmit()" style="width: 130px;">
+        <option value="">Tutti i sezionali</option>
+        {% for s in sezionali_choices %}
+          <option value="{{ s }}" {% if sezionale == s %}selected{% endif %}>Sez. {{ s }}</option>
+        {% endfor %}
+      </select>
+    {% endif %}
+
+    <select name="sdi" class="select" onchange="this.form.requestSubmit()" style="width: 170px;">
+      <option value="">Tutti gli stati SDI</option>
+      {% for val, label in sdi_choices %}
+        <option value="{{ val }}" {% if sdi == val %}selected{% endif %}>{{ label }}</option>
+      {% endfor %}
+    </select>
+
+    <div style="margin-left: auto; font: 12px var(--font-body); color: var(--ink-3);">
+      {{ page_obj.start_index|default:0 }}–{{ page_obj.end_index|default:0 }} di {{ paginator.count|intcomma }}
+    </div>
+  </form>
+
+  {% include 'documenti/_fattura_table.html' %}
+</div>
+{% endblock %}

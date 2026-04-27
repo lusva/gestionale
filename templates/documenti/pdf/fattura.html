@@ -1,0 +1,243 @@
+{% load humanize %}
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="utf-8" />
+  <title>Fattura {{ fattura.numero }}/{{ fattura.anno }}</title>
+  <style>
+    @page {
+      size: A4 portrait;
+      margin: 20mm 15mm 22mm 15mm;
+      @frame footer {
+        -pdf-frame-content: footer-content;
+        left: 15mm; right: 15mm;
+        bottom: 10mm; height: 10mm;
+      }
+    }
+    body { font-family: Helvetica, Arial, sans-serif; color: #333; font-size: 9pt; }
+    h1, h2, h3 { margin: 0; padding: 0; }
+
+    .hdr-table { width: 100%; border-collapse: collapse; margin-bottom: 10mm; }
+    .hdr-table td { vertical-align: top; }
+    .brand { font-size: 16pt; font-weight: bold; color: #1e293b; }
+    .muted { color: #64748b; font-size: 8.5pt; }
+    .logo-cell { width: 45%; }
+    .logo-cell img { max-height: 18mm; }
+    .doc-cell { width: 55%; text-align: right; }
+
+    .doc-title { font-size: 14pt; font-weight: bold; color: #0f172a; margin-bottom: 2mm; }
+    .doc-meta { font-size: 9pt; }
+    .doc-meta strong { color: #0f172a; }
+
+    .parties { width: 100%; border-collapse: collapse; margin-bottom: 8mm; }
+    .parties td { width: 50%; vertical-align: top; padding: 4mm; border: 0.4pt solid #cbd5e1; }
+    .parties .label { font-size: 8pt; color: #64748b; text-transform: uppercase; letter-spacing: 0.5pt; margin-bottom: 2mm; }
+    .parties .name { font-size: 10pt; font-weight: bold; color: #0f172a; margin-bottom: 2mm; }
+
+    .lines { width: 100%; border-collapse: collapse; margin-bottom: 5mm; }
+    .lines thead { background: #f1f5f9; }
+    .lines th, .lines td { padding: 2.5mm 2mm; text-align: left; font-size: 8.5pt; border-bottom: 0.4pt solid #e2e8f0; vertical-align: top; }
+    .lines th { color: #334155; font-weight: bold; }
+    .lines .num { text-align: right; white-space: nowrap; }
+    .lines .col-n { width: 8mm; }
+    .lines .col-um { width: 12mm; }
+    .lines .col-q { width: 16mm; }
+    .lines .col-p { width: 24mm; }
+    .lines .col-iva { width: 16mm; }
+    .lines .col-imp { width: 24mm; }
+
+    .totals { width: 100%; border-collapse: collapse; margin-top: 5mm; }
+    .totals td { vertical-align: top; }
+    .totals .spacer { width: 60%; }
+    .totals .recap { width: 40%; }
+    .totals table { width: 100%; border-collapse: collapse; }
+    .totals table td { padding: 1.5mm 2mm; border-bottom: 0.4pt solid #e2e8f0; }
+    .totals .lbl { color: #64748b; }
+    .totals .val { text-align: right; font-weight: bold; color: #0f172a; }
+    .totals .total-row td { background: #0f172a; color: white; font-size: 11pt; border-bottom: none; }
+
+    .iva-detail { width: 60%; border-collapse: collapse; margin-top: 5mm; font-size: 8pt; }
+    .iva-detail th, .iva-detail td { padding: 1.5mm 2mm; border: 0.4pt solid #cbd5e1; text-align: left; }
+    .iva-detail th { background: #f1f5f9; }
+    .iva-detail .num { text-align: right; }
+
+    .scad { width: 100%; border-collapse: collapse; margin-top: 6mm; font-size: 8.5pt; }
+    .scad th, .scad td { padding: 2mm; border-bottom: 0.4pt solid #e2e8f0; text-align: left; }
+    .scad th { background: #f1f5f9; color: #334155; }
+    .scad .num { text-align: right; white-space: nowrap; }
+
+    .notes { margin-top: 6mm; padding: 3mm; background: #f8fafc; border-left: 2pt solid #64748b; font-size: 8.5pt; }
+
+    #footer-content { text-align: center; font-size: 7.5pt; color: #64748b; }
+  </style>
+</head>
+<body>
+
+<table class="hdr-table">
+  <tr>
+    <td class="logo-cell">
+      {% if azienda.logo %}
+        <img src="{{ azienda.logo.url }}" alt="Logo" />
+      {% else %}
+        <div class="brand">{{ azienda.ragione_sociale|default:'Azienda' }}</div>
+      {% endif %}
+      <div class="muted" style="margin-top: 2mm;">
+        {% if azienda.ragione_sociale and azienda.logo %}<strong>{{ azienda.ragione_sociale }}</strong><br/>{% endif %}
+        {{ azienda.indirizzo_legale }}<br/>
+        {{ azienda.cap_legale }} {{ azienda.comune_legale }} ({{ azienda.prov_legale }})<br/>
+        P.IVA {{ azienda.partita_iva|default:'—' }}
+        {% if azienda.codice_fiscale %} · C.F. {{ azienda.codice_fiscale }}{% endif %}<br/>
+        {% if azienda.email %}{{ azienda.email }}{% endif %}
+        {% if azienda.telefono %} · Tel. {{ azienda.telefono }}{% endif %}
+      </div>
+    </td>
+    <td class="doc-cell">
+      <div class="doc-title">FATTURA</div>
+      <div class="doc-meta">
+        N. <strong>{{ fattura.numero }}/{{ fattura.anno }}</strong><br/>
+        Data: <strong>{{ fattura.data_documento|date:'d/m/Y' }}</strong><br/>
+        Tipo: <strong>{{ fattura.tipo_documento }}</strong>
+      </div>
+    </td>
+  </tr>
+</table>
+
+<table class="parties">
+  <tr>
+    <td>
+      <div class="label">Cedente / prestatore</div>
+      <div class="name">{{ azienda.ragione_sociale|default:'—' }}</div>
+      {{ azienda.indirizzo_legale }}<br/>
+      {{ azienda.cap_legale }} {{ azienda.comune_legale }} {% if azienda.prov_legale %}({{ azienda.prov_legale }}){% endif %}<br/>
+      P.IVA {{ azienda.partita_iva|default:'—' }}
+      {% if azienda.profilo_fiscale %}
+        <br/>Regime: {{ azienda.profilo_fiscale.get_regime_fiscale_display }}
+      {% endif %}
+    </td>
+    <td>
+      <div class="label">Cessionario / committente</div>
+      {% if fattura.cliente %}
+        <div class="name">{{ fattura.cliente.ragione_sociale }}</div>
+        {{ fattura.cliente.indirizzo }}<br/>
+        {{ fattura.cliente.cap }} {{ fattura.cliente.citta }} {% if fattura.cliente.provincia %}({{ fattura.cliente.provincia }}){% endif %}<br/>
+        P.IVA {{ fattura.cliente.partita_iva|default:'—' }}
+        {% if fattura.cliente.codice_fiscale %} · C.F. {{ fattura.cliente.codice_fiscale }}{% endif %}
+        {% if fattura.cliente.codice_sdi %}<br/>SDI: {{ fattura.cliente.codice_sdi }}{% endif %}
+        {% if fattura.cliente.pec %}<br/>PEC: {{ fattura.cliente.pec }}{% endif %}
+      {% else %}
+        —
+      {% endif %}
+    </td>
+  </tr>
+</table>
+
+<table class="lines">
+  <thead>
+    <tr>
+      <th class="col-n">#</th>
+      <th>Descrizione</th>
+      <th class="col-um">UM</th>
+      <th class="col-q num">Q.tà</th>
+      <th class="col-p num">Prezzo</th>
+      <th class="col-iva num">IVA</th>
+      <th class="col-imp num">Imponibile</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for r in righe %}
+      <tr>
+        <td>{{ r.numero_riga|default:forloop.counter }}</td>
+        <td>
+          {% if r.articolo %}<strong>{{ r.articolo.codice }}</strong> {{ r.articolo.descrizione }}<br/>{% endif %}
+          {{ r.descrizione_libera|default:'' }}
+        </td>
+        <td>{{ r.um|default:'' }}</td>
+        <td class="num">{{ r.quantita }}</td>
+        <td class="num">{{ r.importo_unitario|floatformat:2 }} €</td>
+        <td class="num">{% if r.iva %}{{ r.iva.aliquota }}%{% else %}—{% endif %}</td>
+        <td class="num">{{ r.imponibile|floatformat:2 }} €</td>
+      </tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+<table class="totals">
+  <tr>
+    <td class="spacer">
+      {% if totals.iva_dettaglio %}
+        <table class="iva-detail">
+          <thead>
+            <tr>
+              <th>Aliquota</th>
+              <th>Natura</th>
+              <th class="num">Imponibile</th>
+              <th class="num">Imposta</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for iva in totals.iva_dettaglio %}
+              <tr>
+                <td>{{ iva.aliquota }}%</td>
+                <td>{{ iva.natura|default:'—' }}</td>
+                <td class="num">{{ iva.imponibile|floatformat:2 }} €</td>
+                <td class="num">{{ iva.imposta|floatformat:2 }} €</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      {% endif %}
+    </td>
+    <td class="recap">
+      <table>
+        <tr><td class="lbl">Imponibile lordo</td><td class="val">{{ totals.imponibile_lordo|floatformat:2 }} €</td></tr>
+        {% if totals.sconto %}
+          <tr><td class="lbl">Sconto</td><td class="val">- {{ totals.sconto|floatformat:2 }} €</td></tr>
+        {% endif %}
+        <tr><td class="lbl">Imponibile netto</td><td class="val">{{ totals.imponibile|floatformat:2 }} €</td></tr>
+        <tr><td class="lbl">IVA</td><td class="val">{{ totals.imposta_totale|floatformat:2 }} €</td></tr>
+        {% if totals.spese %}
+          <tr><td class="lbl">Spese</td><td class="val">{{ totals.spese|floatformat:2 }} €</td></tr>
+        {% endif %}
+        {% if totals.cassa_prev %}
+          <tr><td class="lbl">Cassa previdenziale</td><td class="val">{{ totals.cassa_prev|floatformat:2 }} €</td></tr>
+        {% endif %}
+        <tr class="total-row"><td class="lbl">TOTALE</td><td class="val">{{ totals.totale|floatformat:2 }} €</td></tr>
+      </table>
+    </td>
+  </tr>
+</table>
+
+{% if scadenze %}
+  <table class="scad">
+    <thead>
+      <tr>
+        <th>Scadenza</th>
+        <th>Modalità</th>
+        <th class="num">Importo</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for s in scadenze %}
+        <tr>
+          <td>{{ s.data|date:'d/m/Y' }}</td>
+          <td>{% if fattura.forme_pagamento %}{{ fattura.forme_pagamento.get_modalita_pagamento_display }}{% else %}—{% endif %}</td>
+          <td class="num">{{ s.importo|floatformat:2 }} €</td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+{% endif %}
+
+{% if fattura.note %}
+  <div class="notes"><strong>Note:</strong> {{ fattura.note|linebreaksbr }}</div>
+{% endif %}
+
+<div id="footer-content">
+  {% if azienda.contenuto_footer %}{{ azienda.contenuto_footer }}{% endif %}
+  {% if azienda.conti_correnti.all %}
+    <br/>{% with cc=azienda.conti_correnti.filter.first %}{% endwith %}
+  {% endif %}
+</div>
+
+</body>
+</html>

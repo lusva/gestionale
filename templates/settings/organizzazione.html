@@ -1,0 +1,30 @@
+{% extends 'settings/_settings_base.html' %}
+
+{% block title %}Impostazioni · Organizzazione{% endblock %}
+
+{% block settings_content %}
+<form method="post" class="card" style="padding: 24px;">
+  {% csrf_token %}
+  <div class="flex-between mb-16">
+    <div>
+      <div style="font: 600 16px var(--font-display);">Organizzazione</div>
+      <div style="font: 13px var(--font-body); color: var(--ink-3);">Aggiorna i dati del tuo studio / azienda</div>
+    </div>
+    <button type="submit" class="btn btn-brand">{% icon 'check' size=14 %} Salva</button>
+  </div>
+  <div class="grid grid-2" style="gap: 16px;">
+    <div class="field" style="grid-column: 1 / -1;">
+      <label>Nome organizzazione</label>
+      <input class="input" type="text" name="nome" value="{{ org.nome }}" />
+    </div>
+    <div class="field">
+      <label>Piano</label>
+      <input class="input" type="text" name="piano" value="{{ org.piano }}" />
+    </div>
+    <div class="field">
+      <label>Posti totali</label>
+      <input class="input mono" type="number" min="1" name="posti_totali" value="{{ org.posti_totali }}" />
+    </div>
+  </div>
+</form>
+{% endblock %}

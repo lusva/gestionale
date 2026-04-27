@@ -1,0 +1,62 @@
+{% extends 'base.html' %}
+{% load humanize %}
+
+{% block title %}{{ opp.titolo }}{% endblock %}
+{% block breadcrumb %}
+  <span class="sep">{% icon 'chevronRight' size=14 %}</span>
+  <a href="{% url 'opportunita:list' %}" style="color: inherit; text-decoration: none;">Opportunità</a>
+  <span class="sep">{% icon 'chevronRight' size=14 %}</span>
+  <span class="current">{{ opp.titolo|truncatechars:36 }}</span>
+{% endblock %}
+
+{% block content %}
+<div class="page">
+  <div class="page-header">
+    <div>
+      <h1 class="page-title">{{ opp.titolo }}</h1>
+      <p class="page-subtitle">
+        <a href="{{ opp.cliente.get_absolute_url }}" style="color: inherit;">{{ opp.cliente.ragione_sociale }}</a>
+        · {% stadio_badge opp.stadio opp.get_stadio_display %}
+      </p>
+    </div>
+    <div style="display: flex; gap: 8px;">
+      <a href="{% url 'opportunita:update' opp.pk %}" class="btn btn-ghost">{% icon 'edit' size=14 %} Modifica</a>
+      <a href="{% url 'opportunita:delete' opp.pk %}" class="btn btn-ghost" style="color: var(--danger);">{% icon 'trash' size=14 %}</a>
+    </div>
+  </div>
+
+  <div class="grid grid-3 mb-24">
+    <div class="card" style="padding: 18px;">
+      <div class="kpi-label">Valore</div>
+      <div style="font: 600 24px var(--font-display); margin-top: 6px;">{{ opp.valore|euro }}</div>
+    </div>
+    <div class="card" style="padding: 18px;">
+      <div class="kpi-label">Probabilità</div>
+      <div style="font: 600 24px var(--font-display); margin-top: 6px;">{{ opp.probabilita }}%</div>
+    </div>
+    <div class="card" style="padding: 18px;">
+      <div class="kpi-label">Chiusura prevista</div>
+      <div style="font: 600 18px var(--font-display); margin-top: 6px;">{{ opp.chiusura_prevista|date:'d M Y'|default:'—' }}</div>
+    </div>
+  </div>
+
+  <div class="grid" style="grid-template-columns: 1fr 320px; gap: 16px;">
+    <div class="card" style="padding: 20px;">
+      <div class="block-title">Descrizione</div>
+      <div style="font: 14px var(--font-body); color: var(--ink-2); white-space: pre-line;">
+        {{ opp.descrizione|default:'Nessuna descrizione' }}
+      </div>
+    </div>
+
+    <div class="card" style="padding: 20px;">
+      <div class="block-title">Dettagli</div>
+      <div style="display: flex; flex-direction: column; gap: 12px; font-size: 13px;">
+        <div><div style="color: var(--ink-3); font: 11px var(--font-body); text-transform: uppercase; margin-bottom: 2px;">Owner</div>{{ opp.owner.get_full_name|default:'—' }}</div>
+        <div><div style="color: var(--ink-3); font: 11px var(--font-body); text-transform: uppercase; margin-bottom: 2px;">Giorni in stadio</div>{{ opp.giorni_in_stadio }}g</div>
+        <div><div style="color: var(--ink-3); font: 11px var(--font-body); text-transform: uppercase; margin-bottom: 2px;">Creata</div>{{ opp.created_at|date:'d M Y, H:i' }}</div>
+        <div><div style="color: var(--ink-3); font: 11px var(--font-body); text-transform: uppercase; margin-bottom: 2px;">Aggiornata</div>{{ opp.updated_at|date:'d M Y, H:i' }}</div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

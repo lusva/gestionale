@@ -1,0 +1,65 @@
+{% extends 'base.html' %}
+
+{% block title %}{% if is_create %}Nuova opportunità{% else %}{{ object.titolo }}{% endif %}{% endblock %}
+{% block breadcrumb %}
+  <span class="sep">{% icon 'chevronRight' size=14 %}</span>
+  <a href="{% url 'opportunita:list' %}" style="color: inherit; text-decoration: none;">Opportunità</a>
+  <span class="sep">{% icon 'chevronRight' size=14 %}</span>
+  <span class="current">{% if is_create %}Nuova{% else %}{{ object.titolo|truncatechars:32 }}{% endif %}</span>
+{% endblock %}
+
+{% block content %}
+<div class="page" style="max-width: 900px; margin: 0 auto;">
+  <form method="post">
+    {% csrf_token %}
+    <div class="page-header">
+      <h1 class="page-title">{% if is_create %}Nuova opportunità{% else %}Modifica opportunità{% endif %}</h1>
+      <div style="display: flex; gap: 8px;">
+        <a href="{% url 'opportunita:list' %}" class="btn btn-ghost">Annulla</a>
+        <button type="submit" class="btn btn-brand">{% icon 'check' size=14 %} Salva</button>
+      </div>
+    </div>
+
+    {% if form.non_field_errors %}
+      <div class="callout warn mb-24"><div class="ico">{% icon 'x' size=14 %}</div><div>{{ form.non_field_errors }}</div></div>
+    {% endif %}
+
+    <div class="card" style="padding: 24px;">
+      <div class="grid grid-2" style="gap: 16px;">
+        <div class="field" style="grid-column: 1 / -1;">
+          <label>Titolo *</label>
+          {{ form.titolo }}{{ form.titolo.errors }}
+        </div>
+        <div class="field">
+          <label>Cliente *</label>
+          {{ form.cliente }}{{ form.cliente.errors }}
+        </div>
+        <div class="field">
+          <label>Stadio</label>
+          {{ form.stadio }}
+        </div>
+        <div class="field">
+          <label>Valore (€)</label>
+          {{ form.valore }}{{ form.valore.errors }}
+        </div>
+        <div class="field">
+          <label>Probabilità (%)</label>
+          {{ form.probabilita }}
+        </div>
+        <div class="field">
+          <label>Chiusura prevista</label>
+          {{ form.chiusura_prevista }}
+        </div>
+        <div class="field">
+          <label>Owner</label>
+          {{ form.owner }}
+        </div>
+        <div class="field" style="grid-column: 1 / -1;">
+          <label>Descrizione</label>
+          {{ form.descrizione }}
+        </div>
+      </div>
+    </div>
+  </form>
+</div>
+{% endblock %}

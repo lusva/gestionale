@@ -1,0 +1,67 @@
+{% with p=u.profile %}
+<tr id="user-row-{{ u.pk }}">
+  <td>
+    <div style="display: flex; align-items: center; gap: 10px;">
+      {% avatar p.iniziali|default:u.username|slice:':2' 'sm' 'brand' %}
+      <div>
+        <div style="font-weight: 500;">{{ u.get_full_name|default:u.username }}</div>
+        <div style="font: 11px var(--font-body); color: var(--ink-3);">{{ u.email|default:'—' }}</div>
+      </div>
+    </div>
+  </td>
+  <td>
+    <form hx-post="{% url 'settings:utente_cambia_ruolo' u.pk %}" hx-target="#user-row-{{ u.pk }}" hx-swap="outerHTML" hx-trigger="change from:find select">
+      {% csrf_token %}
+      <select class="select" name="ruolo" style="height: 30px; padding: 0 8px; font-size: 12px;">
+        {% for val, label in ruoli_choices %}
+          <option value="{{ val }}" {% if p.ruolo == val %}selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+      </select>
+    </form>
+  </td>
+  <td style="color: var(--ink-3);">
+    {% if u.last_login %}{{ u.last_login|timesince }} fa{% elif p.stato == 'invitato' %}Mai — invito in sospeso{% else %}Mai{% endif %}
+  </td>
+  <td>
+    {% if u.is_active and p.stato == 'attivo' %}
+      {% stato_badge 'attivo' 'Attivo' %}
+    {% elif p.stato == 'invitato' %}
+      {% stato_badge 'prospect' 'Invitato' %}
+    {% else %}
+      {% stato_badge 'inattivo' 'Sospeso' %}
+    {% endif %}
+  </td>
+  <td>
+    <div x-data="{ open: false }" style="position: relative;">
+      <button type="button" class="btn-icon" @click="open = !open">{% icon 'more' size=14 %}</button>
+      <div class="menu" x-show="open" @click.outside="open = false" x-cloak>
+        <a href="{% url 'admin:auth_user_change' u.pk %}">{% icon 'edit' size=13 %} Modifica</a>
+        {% if u.pk != request.user.pk %}
+          <div class="sep"></div>
+          <button type="button"
+                  hx-post="{% url 'settings:utente_toggle_attivo' u.pk %}"
+                  hx-target="#user-row-{{ u.pk }}"
+                  hx-swap="outerHTML"
+                  hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'>
+            {% if u.is_active %}
+              {% icon 'lock' size=13 %} Disattiva
+            {% else %}
+              {% icon 'check' size=13 %} Riattiva
+            {% endif %}
+          </button>
+          {% if request.user.is_superuser %}
+            <button type="button" class="danger"
+                    hx-post="{% url 'settings:utente_elimina' u.pk %}"
+                    hx-target="#user-row-{{ u.pk }}"
+                    hx-swap="outerHTML"
+                    hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'
+                    hx-confirm="Eliminare definitivamente l'utente {{ u.get_full_name|default:u.username|escapejs }}? L'operazione è irreversibile.">
+              {% icon 'trash' size=13 %} Elimina
+            </button>
+          {% endif %}
+        {% endif %}
+      </div>
+    </div>
+  </td>
+</tr>
+{% endwith %}

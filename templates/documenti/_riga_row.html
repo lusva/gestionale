@@ -1,0 +1,27 @@
+{# Una riga del formset (TestataFattura.righe). Usato sia nel render iniziale
+   che come template clonabile per "Aggiungi riga" via JS (sostituendo
+   __prefix__ con l'indice della nuova riga). #}
+<tr data-form-row>
+  {% for hidden in form.hidden_fields %}{{ hidden }}{% endfor %}
+  <td>{{ form.numero_riga }}</td>
+  <td>
+    <div style="display: flex; flex-direction: column; gap: 4px;">
+      {{ form.articolo }}
+      {{ form.descrizione_libera }}
+    </div>
+    {{ form.articolo.errors }}
+    {{ form.descrizione_libera.errors }}
+  </td>
+  <td>{{ form.quantita }}{{ form.quantita.errors }}</td>
+  <td>{{ form.um }}</td>
+  <td>{{ form.importo_unitario }}{{ form.importo_unitario.errors }}</td>
+  <td>{{ form.iva }}</td>
+  <td>
+    {% if form.DELETE %}
+      <label style="display: inline-flex; align-items: center;">
+        {{ form.DELETE }}
+        <span class="sr-only">Elimina</span>
+      </label>
+    {% endif %}
+  </td>
+</tr>

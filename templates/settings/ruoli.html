@@ -1,0 +1,44 @@
+{% extends 'settings/_settings_base.html' %}
+
+{% block title %}Impostazioni · Ruoli{% endblock %}
+
+{% block settings_content %}
+<div class="card" style="padding: 24px;">
+  <div style="font: 600 16px var(--font-display); margin-bottom: 8px;">Ruoli disponibili</div>
+  <p style="color: var(--ink-3); font-size: 13px; margin-bottom: 16px;">I ruoli determinano i permessi degli utenti. Puoi rivedere i dettagli nella matrice in basso.</p>
+  <div class="grid grid-3" style="gap: 12px;">
+    {% for val, label in ruoli %}
+      <div class="card" style="padding: 16px;">
+        <div style="font: 600 14px var(--font-display);">{{ label }}</div>
+        <div style="font: 11px var(--font-mono); color: var(--ink-3); margin-top: 4px;">{{ val }}</div>
+      </div>
+    {% endfor %}
+  </div>
+</div>
+
+<div class="card" style="padding: 24px;">
+  <div style="font: 600 15px var(--font-display); margin-bottom: 14px;">Matrice permessi</div>
+  <table class="tbl">
+    <thead>
+      <tr>
+        <th>Permesso</th>
+        <th style="text-align: center;">Amministratore</th>
+        <th style="text-align: center;">Account manager</th>
+        <th style="text-align: center;">Visualizzatore</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for name, vals in permessi_matrice %}
+        <tr>
+          <td style="font-weight: 500;">{{ name }}</td>
+          {% for v in vals %}
+            <td style="text-align: center;">
+              {% if v %}<span style="color: var(--success);">{% icon 'check' size=15 %}</span>{% else %}<span style="color: var(--ink-4);">—</span>{% endif %}
+            </td>
+          {% endfor %}
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

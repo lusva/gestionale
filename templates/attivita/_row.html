@@ -1,0 +1,24 @@
+{# Partial for HTMX toggle of a single row #}
+<tr id="attivita-{{ a.pk }}">
+  <td>
+    <form hx-post="{% url 'attivita:toggle' a.pk %}" hx-target="#attivita-{{ a.pk }}" hx-swap="outerHTML">
+      {% csrf_token %}
+      <button type="submit" class="btn-icon" style="color: {% if a.completata %}var(--success){% else %}var(--ink-4){% endif %};">
+        {% if a.completata %}{% icon 'check' size=16 %}{% else %}<span style="width:14px;height:14px;border-radius:50%;border:1.5px solid currentColor;display:inline-block"></span>{% endif %}
+      </button>
+    </form>
+  </td>
+  <td>
+    <div style="display: flex; align-items: center; gap: 8px;">
+      <span style="color: {{ a.color }};">{% icon a.icon size=14 %}</span>
+      <span style="{% if a.completata %}text-decoration: line-through; color: var(--ink-3);{% endif %}">{{ a.titolo }}</span>
+    </div>
+  </td>
+  <td>{% if a.cliente %}<a href="{{ a.cliente.get_absolute_url }}" style="color: inherit;">{{ a.cliente.ragione_sociale|truncatechars:30 }}</a>{% else %}—{% endif %}</td>
+  <td>{{ a.get_tipo_display }}</td>
+  <td>{{ a.data|date:'d M Y H:i' }}</td>
+  <td>
+    {% if a.owner %}{% with p=a.owner.profile %}{% avatar p.iniziali|default:a.owner.username|slice:':2' 'sm' 'brand' %}{% endwith %}{% else %}—{% endif %}
+  </td>
+  <td></td>
+</tr>

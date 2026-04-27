@@ -1,0 +1,60 @@
+{% extends 'settings/_settings_base.html' %}
+
+{% block title %}Impostazioni · Utenti{% endblock %}
+
+{% block settings_content %}
+<div class="card" style="padding: 24px;">
+  <div class="flex-between mb-16">
+    <div>
+      <div style="font: 600 16px var(--font-display);">Utenti del team</div>
+      <div style="font: 13px var(--font-body); color: var(--ink-3); margin-top: 2px;">
+        {{ active_count }} utenti attivi · {{ org.posti_totali }} posti disponibili nel piano {{ org.piano }}
+      </div>
+    </div>
+    <a href="{% url 'settings:utente_invita' %}" class="btn btn-brand">{% icon 'plus' size=14 %} Invita utente</a>
+  </div>
+
+  <table class="tbl">
+    <thead>
+      <tr><th>Nome</th><th>Ruolo</th><th>Ultimo accesso</th><th>Stato</th><th></th></tr>
+    </thead>
+    <tbody>
+      {% for u in users %}
+        {% include 'settings/_user_row.html' with u=u %}
+      {% empty %}
+        <tr><td colspan="5"><div class="empty">Nessun utente</div></td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<div class="card" style="padding: 24px;">
+  <div style="font: 600 15px var(--font-display); margin-bottom: 14px;">Permessi per ruolo</div>
+  <table class="tbl">
+    <thead>
+      <tr>
+        <th>Permesso</th>
+        <th style="text-align: center;">Amministratore</th>
+        <th style="text-align: center;">Account manager</th>
+        <th style="text-align: center;">Visualizzatore</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for name, vals in permessi_matrice %}
+        <tr>
+          <td style="font-weight: 500;">{{ name }}</td>
+          {% for v in vals %}
+            <td style="text-align: center;">
+              {% if v %}
+                <span style="color: var(--success);">{% icon 'check' size=15 %}</span>
+              {% else %}
+                <span style="color: var(--ink-4);">—</span>
+              {% endif %}
+            </td>
+          {% endfor %}
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

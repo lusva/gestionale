@@ -1,0 +1,30 @@
+{% extends 'base.html' %}
+
+{% block title %}Conferma eliminazione{% endblock %}
+{% block crumb_current %}Conferma{% endblock %}
+
+{% block content %}
+<div class="page" style="max-width: 540px;">
+  <div class="card" style="padding: 24px;">
+    <div style="display: flex; align-items: flex-start; gap: 14px; margin-bottom: 16px;">
+      <div style="width: 36px; height: 36px; border-radius: 8px; background: color-mix(in oklab, var(--danger) 15%, transparent); color: var(--danger); display: grid; place-items: center;">
+        {% icon 'trash' size=18 %}
+      </div>
+      <div>
+        <h1 style="font: 600 18px var(--font-display); margin: 0 0 4px;">Eliminare {{ object_label|default:object }}?</h1>
+        <p style="font: 13px var(--font-body); color: var(--ink-3); margin: 0;">
+          L'operazione è permanente. Le righe e le scadenze collegate verranno eliminate insieme al documento.
+        </p>
+      </div>
+    </div>
+
+    <form method="post" style="display: flex; gap: 8px; justify-content: flex-end;">
+      {% csrf_token %}
+      <a href="{{ back_url|default:'/documenti/fatture/' }}" class="btn btn-ghost">Annulla</a>
+      <button type="submit" class="btn" style="background: var(--danger); color: white; border-color: var(--danger);">
+        {% icon 'trash' size=14 %} Elimina definitivamente
+      </button>
+    </form>
+  </div>
+</div>
+{% endblock %}

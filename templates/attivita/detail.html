@@ -1,0 +1,17 @@
+{% extends 'base.html' %}
+{% block title %}{{ attivita.titolo }}{% endblock %}
+{% block content %}
+<div class="page" style="max-width: 720px; margin: 0 auto;">
+  <div class="page-header">
+    <div>
+      <h1 class="page-title">{{ attivita.titolo }}</h1>
+      <p class="page-subtitle">{{ attivita.get_tipo_display }} · {{ attivita.data|date:'d F Y, H:i' }}</p>
+    </div>
+    <a href="{% url 'attivita:update' attivita.pk %}" class="btn btn-ghost">{% icon 'edit' size=14 %} Modifica</a>
+  </div>
+  <div class="card" style="padding: 20px;">
+    <div class="block-title">Descrizione</div>
+    <div style="white-space: pre-line; color: var(--ink-2);">{{ attivita.descrizione|default:'Nessuna descrizione' }}</div>
+  </div>
+</div>
+{% endblock %}

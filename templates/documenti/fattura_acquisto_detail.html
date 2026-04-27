@@ -1,0 +1,202 @@
+{% extends 'base.html' %}
+{% load humanize %}
+
+{% block title %}Fattura acquisto {{ fattura.numero }}/{{ fattura.anno }}{% endblock %}
+{% block breadcrumb %}
+  <span class="sep">{% icon 'chevronRight' size=14 %}</span>
+  <a href="{% url 'documenti:fattura_acquisto_list' %}" style="color: inherit; text-decoration: none;">Fatture acquisto</a>
+  <span class="sep">{% icon 'chevronRight' size=14 %}</span>
+  <span class="current">{{ fattura.numero }}/{{ fattura.anno }}</span>
+{% endblock %}
+
+{% block content %}
+<div class="page">
+  <div class="page-header">
+    <div>
+      <h1 class="page-title">Fattura acquisto {{ fattura.numero }}/{{ fattura.anno }}</h1>
+      <p class="page-subtitle">
+        {% if fattura.fornitore %}{{ fattura.fornitore.ragione_sociale }}{% else %}—{% endif %}
+        · rif. <strong>{{ fattura.numero_fornitore|default:'—' }}</strong>
+        del {{ fattura.data_fornitore|date:'d/m/Y'|default:'—' }}
+        · {{ fattura.tipo_documento }}
+      </p>
+    </div>
+    <div style="display: flex; gap: 8px;">
+      {% if fattura.xml_originale %}
+        <a href="{{ fattura.xml_originale.url }}" target="_blank" class="btn btn-ghost">
+          {% icon 'download' size=14 %} XML originale
+        </a>
+      {% endif %}
+      {% if user_perms_map|get_item:'documenti.modifica' %}
+        {% if fattura.stato == 'bozza' %}
+          <form method="post" action="{% url 'documenti:fattura_acquisto_cambia_stato' fattura.pk %}" style="margin: 0;">
+            {% csrf_token %}
+            <input type="hidden" name="stato" value="confermata" />
+            <button type="submit" class="btn btn-brand">{% icon 'check' size=14 %} Conferma</button>
+          </form>
+        {% elif fattura.stato == 'confermata' %}
+          <form method="post" action="{% url 'documenti:fattura_acquisto_cambia_stato' fattura.pk %}" style="margin: 0;"
+                onsubmit="return confirm('Annullare la fattura?');">
+            {% csrf_token %}
+            <input type="hidden" name="stato" value="annullata" />
+            <button type="submit" class="btn btn-ghost" style="color: var(--danger);">
+              {% icon 'x' size=14 %} Annulla
+            </button>
+          </form>
+        {% endif %}
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="grid" style="grid-template-columns: 1fr 320px; gap: 24px;">
+    <div class="flex-col gap-16">
+
+      <div class="card" style="padding: 24px;">
+        <div class="section-title">Righe</div>
+        <table class="tbl" style="margin-top: 8px;">
+          <thead>
+            <tr>
+              <th style="width: 36px;">#</th>
+              <th>Descrizione</th>
+              <th>Categoria</th>
+              <th style="width: 70px;">UM</th>
+              <th style="text-align: right; width: 90px;">Q.tà</th>
+              <th style="text-align: right; width: 100px;">Prezzo</th>
+              <th style="text-align: right; width: 70px;">Sconto</th>
+              <th style="width: 80px;">IVA</th>
+              <th style="text-align: right; width: 110px;">Imponibile</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for r in righe %}
+              <tr>
+                <td class="mono">{{ r.numero_riga|default:forloop.counter }}</td>
+                <td>
+                  {% if r.articolo %}<strong>{{ r.articolo.codice }}</strong> {% endif %}
+                  {{ r.descrizione|default:'' }}
+                </td>
+                <td>
+                  {% if r.categoria_costo %}
+                    <span class="badge badge-info">{{ r.categoria_costo.codice }}</span>
+                  {% else %}—{% endif %}
+                </td>
+                <td>{{ r.um|default:'—' }}</td>
+                <td class="mono" style="text-align: right;">{{ r.quantita }}</td>
+                <td class="mono" style="text-align: right;">{{ r.prezzo_unitario|euro:4 }}</td>
+                <td class="mono" style="text-align: right;">{% if r.sconto_percentuale %}{{ r.sconto_percentuale }}%{% else %}—{% endif %}</td>
+                <td>{% if r.aliquota_iva %}{{ r.aliquota_iva.aliquota }}%{% else %}—{% endif %}</td>
+                <td class="mono" style="text-align: right; font-weight: 500;">{{ r.imponibile|euro:2 }}</td>
+              </tr>
+            {% empty %}
+              <tr><td colspan="9" style="text-align: center; color: var(--ink-4); padding: 16px;">Nessuna riga</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+
+      <div class="card" style="padding: 24px;">
+        <div class="section-title">Scadenze e pagamenti</div>
+        <table class="tbl" style="margin-top: 8px;">
+          <thead>
+            <tr>
+              <th>Scadenza</th>
+              <th>Modalità</th>
+              <th>IBAN</th>
+              <th style="text-align: right;">Importo</th>
+              <th style="text-align: right;">Pagato</th>
+              <th style="text-align: right;">Residuo</th>
+              <th>Stato</th>
+              <th style="width: 56px;"></th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for s in scadenze %}
+              <tr>
+                <td>{{ s.data_scadenza|date:'d/m/Y' }}</td>
+                <td>{{ s.modalita_pagamento|default:'—' }}</td>
+                <td class="mono" style="font: 11px var(--font-mono); color: var(--ink-3);">{{ s.iban|default:'—' }}</td>
+                <td class="mono" style="text-align: right;">{{ s.importo|euro:2 }}</td>
+                <td class="mono" style="text-align: right; color: var(--success);">{{ s.importo_pagato|euro:2 }}</td>
+                <td class="mono" style="text-align: right; color: var(--danger); font-weight: 500;">{{ s.importo_residuo|euro:2 }}</td>
+                <td>
+                  {% if s.stato == 'pagata' %}<span class="badge badge-success">Pagata</span>
+                  {% elif s.stato == 'parziale' %}<span class="badge badge-warn">Parziale</span>
+                  {% else %}<span class="badge badge-neutral">Aperta</span>{% endif %}
+                </td>
+                <td>
+                  {% if user_perms_map|get_item:'documenti.modifica' and s.importo_residuo > 0 %}
+                    <details>
+                      <summary class="btn-icon" style="cursor: pointer;">{% icon 'plus' size=14 %}</summary>
+                      <form method="post" action="{% url 'documenti:pagamento_acquisto_create' s.pk %}"
+                            style="position: absolute; right: 24px; background: var(--surface); padding: 12px; border: 1px solid var(--border); border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); z-index: 10; min-width: 240px;">
+                        {% csrf_token %}
+                        <div class="field" style="margin-bottom: 8px;">
+                          <label style="font: 11px var(--font-body);">Data</label>
+                          <input class="input" type="date" name="data_pagamento" value="{{ today|date:'Y-m-d' }}" />
+                        </div>
+                        <div class="field" style="margin-bottom: 8px;">
+                          <label style="font: 11px var(--font-body);">Importo</label>
+                          <input class="input mono" type="number" step="0.01" name="importo" value="{{ s.importo_residuo|stringformat:'.2f' }}" />
+                        </div>
+                        <button type="submit" class="btn btn-brand" style="width: 100%;">Registra</button>
+                      </form>
+                    </details>
+                  {% endif %}
+                </td>
+              </tr>
+              {% for p in s.pagamenti.all %}
+                <tr style="background: var(--surface-2); font: 12px var(--font-body); color: var(--ink-3);">
+                  <td colspan="2" style="padding-left: 32px;">
+                    {% icon 'check' size=12 %} pagamento del {{ p.data_pagamento|date:'d/m/Y' }}
+                  </td>
+                  <td colspan="3"></td>
+                  <td colspan="2" class="mono" style="text-align: right;">{{ p.importo|euro:2 }}</td>
+                  <td></td>
+                </tr>
+              {% endfor %}
+            {% empty %}
+              <tr><td colspan="8" style="text-align: center; color: var(--ink-4); padding: 16px;">Nessuna scadenza</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+
+      {% if fattura.note %}
+        <div class="card" style="padding: 24px;">
+          <div class="section-title">Note</div>
+          <div style="white-space: pre-line; font: 13px var(--font-body); color: var(--ink-2);">{{ fattura.note }}</div>
+        </div>
+      {% endif %}
+    </div>
+
+    <div class="flex-col gap-16">
+      <div class="card" style="padding: 18px;">
+        <div style="font: 600 14px var(--font-display); margin-bottom: 12px;">Totali</div>
+        <div style="display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid var(--border);">
+          <span style="color: var(--ink-3);">Imponibile</span>
+          <span class="mono" style="font-weight: 500;">{{ fattura.imponibile|euro:2 }}</span>
+        </div>
+        <div style="display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid var(--border);">
+          <span style="color: var(--ink-3);">IVA</span>
+          <span class="mono" style="font-weight: 500;">{{ fattura.imposta|euro:2 }}</span>
+        </div>
+        <div style="display: flex; justify-content: space-between; padding: 8px 0; font-weight: 600;">
+          <span>Totale</span>
+          <span class="mono">{{ fattura.totale_documento|euro:2 }}</span>
+        </div>
+      </div>
+
+      <div class="card" style="padding: 18px;">
+        <div style="font: 600 14px var(--font-display); margin-bottom: 12px;">Stato pagamento</div>
+        <div style="margin-bottom: 8px;">
+          {% if fattura.pagata %}
+            <span class="badge badge-success">Pagata{% if fattura.data_pagamento %} il {{ fattura.data_pagamento|date:'d/m/Y' }}{% endif %}</span>
+          {% else %}
+            <span class="badge badge-warn">Da pagare</span>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

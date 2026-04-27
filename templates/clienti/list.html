@@ -1,0 +1,89 @@
+{% extends 'base.html' %}
+{% load humanize %}
+
+{% block title %}Clienti{% endblock %}
+{% block crumb_current %}Clienti{% endblock %}
+
+{% block content %}
+<div class="page">
+  <div class="page-header">
+    <div>
+      <h1 class="page-title">Clienti</h1>
+      <p class="page-subtitle">{{ tot_clienti|intcomma }} clienti totali · {{ tot_nuovi_mese }} aggiunti questo mese</p>
+    </div>
+    <div style="display: flex; gap: 8px;">
+      {% if user_perms_map|get_item:'clienti.importa' %}
+        <a href="{% url 'clienti:import_csv' %}" class="btn btn-ghost">{% icon 'upload' size=14 %} Importa CSV</a>
+      {% endif %}
+      {% if user_perms_map|get_item:'clienti.esporta' %}
+        <a href="{% url 'clienti:export_csv' %}?{{ request.GET.urlencode }}" class="btn btn-ghost">{% icon 'download' size=14 %} Esporta</a>
+      {% endif %}
+      {% if user_perms_map|get_item:'clienti.modifica' %}
+        <a href="{% url 'clienti:create' %}" class="btn btn-brand">{% icon 'plus' size=14 %} Nuovo cliente</a>
+      {% endif %}
+    </div>
+  </div>
+
+  <form method="get" class="filters" id="clienti-filters">
+    <div class="search" style="flex: 0 0 280px; max-width: none;">
+      {% icon 'search' size=14 %}
+      <input type="search" name="q" value="{{ q }}" placeholder="Cerca per nome, P.IVA, email…" />
+    </div>
+
+    {% for stato in stati_attivi %}
+      <label class="filter-chip active" style="cursor: pointer;">
+        Stato: {{ stato|title }}
+        <input type="hidden" name="stato" value="{{ stato }}" />
+        <button type="button" class="x" aria-label="Rimuovi" onclick="this.closest('label').remove(); this.closest('form').requestSubmit();">{% icon 'x' size=12 %}</button>
+      </label>
+    {% endfor %}
+    {% for slug in settori_attivi %}
+      <label class="filter-chip active" style="cursor: pointer;">
+        Settore: {{ slug }}
+        <input type="hidden" name="settore" value="{{ slug }}" />
+        <button type="button" class="x" aria-label="Rimuovi" onclick="this.closest('label').remove(); this.closest('form').requestSubmit();">{% icon 'x' size=12 %}</button>
+      </label>
+    {% endfor %}
+
+    <div style="position: relative;" x-data="{ open: false }">
+      <button type="button" class="filter-chip" @click="open = !open">
+        {% icon 'plus' size=12 %} Aggiungi filtro
+      </button>
+      <div class="menu" x-show="open" @click.outside="open = false" x-cloak style="left: 0; right: auto; min-width: 240px; max-height: 320px; overflow-y: auto;">
+        <div style="padding: 8px 10px; font: 500 11px var(--font-body); text-transform: uppercase; letter-spacing: 0.05em; color: var(--ink-3);">Stato</div>
+        {% for val, label in stati_choices %}
+          <button type="button" onclick="addFilter('stato', '{{ val }}')">{% if val in stati_attivi %}{% icon 'check' size=13 %}{% endif %} {{ label }}</button>
+        {% endfor %}
+        <div class="sep"></div>
+        <div style="padding: 8px 10px; font: 500 11px var(--font-body); text-transform: uppercase; letter-spacing: 0.05em; color: var(--ink-3);">Settore</div>
+        {% for settore in settori_choices %}
+          <button type="button" onclick="addFilter('settore', '{{ settore.slug }}')">{% if settore.slug in settori_attivi %}{% icon 'check' size=13 %}{% endif %} {{ settore.nome }}</button>
+        {% empty %}
+          <div style="padding: 8px 10px; font: 12px var(--font-body); color: var(--ink-4);">Nessun settore disponibile</div>
+        {% endfor %}
+      </div>
+    </div>
+
+    <div style="margin-left: auto; display: flex; gap: 4px; align-items: center;">
+      <span style="font: 12px var(--font-body); color: var(--ink-3);">
+        {{ page_obj.start_index|default:0 }}–{{ page_obj.end_index|default:0 }} di {{ paginator.count|intcomma }}
+      </span>
+      <button type="button" class="btn-icon" title="Filtro">{% icon 'filter' size=14 %}</button>
+    </div>
+
+    <script>
+      function addFilter(kind, value) {
+        const form = document.getElementById('clienti-filters');
+        const input = document.createElement('input');
+        input.type = 'hidden';
+        input.name = kind;
+        input.value = value;
+        form.appendChild(input);
+        form.requestSubmit();
+      }
+    </script>
+  </form>
+
+  {% include 'clienti/_list_table.html' %}
+</div>
+{% endblock %}

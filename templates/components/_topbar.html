@@ -1,0 +1,73 @@
+{% load static %}
+<header class="topbar">
+  <button class="btn-icon" type="button" onclick="toggleSidebar()" style="display: none;" aria-label="Toggle menu">{% icon 'menu' size=18 %}</button>
+
+  <nav class="breadcrumb">
+    <span>{{ org_suborg }}</span>
+    {% block breadcrumb %}
+      <span class="sep">{% icon 'chevronRight' size=14 %}</span>
+      <span class="current">{% block crumb_current %}{{ active_nav|title|default:'' }}{% endblock %}</span>
+    {% endblock %}
+  </nav>
+
+  <div class="search">
+    {% icon 'search' size=14 %}
+    <form action="{% url 'search:cerca' %}" method="get" style="margin: 0;">
+      <input type="search" name="q" placeholder="Cerca clienti, opportunità, contatti, attività…" />
+    </form>
+    <kbd>⌘K</kbd>
+  </div>
+
+  <div style="display: flex; align-items: center; gap: 8px; margin-left: auto;" x-data="{ menuOpen: false, themeOpen: false }">
+    <div style="position: relative;">
+      <button class="btn-icon" type="button" @click="themeOpen = !themeOpen; menuOpen = false" title="Aspetto">{% icon 'sun' size=16 %}</button>
+      <div class="menu" x-show="themeOpen" @click.outside="themeOpen = false" x-cloak style="min-width: 220px;">
+        <div style="padding: 8px 10px; font: 500 11px var(--font-body); text-transform: uppercase; letter-spacing: 0.05em; color: var(--ink-3);">Tema</div>
+        <div style="padding: 0 10px 8px;">
+          <div class="toggle-group" style="width: 100%;">
+            <button type="button" class="{% if ui_theme == 'light' %}active{% endif %}" style="flex: 1;" onclick="UI.setTheme('light')">Chiaro</button>
+            <button type="button" class="{% if ui_theme == 'dark' %}active{% endif %}" style="flex: 1;" onclick="UI.setTheme('dark')">Scuro</button>
+          </div>
+        </div>
+        <div style="padding: 4px 10px; font: 500 11px var(--font-body); text-transform: uppercase; letter-spacing: 0.05em; color: var(--ink-3);">Densità</div>
+        <div style="padding: 0 10px 10px;">
+          <div class="toggle-group" style="width: 100%;">
+            <button type="button" class="{% if ui_density == 'compact' %}active{% endif %}" style="flex: 1;" onclick="UI.setDensity('compact')">Compatta</button>
+            <button type="button" class="{% if ui_density == 'normal' %}active{% endif %}" style="flex: 1;" onclick="UI.setDensity('normal')">Normale</button>
+            <button type="button" class="{% if ui_density == 'comfy' %}active{% endif %}" style="flex: 1;" onclick="UI.setDensity('comfy')">Comoda</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <button class="btn-icon" type="button" title="Notifiche">{% icon 'bell' size=16 %}</button>
+
+    <div style="position: relative;">
+      <button class="btn-icon" type="button" @click="menuOpen = !menuOpen; themeOpen = false" style="padding: 0;" aria-label="Menu utente">
+        {% if user.is_authenticated %}
+          {% avatar user.profile.iniziali|default:user.username|slice:':2' 'sm' 'brand' %}
+        {% else %}
+          {% icon 'user' size=16 %}
+        {% endif %}
+      </button>
+      <div class="menu" x-show="menuOpen" @click.outside="menuOpen = false" x-cloak>
+        {% if user.is_authenticated %}
+          <div style="padding: 8px 10px; font: 500 13px var(--font-body); color: var(--ink);">{{ user.get_full_name|default:user.username }}</div>
+          <div style="padding: 0 10px 8px; font: 11px var(--font-body); color: var(--ink-3);">{{ user.email }}</div>
+          <div class="sep"></div>
+          <a href="{% url 'settings:utenti' %}">{% icon 'settings' size=14 %} Impostazioni</a>
+          <a href="{% url 'admin:index' %}">{% icon 'lock' size=14 %} Admin</a>
+          <div class="sep"></div>
+          <form action="{% url 'accounts:logout' %}" method="post">
+            {% csrf_token %}
+            <button type="submit" class="danger">{% icon 'logout' size=14 %} Esci</button>
+          </form>
+        {% else %}
+          <a href="{% url 'accounts:login' %}">Accedi</a>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</header>
+
+<style>[x-cloak] { display: none !important; }</style>

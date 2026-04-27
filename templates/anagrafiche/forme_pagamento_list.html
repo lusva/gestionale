@@ -1,0 +1,89 @@
+{% extends 'base.html' %}
+
+{% block title %}Forme di pagamento{% endblock %}
+{% block crumb_current %}Forme di pagamento{% endblock %}
+
+{% block content %}
+<div class="page">
+  <div class="page-header">
+    <div>
+      <h1 class="page-title">Forme di pagamento</h1>
+      <p class="page-subtitle">Modalità + scadenze (% sul totale e giorni)</p>
+    </div>
+    <div style="display: flex; gap: 8px;">
+      {% if user_perms_map|get_item:'clienti.modifica' %}
+        <a href="{% url 'anagrafiche:forma_pagamento_create' %}" class="btn btn-brand">{% icon 'plus' size=14 %} Nuova</a>
+      {% endif %}
+    </div>
+  </div>
+
+  <form method="get" class="filters">
+    <div class="search" style="flex: 0 0 320px;">
+      {% icon 'search' size=14 %}
+      <input type="search" name="q" value="{{ q }}" placeholder="Cerca per nome…" />
+    </div>
+  </form>
+
+  <div class="card" style="border-top-left-radius: 0; border-top-right-radius: 0; overflow: hidden;">
+    <table class="tbl">
+      <thead>
+        <tr>
+          <th>Tipo pagamento</th>
+          <th style="width: 130px;">Modalità SDI</th>
+          <th style="width: 200px;">Scadenze</th>
+          <th style="width: 100px;">CC cliente</th>
+          <th style="width: 60px;"></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for fp in forme %}
+          <tr>
+            <td><strong>{{ fp.tipo_pagamento|default:'(senza nome)' }}</strong></td>
+            <td class="mono">{{ fp.modalita_pagamento }}</td>
+            <td>
+              {% for s in fp.scadenze.all %}
+                <div style="font: 12px var(--font-body); color: var(--ink-2);">
+                  {{ s.numero_giorni }}gg{% if s.fine_mese %} fm+{{ s.numero_giorni_fm }}{% endif %} → {{ s.percentuale }}%
+                </div>
+              {% empty %}
+                <span style="color: var(--ink-4);">—</span>
+              {% endfor %}
+            </td>
+            <td>
+              {% if fp.conto_corrente_cliente %}
+                <span class="badge badge-success">Sì</span>
+              {% else %}
+                <span class="badge badge-neutral">No</span>
+              {% endif %}
+            </td>
+            <td>
+              <div x-data="{ open: false }" style="position: relative;">
+                <button type="button" class="btn-icon" @click.stop="open = !open">{% icon 'more' size=14 %}</button>
+                <div class="menu" x-show="open" @click.outside="open = false" x-cloak>
+                  {% if user_perms_map|get_item:'clienti.modifica' %}
+                    <a href="{% url 'anagrafiche:forma_pagamento_update' fp.pk %}">{% icon 'edit' size=13 %} Modifica</a>
+                  {% endif %}
+                  {% if user_perms_map|get_item:'clienti.elimina' %}
+                    <div class="sep"></div>
+                    <a href="{% url 'anagrafiche:forma_pagamento_delete' fp.pk %}" class="danger">{% icon 'trash' size=13 %} Elimina</a>
+                  {% endif %}
+                </div>
+              </div>
+            </td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="5">
+            <div class="empty">
+              <div class="ico">{% icon 'list' size=20 %}</div>
+              <div style="font: 500 14px var(--font-body);">Nessuna forma di pagamento</div>
+              {% if user_perms_map|get_item:'clienti.modifica' %}
+                <a href="{% url 'anagrafiche:forma_pagamento_create' %}" class="btn btn-brand" style="margin-top: 8px;">{% icon 'plus' size=14 %} Crea la prima</a>
+              {% endif %}
+            </div>
+          </td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

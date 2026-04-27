@@ -1,0 +1,132 @@
+{% extends 'base.html' %}
+{% load humanize %}
+
+{% block title %}Dashboard{% endblock %}
+{% block crumb_current %}Dashboard{% endblock %}
+
+{% block content %}
+<div class="page">
+  <div class="page-header">
+    <div>
+      <h1 class="page-title">Buongiorno, {{ user_name }} 👋</h1>
+      <p class="page-subtitle">Ecco un riepilogo della tua attività — {{ today|date:'l d F Y' }}</p>
+    </div>
+    <div style="display: flex; gap: 8px;">
+      <a href="#" class="btn btn-ghost">{% icon 'download' size=14 %} Esporta</a>
+      <a href="{% url 'clienti:create' %}" class="btn btn-brand">{% icon 'plus' size=14 %} Nuovo cliente</a>
+    </div>
+  </div>
+
+  <div class="grid grid-4 mb-24">
+    <div class="kpi accent">
+      <div class="kpi-label">Clienti attivi</div>
+      <div class="kpi-value">{{ kpi_clienti_attivi|intcomma }}</div>
+      <div class="kpi-delta up">{% icon 'trendUp' size=12 %} +{{ kpi_clienti_new_month }} questo mese</div>
+      <div class="kpi-spark">{% sparkline spark_clienti %}</div>
+    </div>
+    <div class="kpi">
+      <div class="kpi-label">Opportunità aperte</div>
+      <div class="kpi-value">{{ kpi_opp_aperte|intcomma }}</div>
+      <div class="kpi-delta up">{% icon 'trendUp' size=12 %} Pipeline attiva</div>
+      <div class="kpi-spark">{% sparkline spark_opp %}</div>
+    </div>
+    <div class="kpi accent">
+      <div class="kpi-label">Fatturato MTD</div>
+      <div class="kpi-value">{{ kpi_fatturato_mtd|euro_compact }}</div>
+      <div class="kpi-delta {% if kpi_fatturato_delta_pct >= 0 %}up{% else %}down{% endif %}">
+        {% if kpi_fatturato_delta_pct >= 0 %}{% icon 'trendUp' size=12 %}+{% else %}{% icon 'trendDown' size=12 %}{% endif %}{{ kpi_fatturato_delta_pct }}% vs. mese prec.
+      </div>
+      <div class="kpi-spark">{% sparkline spark_fatturato %}</div>
+    </div>
+    <div class="kpi">
+      <div class="kpi-label">Tasso di chiusura</div>
+      <div class="kpi-value">{{ kpi_tasso_chiusura }}%</div>
+      <div class="kpi-delta down">{% icon 'trendDown' size=12 %} vs. trim. scorso</div>
+      <div class="kpi-spark">{% sparkline spark_chiusura up=False %}</div>
+    </div>
+  </div>
+
+  {% if doc_kpi %}
+    <div class="grid grid-4 mb-24">
+      <div class="kpi" style="border-left: 3px solid var(--brand-teal);">
+        <div class="kpi-label">Fatturato fatturato (mese)</div>
+        <div class="kpi-value">{{ doc_kpi.fatt_mese|euro_compact }}</div>
+        <a href="{% url 'documenti:dashboard' %}" class="kpi-delta" style="color: var(--brand-teal); text-decoration: none;">Vai alla dashboard documenti →</a>
+      </div>
+      <div class="kpi" style="border-left: 3px solid var(--danger);">
+        <div class="kpi-label">Crediti scaduti</div>
+        <div class="kpi-value">{{ doc_kpi.ar_scaduto|euro_compact }}</div>
+        <a href="{% url 'documenti:scadenziario_attivo' %}" class="kpi-delta" style="color: var(--danger); text-decoration: none;">Scadenziario attivo →</a>
+      </div>
+      <div class="kpi" style="border-left: 3px solid var(--warn);">
+        <div class="kpi-label">Debiti scaduti</div>
+        <div class="kpi-value">{{ doc_kpi.ap_scaduto|euro_compact }}</div>
+        <a href="{% url 'documenti:scadenziario_passivo' %}" class="kpi-delta" style="color: var(--warn); text-decoration: none;">Scadenziario passivo →</a>
+      </div>
+      <div class="kpi">
+        <div class="kpi-label">Fatture da pagare</div>
+        <div class="kpi-value">{{ doc_kpi.fatture_da_pagare }}</div>
+        <a href="{% url 'documenti:fattura_list' %}?pagata=no" class="kpi-delta" style="color: var(--ink-3); text-decoration: none;">Vedi tutte →</a>
+      </div>
+    </div>
+  {% endif %}
+
+  <div class="grid mb-24" style="grid-template-columns: 2fr 1fr;">
+    <div class="card" style="padding: 20px;">
+      <div class="flex-between mb-16">
+        <div>
+          <div style="font: 500 11px var(--font-body); letter-spacing: 0.05em; text-transform: uppercase; color: var(--ink-3);">Fatturato {{ today|date:'Y' }}</div>
+          <div style="font: 600 22px var(--font-display); margin-top: 4px;">
+            {{ fatturato_anno|euro_compact }}
+          </div>
+        </div>
+        <div style="display: flex; gap: 4px;">
+          <button type="button" class="btn btn-subtle" style="height: 28px; padding: 0 10px; font-size: 12px;">Mese</button>
+          <button type="button" class="btn btn-ghost" style="height: 28px; padding: 0 10px; font-size: 12px; background: var(--surface-2); color: var(--ink);">Anno</button>
+        </div>
+      </div>
+      {% include 'components/_barchart.html' with bars=bar_data labels=bar_labels %}
+    </div>
+
+    <div class="card" style="padding: 20px;">
+      <div class="flex-between mb-16">
+        <div style="font: 600 15px var(--font-display);">Attività recente</div>
+        <button type="button" class="btn-icon">{% icon 'more' size=14 %}</button>
+      </div>
+      <div style="padding: 4px;">
+        {% for a in recent_activity %}
+          <div style="display: flex; gap: 12px; padding: 10px 4px; {% if not forloop.last %}border-bottom: 1px solid var(--border);{% endif %}">
+            <div style="width: 28px; height: 28px; border-radius: 8px; background: var(--surface-2); color: {{ a.color }}; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0;">
+              {% icon a.icon size=13 %}
+            </div>
+            <div style="flex: 1; min-width: 0;">
+              <div style="font: 13px var(--font-body); color: var(--ink-2);">
+                {% if a.owner %}<strong style="color: var(--ink); font-weight: 500;">{{ a.owner.get_short_name|default:a.owner.username }}</strong> — {% endif %}
+                <strong style="color: var(--ink); font-weight: 500;">{{ a.titolo }}</strong>
+                {% if a.cliente %}<span style="color: var(--ink-3);"> · {{ a.cliente.ragione_sociale|truncatechars:28 }}</span>{% endif %}
+              </div>
+              <div style="font: 11px var(--font-body); color: var(--ink-4); margin-top: 2px;">{{ a.created_at|timesince }} fa</div>
+            </div>
+          </div>
+        {% empty %}
+          <div class="empty" style="padding: 24px;"><div class="ico">{% icon 'clock' size=18 %}</div>Nessuna attività recente</div>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+
+  <div class="mb-24">
+    <div class="flex-between mb-16">
+      <div>
+        <div style="font: 600 17px var(--font-display);">Pipeline commerciale</div>
+        <div style="font: 13px var(--font-body); color: var(--ink-3); margin-top: 2px;">
+          {{ pipeline_count }} opportunità · valore totale {{ pipeline_total|euro }}
+        </div>
+      </div>
+      <a href="{% url 'opportunita:list' %}" class="btn btn-ghost">Vedi tutte {% icon 'arrowRight' size=14 %}</a>
+    </div>
+
+    {% include 'opportunita/_pipeline_board.html' %}
+  </div>
+</div>
+{% endblock %}

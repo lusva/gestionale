@@ -1,0 +1,14 @@
+{% extends 'settings/_settings_base.html' %}
+{% block title %}Impostazioni · {{ placeholder_titolo }}{% endblock %}
+
+{% block settings_content %}
+<div class="card" style="padding: 48px; text-align: center;">
+  <div class="ico" style="width:48px;height:48px;margin:0 auto 12px;border-radius:14px;background:var(--surface-2);display:inline-flex;align-items:center;justify-content:center;color:var(--ink-3);">
+    {% icon 'settings' size=22 %}
+  </div>
+  <div style="font: 600 16px var(--font-display); margin-bottom: 6px;">{{ placeholder_titolo }}</div>
+  <div style="font: 13px var(--font-body); color: var(--ink-3); max-width: 400px; margin: 0 auto;">
+    Questa sezione non è ancora configurata. Sarà disponibile in una prossima versione.
+  </div>
+</div>
+{% endblock %}

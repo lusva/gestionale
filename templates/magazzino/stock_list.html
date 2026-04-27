@@ -1,0 +1,78 @@
+{% extends 'base.html' %}
+{% load humanize %}
+
+{% block title %}Magazzino{% endblock %}
+{% block crumb_current %}Magazzino{% endblock %}
+
+{% block content %}
+<div class="page">
+  <div class="page-header">
+    <div>
+      <h1 class="page-title">Magazzino</h1>
+      <p class="page-subtitle">
+        {{ tot_articoli }} articoli movimentati
+        · {{ tot_movimenti|intcomma }} movimenti registrati
+      </p>
+    </div>
+  </div>
+
+  <form method="get" class="filters">
+    <div class="search" style="flex: 0 0 320px;">
+      {% icon 'search' size=14 %}
+      <input type="search" name="q" value="{{ q }}" placeholder="Codice o descrizione articolo…" />
+    </div>
+  </form>
+
+  <div class="card" style="border-top-left-radius: 0; border-top-right-radius: 0; overflow: hidden;">
+    <table class="tbl">
+      <thead>
+        <tr>
+          <th>Articolo</th>
+          <th style="width: 60px;">UM</th>
+          <th style="text-align: right; width: 90px;">Carico</th>
+          <th style="text-align: right; width: 90px;">Scarico</th>
+          <th style="text-align: right; width: 110px;">Magazzino</th>
+          <th style="text-align: right; width: 90px;">Impegnato</th>
+          <th style="text-align: right; width: 90px;">Offerto</th>
+          <th style="text-align: right; width: 110px;">Impegno</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in stock_rows %}
+          <tr>
+            <td>
+              <div style="font: 500 13px var(--font-body);">{{ row.articolo.codice }}</div>
+              <div style="font: 11px var(--font-body); color: var(--ink-3);">{{ row.articolo.descrizione|default:'—' }}</div>
+            </td>
+            <td>{{ row.articolo.um|default:'—' }}</td>
+            <td class="mono" style="text-align: right; color: var(--ink-3);">{{ row.carico }}</td>
+            <td class="mono" style="text-align: right; color: var(--ink-3);">{{ row.scarico }}</td>
+            <td class="mono" style="text-align: right; font-weight: 500;
+              {% if row.magazzino < 0 %}color: var(--danger);{% elif row.magazzino == 0 %}color: var(--ink-3);{% endif %}">
+              {{ row.magazzino }}
+            </td>
+            <td class="mono" style="text-align: right; color: var(--ink-3);">{{ row.impegnato }}</td>
+            <td class="mono" style="text-align: right; color: var(--ink-3);">{{ row.offerto }}</td>
+            <td class="mono" style="text-align: right; font-weight: 500;
+              {% if row.impegno > 0 %}color: var(--warn);{% endif %}">
+              {{ row.impegno }}
+            </td>
+          </tr>
+        {% empty %}
+          <tr>
+            <td colspan="8">
+              <div class="empty">
+                <div class="ico">{% icon 'grid' size=20 %}</div>
+                <div style="font: 500 14px var(--font-body); margin-bottom: 4px;">Nessun movimento</div>
+                <div style="font: 12px var(--font-body); color: var(--ink-4);">
+                  Crea DDT fornitore o fattura con articoli per generare i primi movimenti.
+                </div>
+              </div>
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,181 @@
+{% extends 'base.html' %}
+
+{% block title %}{% if is_create %}Nuovo cliente{% else %}Modifica {{ cliente.ragione_sociale }}{% endif %}{% endblock %}
+{% block breadcrumb %}
+  <span class="sep">{% icon 'chevronRight' size=14 %}</span>
+  <a href="{% url 'clienti:list' %}" style="color: inherit; text-decoration: none;">Clienti</a>
+  <span class="sep">{% icon 'chevronRight' size=14 %}</span>
+  <span class="current">{% if is_create %}Nuovo{% else %}{{ object.ragione_sociale|truncatechars:32 }}{% endif %}</span>
+{% endblock %}
+
+{% block content %}
+<form method="post" enctype="multipart/form-data" class="page" x-data="pivaForm()">
+  {% csrf_token %}
+  <div class="page-header">
+    <div>
+      <h1 class="page-title">{% if is_create %}Nuovo cliente{% else %}{{ object.ragione_sociale }}{% endif %}</h1>
+      <p class="page-subtitle">Compila i campi obbligatori (*) per salvare l'anagrafica</p>
+    </div>
+    <div style="display: flex; gap: 8px;">
+      <a href="{% url 'clienti:list' %}" class="btn btn-ghost">Annulla</a>
+      <button type="submit" class="btn btn-brand">{% icon 'check' size=14 %} {% if is_create %}Salva cliente{% else %}Salva modifiche{% endif %}</button>
+    </div>
+  </div>
+
+  {% if form.non_field_errors %}
+    <div class="callout warn mb-24"><div class="ico">{% icon 'x' size=14 %}</div><div>{{ form.non_field_errors }}</div></div>
+  {% endif %}
+
+  <div class="grid" style="grid-template-columns: 1fr 280px; gap: 24px;">
+    <div class="flex-col gap-16">
+      <div class="card" style="padding: 24px;">
+        <div class="section-title">Dati generali</div>
+        <div class="grid grid-2" style="gap: 16px;">
+          <div class="field" style="grid-column: 1 / -1;">
+            <label for="{{ form.ragione_sociale.id_for_label }}">Ragione sociale *</label>
+            {{ form.ragione_sociale }}
+            {{ form.ragione_sociale.errors }}
+          </div>
+          <div class="field">
+            <label for="{{ form.tipo.id_for_label }}">Tipo *</label>
+            {{ form.tipo }}
+            {{ form.tipo.errors }}
+          </div>
+          <div class="field">
+            <label for="{{ form.settore.id_for_label }}">Settore</label>
+            {{ form.settore }}
+            {{ form.settore.errors }}
+          </div>
+          <div class="field">
+            <label for="{{ form.partita_iva.id_for_label }}">Partita IVA *</label>
+            <input class="input mono" type="text" name="partita_iva" id="{{ form.partita_iva.id_for_label }}" value="{{ form.partita_iva.value|default:'' }}" placeholder="IT00000000000" @blur="checkPiva($event.target.value)" />
+            {{ form.partita_iva.errors }}
+            <div class="help-inline" x-show="pivaMsg" :class="{ ok: pivaOk }" x-text="pivaMsg" x-cloak></div>
+          </div>
+          <div class="field">
+            <label for="{{ form.codice_fiscale.id_for_label }}">Codice fiscale</label>
+            {{ form.codice_fiscale }}
+            {{ form.codice_fiscale.errors }}
+          </div>
+          <div class="field">
+            <label for="{{ form.codice_sdi.id_for_label }}">Codice SDI</label>
+            {{ form.codice_sdi }}
+            {{ form.codice_sdi.errors }}
+          </div>
+          <div class="field">
+            <label for="{{ form.pec.id_for_label }}">PEC</label>
+            {{ form.pec }}
+            {{ form.pec.errors }}
+          </div>
+        </div>
+      </div>
+
+      <div class="card" style="padding: 24px;">
+        <div class="section-title">Sede legale</div>
+        <div class="grid grid-2" style="gap: 16px;">
+          <div class="field" style="grid-column: 1 / -1;">
+            <label for="{{ form.indirizzo.id_for_label }}">Indirizzo</label>
+            {{ form.indirizzo }}
+          </div>
+          <div class="field">
+            <label for="{{ form.cap.id_for_label }}">CAP</label>
+            {{ form.cap }}
+            {{ form.cap.errors }}
+          </div>
+          <div class="field">
+            <label for="{{ form.citta.id_for_label }}">Città</label>
+            {{ form.citta }}
+          </div>
+          <div class="field">
+            <label for="{{ form.provincia.id_for_label }}">Provincia</label>
+            {{ form.provincia }}
+          </div>
+          <div class="field">
+            <label for="{{ form.nazione.id_for_label }}">Nazione</label>
+            {{ form.nazione }}
+          </div>
+        </div>
+      </div>
+
+      <div class="card" style="padding: 24px;">
+        <div class="section-title">Referente principale</div>
+        <div class="grid grid-2" style="gap: 16px;">
+          <div class="field">
+            <label for="{{ form.ref_nome.id_for_label }}">Nome</label>
+            {{ form.ref_nome }}
+          </div>
+          <div class="field">
+            <label for="{{ form.ref_cognome.id_for_label }}">Cognome</label>
+            {{ form.ref_cognome }}
+          </div>
+          <div class="field">
+            <label for="{{ form.ref_email.id_for_label }}">Email</label>
+            {{ form.ref_email }}
+          </div>
+          <div class="field">
+            <label for="{{ form.ref_tel.id_for_label }}">Telefono</label>
+            {{ form.ref_tel }}
+          </div>
+          <div class="field" style="grid-column: 1 / -1;">
+            <label for="{{ form.note.id_for_label }}">Note</label>
+            {{ form.note }}
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="flex-col gap-16">
+      <div class="card" style="padding: 18px;">
+        <div style="font: 600 14px var(--font-display); margin-bottom: 12px;">Assegnazione</div>
+        <div class="field mb-16">
+          <label for="{{ form.account_manager.id_for_label }}">Account manager</label>
+          {{ form.account_manager }}
+        </div>
+        <div class="field mb-16">
+          <label for="{{ form.stato.id_for_label }}">Stato iniziale</label>
+          {{ form.stato }}
+        </div>
+        <div class="field">
+          <label for="{{ form.tags.id_for_label }}">Tag</label>
+          {{ form.tags }}
+        </div>
+      </div>
+
+      <div class="callout">
+        <div class="ico">{% icon 'zap' size=15 %}</div>
+        <div>
+          <div style="font: 600 13px var(--font-display); margin-bottom: 4px;">Verifica P.IVA</div>
+          <div style="font: 12px var(--font-body); color: var(--ink-2);">Validiamo automaticamente la P.IVA (formato + checksum) al salvataggio.</div>
+        </div>
+      </div>
+
+      {% if not is_create %}
+        <a href="{% url 'clienti:delete' object.pk %}" class="btn btn-ghost" style="justify-content: center; color: var(--danger); border-color: color-mix(in oklab, var(--danger) 30%, var(--border));">
+          {% icon 'trash' size=14 %} Elimina cliente
+        </a>
+      {% endif %}
+    </div>
+  </div>
+</form>
+
+<script>
+function pivaForm() {
+  return {
+    pivaMsg: '',
+    pivaOk: false,
+    async checkPiva(value) {
+      if (!value) { this.pivaMsg = ''; return; }
+      try {
+        const r = await fetch('{% url 'clienti:valida_piva' %}?partita_iva=' + encodeURIComponent(value));
+        const j = await r.json();
+        this.pivaMsg = j.message;
+        this.pivaOk = j.valid;
+      } catch (e) {
+        this.pivaMsg = 'Errore verifica';
+        this.pivaOk = false;
+      }
+    },
+  };
+}
+</script>
+{% endblock %}

@@ -1,0 +1,44 @@
+{% extends 'base.html' %}
+
+{% block title %}{{ anag_label }} — {{ oggetto }}{% endblock %}
+{% block breadcrumb %}
+  <span class="sep">{% icon 'chevronRight' size=14 %}</span>
+  <a href="{% url urls.list %}" style="color: inherit; text-decoration: none;">{{ anag_label_plural }}</a>
+  <span class="sep">{% icon 'chevronRight' size=14 %}</span>
+  <span class="current">{{ oggetto|truncatechars:32 }}</span>
+{% endblock %}
+
+{% block content %}
+<div class="page" style="max-width: 720px;">
+  <div class="page-header">
+    <div>
+      <h1 class="page-title">{{ oggetto }}</h1>
+      <p class="page-subtitle">{{ anag_label }}</p>
+    </div>
+    <div style="display: flex; gap: 8px;">
+      {% if user_perms_map|get_item:'clienti.modifica' %}
+        <a href="{% url urls.update oggetto.pk %}" class="btn btn-brand">{% icon 'edit' size=14 %} Modifica</a>
+      {% endif %}
+      {% if user_perms_map|get_item:'clienti.elimina' %}
+        <a href="{% url urls.delete oggetto.pk %}" class="btn btn-ghost" style="color: var(--danger);">
+          {% icon 'trash' size=14 %} Elimina
+        </a>
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="card" style="padding: 24px;">
+    {% for d in details %}
+      <div style="display: flex; padding: 8px 0; border-bottom: 1px solid var(--border);">
+        <div style="flex: 0 0 200px; color: var(--ink-3); font: 13px var(--font-body);">{{ d.label|capfirst }}</div>
+        <div style="flex: 1; font: 13px var(--font-body); color: var(--ink);">
+          {% if d.value == True %}<span class="badge badge-success">Sì</span>
+          {% elif d.value == False %}<span class="badge badge-neutral">No</span>
+          {% elif d.value %}{{ d.value }}
+          {% else %}<span style="color: var(--ink-4);">—</span>{% endif %}
+        </div>
+      </div>
+    {% endfor %}
+  </div>
+</div>
+{% endblock %}

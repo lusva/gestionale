@@ -1,0 +1,101 @@
+{% extends 'base.html' %}
+
+{% block title %}Scadenziario passivo{% endblock %}
+{% block crumb_current %}Scadenziario passivo{% endblock %}
+
+{% block content %}
+<div class="page">
+  <div class="page-header">
+    <div>
+      <h1 class="page-title">Scadenziario passivo</h1>
+      <p class="page-subtitle">Debiti verso fornitori · pagamenti da effettuare</p>
+    </div>
+    <div style="display: flex; gap: 8px;">
+      <a href="{% url 'documenti:scadenziario_passivo_export' %}?{{ request.GET.urlencode }}" class="btn btn-ghost">
+        {% icon 'download' size=14 %} Esporta CSV
+      </a>
+    </div>
+  </div>
+
+  <div class="grid" style="grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 16px;">
+    <div class="card" style="padding: 18px;">
+      <div style="font: 500 11px var(--font-body); color: var(--ink-3); text-transform: uppercase;">Scadute</div>
+      <div class="mono" style="font: 600 22px var(--font-display); color: var(--danger);">{{ buckets.scadute|euro:2 }}</div>
+    </div>
+    <div class="card" style="padding: 18px;">
+      <div style="font: 500 11px var(--font-body); color: var(--ink-3); text-transform: uppercase;">In scadenza 30gg</div>
+      <div class="mono" style="font: 600 22px var(--font-display); color: var(--warn);">{{ buckets.in_scadenza_30|euro:2 }}</div>
+    </div>
+    <div class="card" style="padding: 18px;">
+      <div style="font: 500 11px var(--font-body); color: var(--ink-3); text-transform: uppercase;">Oltre 30gg</div>
+      <div class="mono" style="font: 600 22px var(--font-display);">{{ buckets.oltre_30|euro:2 }}</div>
+    </div>
+    <div class="card" style="padding: 18px;">
+      <div style="font: 500 11px var(--font-body); color: var(--ink-3); text-transform: uppercase;">Residuo totale</div>
+      <div class="mono" style="font: 600 22px var(--font-display); color: var(--brand-teal);">{{ buckets.totale_residuo|euro:2 }}</div>
+    </div>
+  </div>
+
+  <form method="get" class="filters">
+    <select name="fornitore" class="select" onchange="this.form.submit()">
+      <option value="">Tutti i fornitori</option>
+      {% for f in fornitori %}
+        <option value="{{ f.pk }}" {% if fornitore_sel == f.pk|stringformat:'s' %}selected{% endif %}>{{ f.ragione_sociale }}</option>
+      {% endfor %}
+    </select>
+  </form>
+
+  <div class="card" style="border-top-left-radius: 0; border-top-right-radius: 0; overflow: hidden;">
+    <table class="tbl">
+      <thead>
+        <tr>
+          <th>Fornitore</th>
+          <th style="width: 130px;">Fattura</th>
+          <th style="width: 110px;">Scadenza</th>
+          <th style="width: 100px;">Modalità</th>
+          <th style="width: 90px;">Stato</th>
+          <th style="text-align: right; width: 110px;">Importo</th>
+          <th style="text-align: right; width: 110px;">Pagato</th>
+          <th style="text-align: right; width: 120px;">Residuo</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in rows %}
+          <tr>
+            <td>
+              {% if row.scadenza.fattura.fornitore %}
+                {{ row.scadenza.fattura.fornitore.ragione_sociale }}
+              {% else %}—{% endif %}
+            </td>
+            <td class="mono">
+              {{ row.scadenza.fattura.numero }}/{{ row.scadenza.fattura.anno }}
+              {% if row.scadenza.fattura.numero_fornitore %}<br/><span style="font: 10px var(--font-mono); color: var(--ink-4);">rif. {{ row.scadenza.fattura.numero_fornitore }}</span>{% endif %}
+            </td>
+            <td>{{ row.scadenza.data_scadenza|date:'d/m/Y' }}</td>
+            <td>{{ row.scadenza.modalita_pagamento|default:'—' }}</td>
+            <td>
+              {% if row.bucket == 'scadute' %}
+                <span class="badge badge-danger">Scaduta ({{ row.giorni|cut:'-' }} gg)</span>
+              {% elif row.bucket == 'in_scadenza_30' %}
+                <span class="badge badge-warn">{{ row.giorni }} gg</span>
+              {% else %}
+                <span class="badge badge-neutral">{{ row.giorni }} gg</span>
+              {% endif %}
+            </td>
+            <td class="mono" style="text-align: right;">{{ row.scadenza.importo|euro:2 }}</td>
+            <td class="mono" style="text-align: right; color: var(--success);">{{ row.scadenza.importo_pagato|euro:2 }}</td>
+            <td class="mono" style="text-align: right; font-weight: 500; color: var(--danger);">{{ row.residuo|euro:2 }}</td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="8">
+            <div class="empty">
+              <div class="ico">{% icon 'check' size=20 %}</div>
+              <div style="font: 500 14px var(--font-body);">Nessuna scadenza passiva aperta</div>
+            </div>
+          </td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

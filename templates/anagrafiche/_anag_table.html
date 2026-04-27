@@ -1,0 +1,75 @@
+{% load humanize %}
+
+<div class="card" style="border-top-left-radius: 0; border-top-right-radius: 0; overflow: hidden;">
+  <table class="tbl">
+    <thead>
+      <tr>
+        {% for field, label, css in list_display %}
+          <th{% if css == 'mono' %} style="text-align: right;"{% endif %}>{{ label }}</th>
+        {% endfor %}
+        <th style="width: 40px;"></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for o in oggetti %}
+        <tr class="clickable" onclick="if (!event.target.closest('a,button,input')) window.location='{% url urls.detail o.pk %}'">
+          {% for field, label, css in list_display %}
+            <td{% if css == 'mono' %} class="mono" style="text-align: right;"{% endif %}>
+              {% with val=o|attr:field %}
+                {% if val == True %}
+                  <span class="badge badge-success">Sì</span>
+                {% elif val == False %}
+                  <span class="badge badge-neutral">No</span>
+                {% elif val %}
+                  {{ val }}
+                {% else %}
+                  —
+                {% endif %}
+              {% endwith %}
+            </td>
+          {% endfor %}
+          <td>
+            <div x-data="{ open: false }" style="position: relative;">
+              <button type="button" class="btn-icon" @click.stop="open = !open">{% icon 'more' size=14 %}</button>
+              <div class="menu" x-show="open" @click.outside="open = false" x-cloak>
+                <a href="{% url urls.detail o.pk %}">{% icon 'eye' size=13 %} Vedi</a>
+                {% if user_perms_map|get_item:'clienti.modifica' %}
+                  <a href="{% url urls.update o.pk %}">{% icon 'edit' size=13 %} Modifica</a>
+                {% endif %}
+                {% if user_perms_map|get_item:'clienti.elimina' %}
+                  <div class="sep"></div>
+                  <a href="{% url urls.delete o.pk %}" class="danger">{% icon 'trash' size=13 %} Elimina</a>
+                {% endif %}
+              </div>
+            </div>
+          </td>
+        </tr>
+      {% empty %}
+        <tr>
+          <td colspan="{{ list_display|length|add:1 }}">
+            <div class="empty">
+              <div class="ico">{% icon 'list' size=20 %}</div>
+              <div style="font: 500 14px var(--font-body);">Nessun dato</div>
+              {% if user_perms_map|get_item:'clienti.modifica' %}
+                <a href="{% url urls.create %}" class="btn btn-brand" style="margin-top: 8px;">{% icon 'plus' size=14 %} Crea il primo</a>
+              {% endif %}
+            </div>
+          </td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  {% if is_paginated %}
+    <div style="display: flex; justify-content: space-between; align-items: center; padding: 12px 16px; border-top: 1px solid var(--border); background: var(--surface-2);">
+      <div style="font: 12px var(--font-body); color: var(--ink-3);">
+        {{ page_obj.start_index }}–{{ page_obj.end_index }} di {{ paginator.count|intcomma }}
+      </div>
+      <div class="pager">
+        {% if page_obj.has_previous %}<a href="?page={{ page_obj.previous_page_number }}">«</a>{% else %}<span>«</span>{% endif %}
+        <span class="current">{{ page_obj.number }} / {{ paginator.num_pages }}</span>
+        {% if page_obj.has_next %}<a href="?page={{ page_obj.next_page_number }}">»</a>{% else %}<span>»</span>{% endif %}
+      </div>
+    </div>
+  {% endif %}
+</div>
