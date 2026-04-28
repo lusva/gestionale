@@ -22,15 +22,15 @@ jobs:
       - name: Deploy via SSH (password auth)
         uses: appleboy/ssh-action@v1.0.3
         with:
-          host: ${{ secrets.SSH_HOST }}
-          username: ${{ secrets.SSH_USER }}
-          port: ${{ secrets.SSH_PORT }}
+          host: ${{ vars.SSH_HOST }}
+          username: ${{ vars.SSH_USER }}
+          port: ${{ vars.SSH_PORT }}
           password: ${{ secrets.SSH_PASSWORD }}
           script_stop: true
           script: |
             set -euo pipefail
 
-            cd "${{ secrets.DEPLOY_PATH }}"
+            cd "${{ vars.DEPLOY_PATH }}"
 
             echo "==> Pull ultimo commit dal branch main"
             git fetch --all --prune
@@ -50,7 +50,7 @@ jobs:
             python manage.py collectstatic --noinput
 
             echo "==> Riavvio gunicorn"
-            systemctl restart "${{ secrets.SERVICE_NAME }}"
+            systemctl restart "${{ vars.SERVICE_NAME }}"
 
             echo "==> Stato servizio"
-            systemctl is-active "${{ secrets.SERVICE_NAME }}"
+            systemctl is-active "${{ vars.SERVICE_NAME }}"
