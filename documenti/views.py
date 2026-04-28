@@ -29,6 +29,7 @@ from .utils import (
     crea_pdf,
     firma_pdf_bytes,
     genera_scadenze_da_forma_pagamento,
+    resolve_conto_corrente,
 )
 
 
@@ -611,6 +612,7 @@ def fattura_invia_email(request, pk):
         'righe': fattura.righe.select_related('articolo', 'iva').all(),
         'scadenze': fattura.scadenze.all(),
         'totals': totals,
+        'conto_corrente': resolve_conto_corrente(fattura, azienda),
     }
     html = render_to_string('documenti/pdf/fattura.html', pdf_ctx)
     pdf_buf = BytesIO()
@@ -833,6 +835,7 @@ def fatture_zip(request):
                 'righe': f.righe.select_related('articolo', 'iva').all(),
                 'scadenze': f.scadenze.all(),
                 'totals': totals,
+                'conto_corrente': resolve_conto_corrente(f, azienda),
             }
             html = render_to_string('documenti/pdf/fattura.html', ctx)
             pdf_buf = BytesIO()
@@ -891,6 +894,7 @@ def fattura_pdf_firmato(request, pk):
         'righe': fattura.righe.select_related('articolo', 'iva').all(),
         'scadenze': fattura.scadenze.all(),
         'totals': totals,
+        'conto_corrente': resolve_conto_corrente(fattura, azienda),
     }
     # Render PDF in memoria (riuso lo stesso template usato dalla view non firmata).
     from io import BytesIO
@@ -944,6 +948,7 @@ def fattura_pdf(request, pk):
         'righe': fattura.righe.select_related('articolo', 'iva').all(),
         'scadenze': fattura.scadenze.all(),
         'totals': totals,
+        'conto_corrente': resolve_conto_corrente(fattura, azienda),
     }
     filename = f'fattura_{fattura.numero}_{fattura.anno}.pdf'
     return crea_pdf('documenti/pdf/fattura.html', context, filename)

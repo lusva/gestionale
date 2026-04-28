@@ -66,6 +66,11 @@
     .scad th { background: #f1f5f9; color: #334155; }
     .scad .num { text-align: right; white-space: nowrap; }
 
+    .bank { margin-top: 6mm; padding: 3mm; background: #f8fafc; border-left: 2pt solid #1e293b; font-size: 8.5pt; }
+    .bank .label { font-size: 8pt; color: #64748b; text-transform: uppercase; letter-spacing: 0.5pt; margin-bottom: 1.5mm; }
+    .bank .row { margin-top: 0.8mm; }
+    .bank strong { color: #0f172a; }
+
     .notes { margin-top: 6mm; padding: 3mm; background: #f8fafc; border-left: 2pt solid #64748b; font-size: 8.5pt; }
 
     #footer-content { text-align: center; font-size: 7.5pt; color: #64748b; }
@@ -228,15 +233,21 @@
   </table>
 {% endif %}
 
+{% if conto_corrente %}
+  <div class="bank">
+    <div class="label">Coordinate bancarie per il pagamento</div>
+    {% if conto_corrente.banca %}<div class="row">Banca: <strong>{{ conto_corrente.banca }}</strong></div>{% endif %}
+    <div class="row">IBAN: <strong>{{ conto_corrente.iban }}</strong></div>
+    {% if conto_corrente.bic_swift %}<div class="row">BIC/SWIFT: <strong>{{ conto_corrente.bic_swift }}</strong></div>{% endif %}
+  </div>
+{% endif %}
+
 {% if fattura.note %}
   <div class="notes"><strong>Note:</strong> {{ fattura.note|linebreaksbr }}</div>
 {% endif %}
 
 <div id="footer-content">
   {% if azienda.contenuto_footer %}{{ azienda.contenuto_footer }}{% endif %}
-  {% if azienda.conti_correnti.all %}
-    <br/>{% with cc=azienda.conti_correnti.filter.first %}{% endwith %}
-  {% endif %}
 </div>
 
 </body>

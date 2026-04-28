@@ -130,6 +130,22 @@ def genera_scadenze_da_forma_pagamento(testata):
     return scadenze
 
 
+def resolve_conto_corrente(fattura, azienda):
+    """Risolve il conto corrente da mostrare in fattura.
+
+    Priorità: conto associato alla fattura, poi conto ``default=True``
+    sull'azienda, infine il primo conto disponibile.
+    """
+    if getattr(fattura, 'conto_corrente_id', None):
+        return fattura.conto_corrente
+    if azienda is None:
+        return None
+    return (
+        azienda.conti_correnti.filter(default=True).first()
+        or azienda.conti_correnti.first()
+    )
+
+
 def _link_callback(uri, rel):
     """Risolve i path ``/static/`` e ``/media/`` per xhtml2pdf."""
     if uri.startswith(settings.MEDIA_URL):

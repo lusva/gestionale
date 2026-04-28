@@ -16,11 +16,8 @@ jobs:
     timeout-minutes: 15
 
     steps:
-      - name: Checkout (per audit log della pipeline)
-        uses: actions/checkout@v4
-
       - name: Deploy via SSH (password auth)
-        uses: appleboy/ssh-action@v1.0.3
+        uses: appleboy/ssh-action@v1.2.0
         with:
           host: ${{ vars.SSH_HOST }}
           username: ${{ vars.SSH_USER }}
