@@ -1,0 +1,20 @@
+[Unit]
+Description=Gestionale CRM (AIGIS lab) Gunicorn
+After=network.target
+
+[Service]
+User=root
+WorkingDirectory=/opt/gestionale-crm
+EnvironmentFile=/opt/gestionale-crm/.env
+ExecStart=/opt/gestionale-crm/venv/bin/gunicorn gestionale.wsgi:application \
+  --bind 127.0.0.1:8001 \
+  --workers 3 \
+  --timeout 120 \
+  --access-logfile - \
+  --error-logfile -
+ExecReload=/bin/kill -s HUP $MAINPID
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
