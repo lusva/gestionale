@@ -508,6 +508,7 @@ class Indirizzo(models.Model):
 
 class ContoCorrente(models.Model):
     banca = models.CharField(max_length=150, blank=True, default='')
+    intestatario = models.CharField(max_length=150, blank=True, default='')
     iban = models.CharField(max_length=27, default='')
     bic_swift = models.CharField(max_length=11, blank=True, default='')
     cliente = models.ForeignKey(

@@ -29,6 +29,7 @@ from .utils import (
     crea_pdf,
     firma_pdf_bytes,
     genera_scadenze_da_forma_pagamento,
+    render_pdf_bytes,
     resolve_conto_corrente,
 )
 
@@ -187,15 +188,27 @@ class _FatturaSaveMixin:
         return render(request, self.template_name, ctx)
 
 
-def _maybe_genera_scadenze_auto(fattura):
-    """Auto-popola le scadenze fattura usando la forma di pagamento, se le
-    scadenze sono ancora vuote e una forma è impostata."""
+def _maybe_genera_scadenze_auto(fattura, scadenze_formset=None):
+    """Sincronizza le scadenze con la forma di pagamento.
+
+    - Se la fattura non ha scadenze e c'è una forma di pagamento, le crea.
+    - Se l'utente non ha toccato le scadenze in questo form
+      (``scadenze_formset.has_changed() == False``) e c'è una forma di
+      pagamento, rigenera le scadenze a partire dal totale corrente —
+      così se cambiano le righe il piano viene aggiornato.
+    - Se invece l'utente ha modificato a mano le scadenze nel form,
+      vengono lasciate intatte.
+    """
     fattura.refresh_from_db()
-    if fattura.scadenze.exists():
-        return
     if not fattura.forme_pagamento_id or not fattura.data_documento:
         return
+    user_touched = bool(scadenze_formset and scadenze_formset.has_changed())
+    if user_touched:
+        return
     auto = genera_scadenze_da_forma_pagamento(fattura)
+    if not auto:
+        return
+    fattura.scadenze.all().delete()
     for s in auto:
         ScadenzaFattura.objects.create(
             fattura=fattura, data=s['data'], importo=s['importo'],
@@ -227,7 +240,7 @@ class FatturaCreateView(LoginRequiredMixin, PermRequiredMixin, _FatturaSaveMixin
                 return self._render(request, form, formsets, is_create=True)
             righe_fs.save()
             scad_fs.save()
-            _maybe_genera_scadenze_auto(fattura)
+            _maybe_genera_scadenze_auto(fattura, scadenze_formset=scad_fs)
         messages.success(
             request,
             f'Fattura {fattura.numero}/{fattura.anno} creata con successo.',
@@ -262,7 +275,9 @@ class FatturaUpdateView(LoginRequiredMixin, PermRequiredMixin, _FatturaSaveMixin
             form.save()
             formsets['righe_formset'].save()
             formsets['scadenze_formset'].save()
-            _maybe_genera_scadenze_auto(fattura)
+            _maybe_genera_scadenze_auto(
+                fattura, scadenze_formset=formsets['scadenze_formset'],
+            )
         messages.success(request, 'Fattura aggiornata.')
         return redirect('documenti:fattura_detail', pk=fattura.pk)
 
@@ -344,7 +359,7 @@ def _generic_doc_pdf(request, model, pk, *, doc_label, doc_kind, counterparty='c
         'totals': totals,
     }
     filename = f'{doc_kind}_{documento.numero}_{documento.anno}.pdf'
-    return crea_pdf('documenti/pdf/documento.html', context, filename)
+    return crea_pdf('documenti/pdf/documento.html', context, filename, request=request)
 
 
 def offerta_pdf(request, pk):
@@ -599,11 +614,7 @@ def fattura_invia_email(request, pk):
         return redirect('documenti:fattura_detail', pk=pk)
 
     # Genero PDF in memoria
-    from io import BytesIO
-    from django.template.loader import render_to_string
-    from xhtml2pdf import pisa
     from anagrafiche.models import AnagraficaAzienda
-    from .utils import _link_callback
 
     azienda = AnagraficaAzienda.objects.first()
     totals = calcola_valori(fattura)
@@ -614,10 +625,7 @@ def fattura_invia_email(request, pk):
         'totals': totals,
         'conto_corrente': resolve_conto_corrente(fattura, azienda),
     }
-    html = render_to_string('documenti/pdf/fattura.html', pdf_ctx)
-    pdf_buf = BytesIO()
-    pisa.CreatePDF(src=html, dest=pdf_buf, encoding='utf-8', link_callback=_link_callback)
-    pdf_bytes = pdf_buf.getvalue()
+    pdf_bytes = render_pdf_bytes('documenti/pdf/fattura.html', pdf_ctx, request=request)
 
     # XML opzionale: lo allego solo se il cliente ha SDI/PEC configurati
     xml_bytes = None
@@ -787,10 +795,7 @@ def fatture_zip(request):
     from django.http import HttpResponse as _Hr
     from io import BytesIO
     import zipfile
-    from django.template.loader import render_to_string
-    from xhtml2pdf import pisa
     from anagrafiche.models import AnagraficaAzienda
-    from .utils import _link_callback
 
     if not request.user.is_authenticated:
         from django.contrib.auth.views import redirect_to_login
@@ -837,16 +842,10 @@ def fatture_zip(request):
                 'totals': totals,
                 'conto_corrente': resolve_conto_corrente(f, azienda),
             }
-            html = render_to_string('documenti/pdf/fattura.html', ctx)
-            pdf_buf = BytesIO()
-            pisa.CreatePDF(
-                src=html, dest=pdf_buf,
-                encoding='utf-8', link_callback=_link_callback,
+            pdf_bytes = render_pdf_bytes(
+                'documenti/pdf/fattura.html', ctx, request=request,
             )
-            zf.writestr(
-                f'fattura_{f.numero}_{f.anno}.pdf',
-                pdf_buf.getvalue(),
-            )
+            zf.writestr(f'fattura_{f.numero}_{f.anno}.pdf', pdf_bytes)
 
     from django.utils.timezone import now as _now
     response = _Hr(buf.getvalue(), content_type='application/zip')
@@ -897,17 +896,9 @@ def fattura_pdf_firmato(request, pk):
         'conto_corrente': resolve_conto_corrente(fattura, azienda),
     }
     # Render PDF in memoria (riuso lo stesso template usato dalla view non firmata).
-    from io import BytesIO
-    from django.template.loader import render_to_string
-    from xhtml2pdf import pisa
-    from .utils import _link_callback
-
-    html = render_to_string('documenti/pdf/fattura.html', context)
-    buffer = BytesIO()
-    pisa.CreatePDF(
-        src=html, dest=buffer, encoding='utf-8', link_callback=_link_callback,
+    pdf_bytes = render_pdf_bytes(
+        'documenti/pdf/fattura.html', context, request=request,
     )
-    pdf_bytes = buffer.getvalue()
 
     try:
         signed = firma_pdf_bytes(pdf_bytes)
@@ -951,7 +942,7 @@ def fattura_pdf(request, pk):
         'conto_corrente': resolve_conto_corrente(fattura, azienda),
     }
     filename = f'fattura_{fattura.numero}_{fattura.anno}.pdf'
-    return crea_pdf('documenti/pdf/fattura.html', context, filename)
+    return crea_pdf('documenti/pdf/fattura.html', context, filename, request=request)
 
 
 def fattura_riga_form_empty(request):

@@ -1,3 +1,5 @@
+from django.utils.timezone import localdate
+
 from django import forms
 from django.forms import inlineformset_factory
 
@@ -8,12 +10,45 @@ from .models import (
 )
 
 
+class DefaultDateMixin:
+    """Imposta come default ``oggi`` su ``data_documento`` e
+    ``data_registrazione`` sia in fase di rendering (per i form non bound)
+    sia in fase di validazione (se l'utente svuota il campo).
+
+    Nelle form di update non sovrascrive il valore esistente.
+    """
+    DEFAULT_DATE_FIELDS = ('data_documento', 'data_registrazione')
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        today = localdate()
+        instance = getattr(self, 'instance', None)
+        is_new = not (instance and instance.pk)
+        for name in self.DEFAULT_DATE_FIELDS:
+            if name not in self.fields:
+                continue
+            if is_new:
+                self.initial[name] = today
+            elif not self.initial.get(name):
+                instance_val = getattr(instance, name, None) if instance else None
+                if not instance_val:
+                    self.initial[name] = today
+
+    def clean(self):
+        cleaned = super().clean()
+        today = localdate()
+        for name in self.DEFAULT_DATE_FIELDS:
+            if name in self.fields and not cleaned.get(name):
+                cleaned[name] = today
+        return cleaned
+
+
 # ---------------------------------------------------------------------------
 # Fattura cliente (testata + righe + scadenze)
 # ---------------------------------------------------------------------------
 
 
-class TestataFatturaForm(forms.ModelForm):
+class TestataFatturaForm(DefaultDateMixin, forms.ModelForm):
     class Meta:
         model = TestataFattura
         fields = [

@@ -1,17 +1,13 @@
 """
-Helper comuni a tutti i documenti: calcolo totali, generazione PDF,
-link callback per xhtml2pdf, auto-generazione scadenze da una forma
-pagamento.
+Helper comuni a tutti i documenti: calcolo totali, generazione PDF
+(WeasyPrint), auto-generazione scadenze da una forma pagamento.
 """
 from __future__ import annotations
 
-import os
 from datetime import date, timedelta
 from decimal import Decimal
 from io import BytesIO
 
-from django.conf import settings
-from django.contrib.staticfiles import finders
 from django.http import HttpResponse
 from django.template.loader import render_to_string
 
@@ -146,25 +142,6 @@ def resolve_conto_corrente(fattura, azienda):
     )
 
 
-def _link_callback(uri, rel):
-    """Risolve i path ``/static/`` e ``/media/`` per xhtml2pdf."""
-    if uri.startswith(settings.MEDIA_URL):
-        path = os.path.join(settings.MEDIA_ROOT, uri.replace(settings.MEDIA_URL, ''))
-        if os.path.exists(path):
-            return path
-    if uri.startswith(settings.STATIC_URL):
-        rel_path = uri.replace(settings.STATIC_URL, '')
-        resolved = finders.find(rel_path)
-        if resolved:
-            return resolved
-    if uri.startswith(('http://', 'https://')):
-        return uri
-    # Fallback: lascia che xhtml2pdf si arrangi (o ignori)
-    if os.path.isabs(uri) and os.path.exists(uri):
-        return uri
-    return uri
-
-
 def firma_pdf_bytes(pdf_bytes: bytes) -> bytes | None:
     """Firma un PDF in PAdES usando il certificato configurato sull'AnagraficaAzienda.
 
@@ -225,29 +202,32 @@ def firma_pdf_bytes(pdf_bytes: bytes) -> bytes | None:
     return out_buffer.getvalue()
 
 
-def crea_pdf(template_path: str, context: dict, filename: str) -> HttpResponse:
-    """Rende un template HTML come PDF con xhtml2pdf.
+def render_pdf_bytes(template_path: str, context: dict, request=None) -> bytes:
+    """Rende un template HTML come bytes PDF con WeasyPrint.
+
+    ``request`` è opzionale: se passato, ``base_url`` punta alla root del
+    sito così WeasyPrint risolve gli URL ``/static/`` e ``/media/``. Se
+    omesso (es. invio email da job offline) si usa la directory base
+    del progetto, sufficiente per i link relativi presenti nei template.
+    """
+    from weasyprint import HTML
+
+    html = render_to_string(template_path, context, request=request)
+    base_url = (
+        request.build_absolute_uri('/') if request is not None else None
+    )
+    return HTML(string=html, base_url=base_url).write_pdf()
+
+
+def crea_pdf(template_path: str, context: dict, filename: str,
+             request=None) -> HttpResponse:
+    """Rende un template HTML come PDF con WeasyPrint.
 
     Ritorna una HttpResponse con Content-Disposition inline (apertura nel
     browser). Per forzare il download basta sostituire ``inline`` con
     ``attachment`` nella header.
     """
-    from xhtml2pdf import pisa
-
-    html = render_to_string(template_path, context)
-    buffer = BytesIO()
-    pisa_status = pisa.CreatePDF(
-        src=html,
-        dest=buffer,
-        encoding='utf-8',
-        link_callback=_link_callback,
-    )
-    if pisa_status.err:
-        return HttpResponse(
-            f'Errore nella generazione del PDF: {pisa_status.err}',
-            status=500,
-            content_type='text/plain',
-        )
-    response = HttpResponse(buffer.getvalue(), content_type='application/pdf')
+    pdf_bytes = render_pdf_bytes(template_path, context, request=request)
+    response = HttpResponse(pdf_bytes, content_type='application/pdf')
     response['Content-Disposition'] = f'inline; filename="{filename}"'
     return response

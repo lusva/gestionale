@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8" />
+<title>Documenti AIGIS Lab — Variante A rifinita</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="styles/tokens.css" />
+<link rel="stylesheet" href="styles/variants.css" />
+<style>
+  body {
+    margin: 0;
+    background: #1a1825;
+    font-family: 'Inter', sans-serif;
+    color: #e6e4ed;
+  }
+  .doc-frame { transform-origin: top left; }
+</style>
+</head>
+<body>
+
+<div id="root"></div>
+
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+
+<script type="text/babel" src="design-canvas.jsx"></script>
+<script type="text/babel" src="data/sample.jsx"></script>
+<script type="text/babel" src="components/VariantA.jsx"></script>
+
+<script type="text/babel">
+const docTypes = [
+  { key: 'fattura',     label: 'Fattura' },
+  { key: 'offerta',     label: 'Offerta' },
+  { key: 'ordine',      label: 'Ordine' },
+  { key: 'nota_credito',label: 'Nota di credito' },
+  { key: 'ddt',         label: 'DDT' },
+];
+
+const Frame = ({ doc }) => (
+  <div className="doc-frame" style={{ width: '210mm' }}>
+    <VariantA doc={doc} />
+  </div>
+);
+
+const Intro = () => (
+  <div style={{
+    width: 1100, padding: '40px 48px', color: '#1a1825',
+    background: 'white', borderRadius: 16,
+    fontFamily: 'Inter, sans-serif',
+  }}>
+    <div style={{
+      display: 'inline-block', fontSize: 11, fontWeight: 600,
+      letterSpacing: '0.14em', textTransform: 'uppercase',
+      color: '#6d28d9', marginBottom: 12,
+    }}>Variante A · Minimale Professional · v2</div>
+    <h1 style={{
+      fontFamily: 'Space Grotesk, sans-serif', fontSize: 52,
+      letterSpacing: '-0.03em', margin: '0 0 16px',
+      background: 'linear-gradient(90deg, #6d28d9, #8b5cf6 40%, #22d3ee)',
+      WebkitBackgroundClip: 'text', backgroundClip: 'text',
+      WebkitTextFillColor: 'transparent', lineHeight: 1.05,
+    }}>Modello documenti — rifinito</h1>
+    <p style={{ fontSize: 17, lineHeight: 1.55, color: '#4b4863', maxWidth: 800, margin: '0 0 24px' }}>
+      Direzione confermata: minimale ma con accenti gradient più decisi. I cinque documenti
+      condividono lo stesso telaio — solo i campi pertinenti cambiano per tipo (es. il DDT
+      non mostra prezzi e totali, la nota di credito storna importi precedenti).
+    </p>
+
+    <div style={{
+      display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 16,
+      fontSize: 13, lineHeight: 1.55, color: '#4b4863',
+    }}>
+      <div style={{ padding: 16, background: '#f5f3ff', borderRadius: 10, borderLeft: '3px solid #8b5cf6' }}>
+        <strong style={{ color: '#6d28d9', display: 'block', marginBottom: 4 }}>Cosa è cambiato dalla v1</strong>
+        Barra divisoria gradient più spessa (5px), totale finale su pillola gradient piena,
+        footer con accent bar e numerazione pagine "Pag. X di Y".
+      </div>
+      <div style={{ padding: 16, background: '#ecfeff', borderRadius: 10, borderLeft: '3px solid #06b6d4' }}>
+        <strong style={{ color: '#0e7490', display: 'block', marginBottom: 4 }}>Logo trasparente</strong>
+        Quando carichi la versione PNG/SVG con sfondo trasparente, sostituisci il file
+        <code style={{ background: 'white', padding: '1px 5px', margin: '0 3px', borderRadius: 3, fontFamily: 'JetBrains Mono', fontSize: 12 }}>assets/logo-aigis.png</code>
+        e tutti i template lo prendono automaticamente.
+      </div>
+    </div>
+
+    <div style={{
+      marginTop: 24, padding: '14px 18px', background: '#faf9fc',
+      borderRadius: 10, fontSize: 13, color: '#4b4863', lineHeight: 1.55,
+    }}>
+      <strong>Stampa:</strong> apri qualsiasi artboard a tutto schermo, premi Cmd/Ctrl+P
+      e seleziona "Salva come PDF". I colori e i gradient vengono mantenuti.
+      Il template originale a 5 varianti è disponibile in <code style={{ background: 'white', padding: '1px 5px', borderRadius: 3, fontFamily: 'JetBrains Mono', fontSize: 12 }}>Documenti AIGIS Lab.html</code>.
+    </div>
+  </div>
+);
+
+const App = () => (
+  <DesignCanvas title="Documenti AIGIS Lab — Variante A">
+    <DCSection id="intro" title="Brief">
+      <DCArtboard id="intro-card" label="Note di rifinitura" width={1180} height={580}>
+        <Intro />
+      </DCArtboard>
+    </DCSection>
+
+    <DCSection id="documenti" title="I cinque documenti">
+      {docTypes.map(dt => (
+        <DCArtboard
+          key={dt.key}
+          id={`doc-${dt.key}`}
+          label={dt.label}
+          width={794}
+          height={1123}
+        >
+          <Frame doc={SAMPLE_DOCS[dt.key]} />
+        </DCArtboard>
+      ))}
+    </DCSection>
+  </DesignCanvas>
+);
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+</script>
+
+</body>
+</html>

@@ -139,11 +139,11 @@ class IndirizzoAdmin(admin.ModelAdmin):
 @admin.register(ContoCorrente)
 class ContoCorrenteAdmin(admin.ModelAdmin):
     list_display = (
-        'banca', 'iban', 'bic_swift',
+        'banca', 'intestatario', 'iban', 'bic_swift',
         'cliente', 'fornitore', 'anagrafica_azienda', 'default',
     )
     list_filter = ('default',)
-    search_fields = ('banca', 'iban')
+    search_fields = ('banca', 'intestatario', 'iban')
 
 
 @admin.register(Articolo)

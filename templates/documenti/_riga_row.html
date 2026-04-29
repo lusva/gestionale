@@ -1,6 +1,3 @@
-{# Una riga del formset (TestataFattura.righe). Usato sia nel render iniziale
-   che come template clonabile per "Aggiungi riga" via JS (sostituendo
-   __prefix__ con l'indice della nuova riga). #}
 <tr data-form-row>
   {% for hidden in form.hidden_fields %}{{ hidden }}{% endfor %}
   <td>{{ form.numero_riga }}</td>

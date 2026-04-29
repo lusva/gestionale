@@ -783,7 +783,12 @@ a { color: inherit; }
 }
 
 /* Stati form errori */
-.field .errorlist,
+.errorlist {
+  list-style: none; padding: 0; margin: 2px 0 0 0;
+  font: 500 11px var(--font-body);
+  color: var(--danger);
+}
+.errorlist li { margin: 0; padding: 0; }
 .field .help-inline {
   list-style: none; padding: 0; margin: 0;
   font: 500 11px var(--font-body);
@@ -791,10 +796,24 @@ a { color: inherit; }
 }
 .field .help-inline.ok { color: var(--success); }
 
+/* Bordo rosso sugli input figli di un .field con errori */
+.field:has(.errorlist) .input,
+.field:has(.errorlist) .select,
+.field:has(.errorlist) .textarea,
+.field:has(.errorlist) input,
+.field:has(.errorlist) select,
+.field:has(.errorlist) textarea {
+  border-color: var(--danger);
+  box-shadow: 0 0 0 3px color-mix(in oklab, var(--danger) 15%, transparent);
+}
+
 .input.invalid, .select.invalid, .textarea.invalid {
   border-color: var(--danger);
   box-shadow: 0 0 0 3px color-mix(in oklab, var(--danger) 15%, transparent);
 }
+
+/* Errori non-field nei callout: tipografia leggibile in rosso */
+.callout.warn .errorlist { color: var(--danger); }
 
 /* Toast / messages */
 .toast-layer {

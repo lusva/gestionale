@@ -234,6 +234,11 @@
           <div style="font: 12px var(--font-body); color: var(--ink-3); margin-top: 4px;">
             IBAN: <span class="mono" style="color: var(--ink);">{{ fattura.conto_corrente.iban }}</span>
           </div>
+          {% if fattura.conto_corrente.intestatario %}
+            <div style="font: 12px var(--font-body); color: var(--ink-3); margin-top: 2px;">
+              Intestatario: <span style="color: var(--ink);">{{ fattura.conto_corrente.intestatario }}</span>
+            </div>
+          {% endif %}
         {% endif %}
       </div>
 

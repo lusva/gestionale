@@ -8,7 +8,7 @@ scadenze.
 from django import forms
 
 from .doc_generic import make_riga_formset
-from .forms import RigaDocumentoForm
+from .forms import DefaultDateMixin, RigaDocumentoForm
 from .models import (
     TestataDdt,
     TestataDdtFornitore,
@@ -32,7 +32,7 @@ TEXTAREA = forms.Textarea(attrs={'class': 'textarea', 'rows': 3})
 # ---------------------------------------------------------------------------
 
 
-class TestataOffertaForm(forms.ModelForm):
+class TestataOffertaForm(DefaultDateMixin, forms.ModelForm):
     class Meta:
         model = TestataOfferta
         fields = [
@@ -62,7 +62,7 @@ RigaOffertaFormSet = make_riga_formset(TestataOfferta, 'testata_offerta', RigaDo
 # ---------------------------------------------------------------------------
 
 
-class TestataOrdineForm(forms.ModelForm):
+class TestataOrdineForm(DefaultDateMixin, forms.ModelForm):
     class Meta:
         model = TestataOrdine
         fields = [
@@ -91,7 +91,7 @@ RigaOrdineFormSet = make_riga_formset(TestataOrdine, 'testata_ordine', RigaDocum
 # ---------------------------------------------------------------------------
 
 
-class TestataDdtForm(forms.ModelForm):
+class TestataDdtForm(DefaultDateMixin, forms.ModelForm):
     class Meta:
         model = TestataDdt
         fields = [
@@ -127,7 +127,7 @@ RigaDdtFormSet = make_riga_formset(TestataDdt, 'testata_ddt', RigaDocumentoForm)
 # ---------------------------------------------------------------------------
 
 
-class TestataNotaCreditoForm(forms.ModelForm):
+class TestataNotaCreditoForm(DefaultDateMixin, forms.ModelForm):
     class Meta:
         model = TestataNotaCredito
         fields = [
@@ -161,7 +161,7 @@ RigaNotaCreditoFormSet = make_riga_formset(
 # ---------------------------------------------------------------------------
 
 
-class TestataDdtFornitoreForm(forms.ModelForm):
+class TestataDdtFornitoreForm(DefaultDateMixin, forms.ModelForm):
     class Meta:
         model = TestataDdtFornitore
         fields = [

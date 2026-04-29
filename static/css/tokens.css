@@ -1,0 +1,148 @@
+/* AIGIS Lab — Design Tokens
+   Estratti dalla palette del logo: viola → ciano gradient */
+
+:root {
+  /* Brand core */
+  --aigis-violet-900: #4c1d95;
+  --aigis-violet-700: #6d28d9;
+  --aigis-violet-500: #8b5cf6;
+  --aigis-violet-400: #a78bfa;
+  --aigis-violet-200: #ddd6fe;
+  --aigis-violet-50:  #f5f3ff;
+
+  --aigis-cyan-700:   #0e7490;
+  --aigis-cyan-500:   #06b6d4;
+  --aigis-cyan-400:   #22d3ee;
+  --aigis-cyan-300:   #67e8f9;
+  --aigis-cyan-100:   #cffafe;
+  --aigis-cyan-50:    #ecfeff;
+
+  /* Brand gradient — il "DNA" del logo */
+  --aigis-gradient: linear-gradient(90deg, #8b5cf6 0%, #a78bfa 35%, #67e8f9 100%);
+  --aigis-gradient-soft: linear-gradient(90deg, #ddd6fe 0%, #cffafe 100%);
+  --aigis-gradient-vertical: linear-gradient(180deg, #8b5cf6 0%, #67e8f9 100%);
+  --aigis-gradient-diagonal: linear-gradient(135deg, #6d28d9 0%, #8b5cf6 40%, #22d3ee 100%);
+
+  /* Neutrals */
+  --ink-900: #0b0a14;
+  --ink-800: #1a1825;
+  --ink-700: #2d2a3e;
+  --ink-600: #4b4863;
+  --ink-500: #6b6884;
+  --ink-400: #9794a8;
+  --ink-300: #c8c6d2;
+  --ink-200: #e6e4ed;
+  --ink-100: #f3f2f7;
+  --ink-50:  #faf9fc;
+  --paper:   #ffffff;
+
+  /* Semantic */
+  --success: #10b981;
+  --warning: #f59e0b;
+  --danger:  #ef4444;
+
+  /* Typography */
+  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-display: 'Space Grotesk', 'Inter', sans-serif;
+  --font-mono: 'JetBrains Mono', 'SF Mono', ui-monospace, monospace;
+
+  /* Scale (per A4) */
+  --fs-xs: 9px;
+  --fs-sm: 10px;
+  --fs-base: 11px;
+  --fs-md: 12px;
+  --fs-lg: 14px;
+  --fs-xl: 18px;
+  --fs-2xl: 24px;
+  --fs-3xl: 32px;
+  --fs-4xl: 42px;
+
+  /* Radius & shadows */
+  --r-sm: 4px;
+  --r-md: 8px;
+  --r-lg: 12px;
+
+  --shadow-sm: 0 1px 2px rgba(11,10,20,0.05);
+  --shadow-md: 0 4px 14px rgba(76,29,149,0.08);
+}
+
+/* A4 print page */
+.page {
+  width: 210mm;
+  min-height: 297mm;
+  background: var(--paper);
+  margin: 0 auto;
+  position: relative;
+  font-family: var(--font-sans);
+  color: var(--ink-800);
+  font-size: var(--fs-base);
+  line-height: 1.5;
+  box-shadow: 0 10px 40px rgba(11,10,20,0.08);
+  overflow: hidden;
+}
+
+.page-inner {
+  padding: 18mm 16mm;
+}
+
+/* Common utilities */
+.muted { color: var(--ink-500); }
+.tabular { font-variant-numeric: tabular-nums; font-feature-settings: 'tnum'; }
+.mono { font-family: var(--font-mono); }
+.uppercase-track { text-transform: uppercase; letter-spacing: 0.12em; }
+
+/* Common table */
+.line-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--fs-base);
+}
+.line-table th {
+  text-align: left;
+  font-weight: 600;
+  font-size: var(--fs-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--ink-500);
+  padding: 8px 6px;
+  border-bottom: 1px solid var(--ink-200);
+}
+.line-table td {
+  padding: 10px 6px;
+  border-bottom: 1px solid var(--ink-100);
+  vertical-align: top;
+}
+.line-table .num { text-align: right; font-variant-numeric: tabular-nums; }
+.line-table .qty { text-align: center; }
+.line-table tbody tr:last-child td { border-bottom: none; }
+
+/* Totals */
+.totals {
+  margin-left: auto;
+  width: 240px;
+  font-size: var(--fs-base);
+}
+.totals .row {
+  display: flex;
+  justify-content: space-between;
+  padding: 6px 0;
+}
+.totals .row.grand {
+  border-top: 2px solid var(--ink-800);
+  padding-top: 10px;
+  margin-top: 6px;
+  font-weight: 700;
+  font-size: var(--fs-md);
+}
+
+/* Print rules */
+@media print {
+  body { background: white; margin: 0; }
+  .page {
+    box-shadow: none;
+    margin: 0;
+    page-break-after: always;
+  }
+  .no-print { display: none !important; }
+  @page { size: A4; margin: 0; }
+}
