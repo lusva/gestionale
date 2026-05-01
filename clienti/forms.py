@@ -14,10 +14,22 @@ PIVA_RE = re.compile(r'^(IT)?\d{11}$')
 
 
 class ClienteForm(forms.ModelForm):
-    ref_nome = forms.CharField(label='Nome referente', required=False)
-    ref_cognome = forms.CharField(label='Cognome referente', required=False)
-    ref_email = forms.EmailField(label='Email referente', required=False)
-    ref_tel = forms.CharField(label='Telefono referente', required=False)
+    ref_nome = forms.CharField(
+        label='Nome referente', required=False,
+        widget=forms.TextInput(attrs={'class': 'input'}),
+    )
+    ref_cognome = forms.CharField(
+        label='Cognome referente', required=False,
+        widget=forms.TextInput(attrs={'class': 'input'}),
+    )
+    ref_email = forms.EmailField(
+        label='Email referente', required=False,
+        widget=forms.EmailInput(attrs={'class': 'input', 'placeholder': 'nome@dominio.it'}),
+    )
+    ref_tel = forms.CharField(
+        label='Telefono referente', required=False,
+        widget=forms.TextInput(attrs={'class': 'input', 'placeholder': '+39 …'}),
+    )
 
     settore = forms.ModelChoiceField(
         queryset=Settore.objects.all(),

@@ -1,0 +1,30 @@
+{% extends 'base.html' %}
+
+{% block title %}Conferma eliminazione{% endblock %}
+{% block crumb_current %}Conferma eliminazione{% endblock %}
+
+{% block content %}
+<div class="page">
+  <div class="page-header">
+    <div>
+      <h1 class="page-title">Conferma eliminazione</h1>
+      <p class="page-subtitle">Questa azione non può essere annullata.</p>
+    </div>
+  </div>
+
+  <div class="card" style="padding: 24px; max-width: 600px;">
+    <div class="callout warn mb-24">
+      <div class="ico">{% icon 'x' size=14 %}</div>
+      <div>
+        Stai per eliminare:<br>
+        <strong>{{ object_label }}</strong>
+      </div>
+    </div>
+    <form method="post" style="display: flex; gap: 8px;">
+      {% csrf_token %}
+      <a href="{{ back_url }}" class="btn btn-ghost">Annulla</a>
+      <button type="submit" class="btn btn-brand" style="background: var(--danger); border-color: var(--danger);">{% icon 'trash' size=14 %} Elimina</button>
+    </form>
+  </div>
+</div>
+{% endblock %}

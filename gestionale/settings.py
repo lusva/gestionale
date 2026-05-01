@@ -40,6 +40,7 @@ INSTALLED_APPS = [
     'search',
     'audit',
     'api',
+    'cashflow',
 ]
 
 MIDDLEWARE = [

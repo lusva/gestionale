@@ -8,7 +8,7 @@
 <div class="page">
   <div class="page-header">
     <div>
-      <h1 class="page-title">Buongiorno, {{ user_name }} 👋</h1>
+      <h1 class="page-title">Buongiorno, {{ user_name }}</h1>
       <p class="page-subtitle">Ecco un riepilogo della tua attività — {{ today|date:'l d F Y' }}</p>
     </div>
     <div style="display: flex; gap: 8px;">
@@ -109,7 +109,10 @@
             </div>
           </div>
         {% empty %}
-          <div class="empty" style="padding: 24px;"><div class="ico">{% icon 'clock' size=18 %}</div>Nessuna attività recente</div>
+          <div class="empty" style="padding: 24px;">
+            <div class="ico">{% icon 'clock' size=18 %}</div>
+            Nessuna attività recente
+          </div>
         {% endfor %}
       </div>
     </div>

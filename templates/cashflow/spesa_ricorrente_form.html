@@ -1,0 +1,73 @@
+{% extends 'base.html' %}
+
+{% block title %}{% if is_create %}Nuova spesa ricorrente{% else %}Modifica spesa{% endif %}{% endblock %}
+{% block crumb_current %}
+  <a href="{% url 'cashflow:spesa_ricorrente_list' %}" style="color: inherit; text-decoration: none;">Spese ricorrenti</a>
+  <span class="sep">{% icon 'chevronRight' size=14 %}</span>
+  <span class="current">{% if is_create %}Nuova{% else %}Modifica{% endif %}</span>
+{% endblock %}
+
+{% block content %}
+<form method="post" class="page">
+  {% csrf_token %}
+  <div class="page-header">
+    <div>
+      <h1 class="page-title">{% if is_create %}Nuova spesa ricorrente{% else %}Modifica spesa{% endif %}</h1>
+      <p class="page-subtitle">Le scadenze future verranno generate automaticamente al salvataggio</p>
+    </div>
+    <div style="display: flex; gap: 8px;">
+      <a href="{% url 'cashflow:spesa_ricorrente_list' %}" class="btn btn-ghost">Annulla</a>
+      <button type="submit" class="btn btn-brand">{% icon 'check' size=14 %} Salva</button>
+    </div>
+  </div>
+
+  {% if form.non_field_errors %}
+    <div class="callout warn mb-24"><div class="ico">{% icon 'x' size=14 %}</div><div>{{ form.non_field_errors }}</div></div>
+  {% endif %}
+
+  <div class="card" style="padding: 24px;">
+    <div class="grid grid-2" style="gap: 16px;">
+      <div class="field" style="grid-column: 1 / -1;">
+        <label for="{{ form.descrizione.id_for_label }}">Descrizione *</label>
+        {{ form.descrizione }}{{ form.descrizione.errors }}
+      </div>
+      <div class="field">
+        <label for="{{ form.importo.id_for_label }}">Importo (€) *</label>
+        {{ form.importo }}{{ form.importo.errors }}
+      </div>
+      <div class="field">
+        <label for="{{ form.periodicita.id_for_label }}">Periodicità *</label>
+        {{ form.periodicita }}{{ form.periodicita.errors }}
+      </div>
+      <div class="field">
+        <label for="{{ form.giorno_del_mese.id_for_label }}">Giorno del mese *</label>
+        {{ form.giorno_del_mese }}{{ form.giorno_del_mese.errors }}
+        <div class="help-inline" style="font: 11px var(--font-body); color: var(--ink-3);">{{ form.giorno_del_mese.help_text }}</div>
+      </div>
+      <div class="field">
+        <label class="checkbox-inline">{{ form.attiva }} Spesa attiva</label>
+      </div>
+      <div class="field">
+        <label for="{{ form.data_inizio.id_for_label }}">Data inizio *</label>
+        {{ form.data_inizio }}{{ form.data_inizio.errors }}
+      </div>
+      <div class="field">
+        <label for="{{ form.data_fine.id_for_label }}">Data fine</label>
+        {{ form.data_fine }}{{ form.data_fine.errors }}
+      </div>
+      <div class="field">
+        <label for="{{ form.categoria_costo.id_for_label }}">Categoria costo</label>
+        {{ form.categoria_costo }}{{ form.categoria_costo.errors }}
+      </div>
+      <div class="field">
+        <label for="{{ form.fornitore.id_for_label }}">Fornitore</label>
+        {{ form.fornitore }}{{ form.fornitore.errors }}
+      </div>
+      <div class="field" style="grid-column: 1 / -1;">
+        <label for="{{ form.note.id_for_label }}">Note</label>
+        {{ form.note }}{{ form.note.errors }}
+      </div>
+    </div>
+  </div>
+</form>
+{% endblock %}

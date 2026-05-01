@@ -1,10 +1,13 @@
 {% load static %}
 <aside class="sidebar">
   <div class="sidebar-brand">
-    <img src="{% static 'img/logo.png' %}" alt="AIGIS lab" />
+    {% if azienda_logo_url %}
+      <img src="{{ azienda_logo_url }}" alt="{{ azienda_nome|default:'Azienda' }}" />
+    {% else %}
+      <img src="{% static 'img/logo.png' %}" alt="{{ azienda_nome|default:'Azienda' }}" />
+    {% endif %}
     <div>
-      <div class="name">AIGIS <span style="color: var(--brand-teal); font-weight: 500;">lab</span></div>
-      <div class="org">{{ org_suborg }}</div>
+      <div class="name">{{ azienda_nome|default:'Azienda non configurata' }}</div>
     </div>
   </div>
 
@@ -85,6 +88,25 @@
           {% icon 'grid' size=16 %}<span>Magazzino</span>
         </a>
       {% endif %}
+    </div>
+  </details>
+
+  <details class="sidebar-group" data-group="cashflow"
+    {% if active_nav == 'cashflow' or active_nav == 'scadenze_fiscali' or active_nav == 'spese_ricorrenti' %}open{% endif %}>
+    <summary class="sidebar-section">
+      <span>Cashflow</span>
+      {% icon 'chevronRight' size=12 %}
+    </summary>
+    <div class="sidebar-group-items">
+      <a href="{% url 'cashflow:timeline' %}" class="nav-item {% if active_nav == 'cashflow' %}active{% endif %}">
+        {% icon 'trendUp' size=16 %}<span>Timeline</span>
+      </a>
+      <a href="{% url 'cashflow:scadenza_fiscale_list' %}" class="nav-item {% if active_nav == 'scadenze_fiscali' %}active{% endif %}">
+        {% icon 'briefcase' size=16 %}<span>Scadenze fiscali</span>
+      </a>
+      <a href="{% url 'cashflow:spesa_ricorrente_list' %}" class="nav-item {% if active_nav == 'spese_ricorrenti' %}active{% endif %}">
+        {% icon 'clock' size=16 %}<span>Spese ricorrenti</span>
+      </a>
     </div>
   </details>
 

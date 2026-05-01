@@ -1,0 +1,104 @@
+{% extends 'base.html' %}
+{% load humanize %}
+
+{% block title %}Scadenze fiscali{% endblock %}
+{% block crumb_current %}Scadenze fiscali{% endblock %}
+
+{% block content %}
+<div class="page">
+  <div class="page-header">
+    <div>
+      <h1 class="page-title">Scadenze fiscali</h1>
+      <p class="page-subtitle">
+        IVA, F24, INPS e altre scadenze inserite manualmente
+        · {{ tot_aperte|euro }} aperto
+        {% if tot_scadute %}· <span style="color: var(--danger);">{{ tot_scadute|euro }} scaduto</span>{% endif %}
+      </p>
+    </div>
+    <div style="display: flex; gap: 8px;">
+      {% if user_perms_map|get_item:'cashflow.modifica' %}
+        <a href="{% url 'cashflow:scadenza_fiscale_create' %}" class="btn btn-brand">
+          {% icon 'plus' size=14 %} Nuova scadenza
+        </a>
+      {% endif %}
+    </div>
+  </div>
+
+  <form method="get" class="filters">
+    <div class="search" style="flex: 0 0 280px;">
+      {% icon 'search' size=14 %}
+      <input type="search" name="q" value="{{ q }}" placeholder="Cerca per descrizione…" />
+    </div>
+    <select name="stato" class="select" onchange="this.form.requestSubmit()" style="width: 160px;">
+      <option value="">Tutti gli stati</option>
+      <option value="aperte" {% if stato == 'aperte' %}selected{% endif %}>Aperte</option>
+      <option value="scadute" {% if stato == 'scadute' %}selected{% endif %}>Scadute</option>
+      <option value="pagate" {% if stato == 'pagate' %}selected{% endif %}>Pagate</option>
+    </select>
+    <select name="tipo" class="select" onchange="this.form.requestSubmit()" style="width: 160px;">
+      <option value="">Tutti i tipi</option>
+      {% for val, label in tipi %}
+        <option value="{{ val }}" {% if tipo == val %}selected{% endif %}>{{ label }}</option>
+      {% endfor %}
+    </select>
+  </form>
+
+  <div class="card" style="padding: 0;">
+    <table class="tbl">
+      <thead>
+        <tr>
+          <th>Scadenza</th>
+          <th>Tipo</th>
+          <th>Descrizione</th>
+          <th style="text-align: right;">Importo</th>
+          <th>Stato</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for s in scadenze %}
+          <tr>
+            <td class="mono">
+              {{ s.data_scadenza|date:'d/m/Y' }}
+              {% if not s.pagata and s.data_scadenza < today %}
+                <span class="badge badge-danger" style="margin-left: 6px;">scaduta</span>
+              {% endif %}
+            </td>
+            <td>{{ s.get_tipo_display }}</td>
+            <td>{{ s.descrizione }}</td>
+            <td class="mono" style="text-align: right;">{{ s.importo|euro }}</td>
+            <td>
+              {% if s.pagata %}
+                <span class="badge badge-success">Pagata{% if s.data_pagamento %} ({{ s.data_pagamento|date:'d/m' }}){% endif %}</span>
+              {% else %}
+                <span class="badge badge-neutral">Aperta</span>
+              {% endif %}
+            </td>
+            <td style="white-space: nowrap; text-align: right;">
+              {% if user_perms_map|get_item:'cashflow.modifica' %}
+                <a href="{% url 'cashflow:scadenza_fiscale_pagata' s.pk %}?next={{ request.get_full_path|urlencode }}" class="btn btn-ghost btn-sm" title="{% if s.pagata %}Annulla pagamento{% else %}Marca come pagata{% endif %}">
+                  {% if s.pagata %}{% icon 'x' size=12 %}{% else %}{% icon 'check' size=12 %}{% endif %}
+                </a>
+                <a href="{% url 'cashflow:scadenza_fiscale_update' s.pk %}" class="btn btn-ghost btn-sm">{% icon 'edit' size=12 %}</a>
+              {% endif %}
+              {% if user_perms_map|get_item:'cashflow.elimina' %}
+                <a href="{% url 'cashflow:scadenza_fiscale_delete' s.pk %}" class="btn btn-ghost btn-sm" style="color: var(--danger);">{% icon 'trash' size=12 %}</a>
+              {% endif %}
+            </td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="6" style="padding: 24px; text-align: center; color: var(--ink-3);">Nessuna scadenza fiscale.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  {% if is_paginated %}
+    <div class="pagination" style="margin-top: 16px;">
+      {% if page_obj.has_previous %}<a href="?page={{ page_obj.previous_page_number }}" class="btn btn-ghost btn-sm">‹</a>{% endif %}
+      <span style="font: 12px var(--font-body); color: var(--ink-3);">Pagina {{ page_obj.number }} di {{ page_obj.paginator.num_pages }}</span>
+      {% if page_obj.has_next %}<a href="?page={{ page_obj.next_page_number }}" class="btn btn-ghost btn-sm">›</a>{% endif %}
+    </div>
+  {% endif %}
+</div>
+{% endblock %}

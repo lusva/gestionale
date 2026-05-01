@@ -1,0 +1,115 @@
+{% extends 'base.html' %}
+{% load humanize %}
+
+{% block title %}{{ spesa.descrizione }}{% endblock %}
+{% block crumb_current %}
+  <a href="{% url 'cashflow:spesa_ricorrente_list' %}" style="color: inherit; text-decoration: none;">Spese ricorrenti</a>
+  <span class="sep">{% icon 'chevronRight' size=14 %}</span>
+  <span class="current">{{ spesa.descrizione|truncatechars:32 }}</span>
+{% endblock %}
+
+{% block content %}
+<div class="page">
+  <div class="page-header">
+    <div>
+      <h1 class="page-title">{{ spesa.descrizione }}</h1>
+      <p class="page-subtitle">
+        {{ spesa.get_periodicita_display }} · {{ spesa.importo|euro }} ·
+        {% if spesa.attiva %}<span style="color: var(--success);">Attiva</span>{% else %}<span style="color: var(--ink-3);">Inattiva</span>{% endif %}
+      </p>
+    </div>
+    <div style="display: flex; gap: 8px;">
+      {% if user_perms_map|get_item:'cashflow.modifica' %}
+        <a href="{% url 'cashflow:spesa_ricorrente_update' spesa.pk %}" class="btn btn-ghost">{% icon 'edit' size=14 %} Modifica</a>
+      {% endif %}
+      {% if user_perms_map|get_item:'cashflow.elimina' %}
+        <a href="{% url 'cashflow:spesa_ricorrente_delete' spesa.pk %}" class="btn btn-ghost" style="color: var(--danger);">{% icon 'trash' size=14 %} Elimina</a>
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="grid grid-2 mb-24" style="gap: 16px;">
+    <div class="card" style="padding: 20px;">
+      <div class="section-title">Dettagli</div>
+      <dl style="display: grid; grid-template-columns: 140px 1fr; gap: 8px 16px; font: 13px var(--font-body); margin: 0;">
+        <dt style="color: var(--ink-3);">Periodicità</dt><dd>{{ spesa.get_periodicita_display }}</dd>
+        <dt style="color: var(--ink-3);">Giorno mese</dt><dd>{{ spesa.giorno_del_mese }}</dd>
+        <dt style="color: var(--ink-3);">Importo</dt><dd class="mono">{{ spesa.importo|euro }}</dd>
+        <dt style="color: var(--ink-3);">Inizio</dt><dd class="mono">{{ spesa.data_inizio|date:'d/m/Y' }}</dd>
+        <dt style="color: var(--ink-3);">Fine</dt><dd class="mono">{% if spesa.data_fine %}{{ spesa.data_fine|date:'d/m/Y' }}{% else %}—{% endif %}</dd>
+        <dt style="color: var(--ink-3);">Categoria</dt><dd>{{ spesa.categoria_costo|default:'—' }}</dd>
+        <dt style="color: var(--ink-3);">Fornitore</dt><dd>{{ spesa.fornitore|default:'—' }}</dd>
+      </dl>
+      {% if spesa.note %}
+        <div style="margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--border);">
+          <div style="font: 500 12px var(--font-body); color: var(--ink-3); margin-bottom: 6px;">Note</div>
+          <div style="font: 13px var(--font-body); white-space: pre-wrap;">{{ spesa.note }}</div>
+        </div>
+      {% endif %}
+    </div>
+    <div class="card" style="padding: 20px;">
+      <div class="section-title">Riepilogo scadenze</div>
+      <div style="font: 13px var(--font-body); color: var(--ink-2);">
+        <div style="display: flex; justify-content: space-between; padding: 6px 0;">
+          <span>Totale generate</span><strong class="mono">{{ scadenze|length }}</strong>
+        </div>
+        <div style="display: flex; justify-content: space-between; padding: 6px 0; border-top: 1px solid var(--border);">
+          <span>Pagate</span>
+          <strong class="mono" style="color: var(--success);">
+            {% with paid=scadenze|dictsort:'pagata' %}{% endwith %}
+            {{ scadenze|length }} totali
+          </strong>
+        </div>
+      </div>
+      <div style="margin-top: 12px; font: 11px var(--font-body); color: var(--ink-3);">
+        Le nuove scadenze vengono generate automaticamente fino a 6 mesi nel futuro al momento della modifica.
+      </div>
+    </div>
+  </div>
+
+  <div class="card" style="padding: 0;">
+    <div style="padding: 16px 20px; border-bottom: 1px solid var(--border); font: 600 14px var(--font-display);">
+      Scadenze
+    </div>
+    <table class="tbl">
+      <thead>
+        <tr>
+          <th>Data</th>
+          <th style="text-align: right;">Importo</th>
+          <th>Stato</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for s in scadenze %}
+          <tr>
+            <td class="mono">
+              {{ s.data_scadenza|date:'d/m/Y' }}
+              {% if not s.pagata and s.data_scadenza < today %}
+                <span class="badge badge-danger" style="margin-left: 6px;">scaduta</span>
+              {% endif %}
+            </td>
+            <td class="mono" style="text-align: right;">{{ s.importo|euro }}</td>
+            <td>
+              {% if s.pagata %}
+                <span class="badge badge-success">Pagata{% if s.data_pagamento %} ({{ s.data_pagamento|date:'d/m/Y' }}){% endif %}</span>
+              {% else %}
+                <span class="badge badge-neutral">Aperta</span>
+              {% endif %}
+            </td>
+            <td style="text-align: right;">
+              {% if user_perms_map|get_item:'cashflow.modifica' %}
+                <a href="{% url 'cashflow:scadenza_spesa_pagata' s.pk %}?next={{ request.get_full_path|urlencode }}" class="btn btn-ghost btn-sm">
+                  {% if s.pagata %}{% icon 'x' size=12 %} Annulla{% else %}{% icon 'check' size=12 %} Pagata{% endif %}
+                </a>
+              {% endif %}
+            </td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="4" style="padding: 24px; text-align: center; color: var(--ink-3);">Nessuna scadenza generata.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

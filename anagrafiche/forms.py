@@ -139,6 +139,7 @@ class AnagraficaAziendaForm(forms.ModelForm):
             'profilo_fiscale': SELECT,
             'firma_motivo': TEXT,
             'logo': forms.FileInput(attrs={'accept': 'image/*', 'class': 'logo-input'}),
+            'certificato_p12': forms.FileInput(attrs={'class': 'input', 'accept': '.p12,.pfx'}),
             'certificato_password': forms.PasswordInput(
                 attrs={'class': 'input', 'autocomplete': 'new-password'},
                 render_value=True,

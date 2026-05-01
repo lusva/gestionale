@@ -1,0 +1,107 @@
+{% extends 'base.html' %}
+{% load humanize %}
+
+{% block title %}Cashflow{% endblock %}
+{% block crumb_current %}Cashflow{% endblock %}
+
+{% block content %}
+<div class="page">
+  <div class="page-header">
+    <div>
+      <h1 class="page-title">Cashflow</h1>
+      <p class="page-subtitle">Previsione incassi e uscite dei prossimi {{ giorni }} giorni — fino al {{ fino_a|date:'d/m/Y' }}</p>
+    </div>
+    <div style="display: flex; gap: 8px;">
+      <a href="{% url 'cashflow:scadenza_fiscale_list' %}" class="btn btn-ghost">{% icon 'briefcase' size=14 %} Scadenze fiscali</a>
+      <a href="{% url 'cashflow:spesa_ricorrente_list' %}" class="btn btn-ghost">{% icon 'clock' size=14 %} Spese ricorrenti</a>
+    </div>
+  </div>
+
+  <form method="get" class="filters mb-24">
+    <span style="font: 12px var(--font-body); color: var(--ink-3); margin-right: 8px;">Finestra temporale:</span>
+    {% for g in finestre %}
+      <a href="?giorni={{ g }}" class="filter-chip {% if giorni == g %}active{% endif %}">{{ g }} gg</a>
+    {% endfor %}
+  </form>
+
+  <div class="grid grid-4 mb-24">
+    <div class="kpi" style="border-left: 3px solid var(--success);">
+      <div class="kpi-label">Incassi attesi</div>
+      <div class="kpi-value">{{ tot_incassi|euro_compact }}</div>
+      {% if tot_scadute_in %}<div class="kpi-delta" style="color: var(--danger);">{{ tot_scadute_in|euro_compact }} scaduto</div>{% endif %}
+    </div>
+    <div class="kpi" style="border-left: 3px solid var(--danger);">
+      <div class="kpi-label">Uscite attese</div>
+      <div class="kpi-value">{{ tot_uscite|euro_compact }}</div>
+      {% if tot_scadute_out %}<div class="kpi-delta" style="color: var(--danger);">{{ tot_scadute_out|euro_compact }} scaduto</div>{% endif %}
+    </div>
+    <div class="kpi accent">
+      <div class="kpi-label">Saldo netto previsto</div>
+      <div class="kpi-value" style="color: {% if saldo_finale >= 0 %}var(--success){% else %}var(--danger){% endif %};">
+        {{ saldo_finale|euro_compact }}
+      </div>
+      <div class="kpi-delta" style="color: var(--ink-3);">su {{ giorni }} giorni</div>
+    </div>
+    <div class="kpi">
+      <div class="kpi-label">Eventi pianificati</div>
+      <div class="kpi-value">{{ eventi|length }}</div>
+      <div class="kpi-delta" style="color: var(--ink-3);">scadenze in finestra</div>
+    </div>
+  </div>
+
+  <div class="card" style="padding: 0;">
+    <div style="padding: 16px 20px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center;">
+      <div style="font: 600 14px var(--font-display);">Timeline</div>
+      <div style="font: 12px var(--font-body); color: var(--ink-3);">Ordinata cronologicamente, con saldo progressivo</div>
+    </div>
+    <table class="tbl">
+      <thead>
+        <tr>
+          <th>Data</th>
+          <th>Tipo</th>
+          <th>Origine</th>
+          <th>Descrizione</th>
+          <th style="text-align: right;">Movimento</th>
+          <th style="text-align: right;">Saldo</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for e in eventi %}
+          <tr {% if e.scaduta %}style="background: rgba(229, 62, 62, 0.04);"{% endif %}>
+            <td class="mono">
+              {{ e.data|date:'d/m/Y' }}
+              {% if e.scaduta %}<span class="badge badge-danger" style="margin-left: 6px;">scaduta</span>{% endif %}
+              {% if e.data == today %}<span class="badge badge-info" style="margin-left: 6px;">oggi</span>{% endif %}
+            </td>
+            <td>
+              {% if e.tipo == 'incasso' %}
+                <span style="color: var(--success); font-weight: 500;">{% icon 'trendUp' size=12 %} Incasso</span>
+              {% else %}
+                <span style="color: var(--danger); font-weight: 500;">{% icon 'trendDown' size=12 %} Uscita</span>
+              {% endif %}
+            </td>
+            <td><span style="font: 12px var(--font-body); color: var(--ink-3);">{{ e.origine }}</span></td>
+            <td>
+              {% if e.url %}
+                <a href="{{ e.url }}" style="color: inherit;">{{ e.descrizione|truncatechars:60 }}</a>
+              {% else %}
+                {{ e.descrizione|truncatechars:60 }}
+              {% endif %}
+            </td>
+            <td class="mono" style="text-align: right; color: {% if e.tipo == 'incasso' %}var(--success){% else %}var(--danger){% endif %};">
+              {% if e.tipo == 'incasso' %}+{% else %}−{% endif %}{{ e.importo|euro }}
+            </td>
+            <td class="mono" style="text-align: right; color: {% if e.saldo >= 0 %}var(--ink){% else %}var(--danger){% endif %}; font-weight: 500;">
+              {{ e.saldo|euro }}
+            </td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="6" style="padding: 32px; text-align: center; color: var(--ink-3);">
+            Nessun evento di cashflow nei prossimi {{ giorni }} giorni.
+          </td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

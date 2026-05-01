@@ -3,9 +3,9 @@
   <button class="btn-icon" type="button" onclick="toggleSidebar()" style="display: none;" aria-label="Toggle menu">{% icon 'menu' size=18 %}</button>
 
   <nav class="breadcrumb">
-    <span>{{ org_suborg }}</span>
+    {% if azienda_nome %}<span>{{ azienda_nome }}</span>{% endif %}
     {% block breadcrumb %}
-      <span class="sep">{% icon 'chevronRight' size=14 %}</span>
+      {% if azienda_nome %}<span class="sep">{% icon 'chevronRight' size=14 %}</span>{% endif %}
       <span class="current">{% block crumb_current %}{{ active_nav|title|default:'' }}{% endblock %}</span>
     {% endblock %}
   </nav>

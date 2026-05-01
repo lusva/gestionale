@@ -2,14 +2,15 @@ from __future__ import annotations
 
 
 def ui_preferences(request):
-    """Expose tema/densita and organization name to every template.
+    """Expose tema/densita e dati dell'azienda configurata in
+    ``AnagraficaAzienda`` ad ogni template (nome + URL del logo).
 
-    Priority: authenticated user profile > cookie > defaults.
+    Priorità tema/densità: profilo utente autenticato > cookie > default.
     """
     theme = 'light'
     density = 'normal'
-    org_name = 'AIGIS lab'
-    org_suborg = 'Studio Rossi SRL'
+    azienda_nome = ''
+    azienda_logo_url = ''
 
     if getattr(request, 'user', None) and request.user.is_authenticated:
         profile = getattr(request.user, 'profile', None)
@@ -21,18 +22,20 @@ def ui_preferences(request):
     density = request.COOKIES.get('gest_density', density)
 
     try:
-        from core_settings.models import Organizzazione
-        org = Organizzazione.objects.first()
-        if org:
-            org_suborg = org.nome
+        from anagrafiche.models import AnagraficaAzienda
+        az = AnagraficaAzienda.objects.first()
+        if az is not None:
+            azienda_nome = (az.ragione_sociale or '').strip()
+            if az.logo:
+                azienda_logo_url = az.logo.url
     except Exception:
         pass
 
     return {
         'ui_theme': theme if theme in {'light', 'dark'} else 'light',
         'ui_density': density if density in {'compact', 'normal', 'comfy'} else 'normal',
-        'org_name': org_name,
-        'org_suborg': org_suborg,
+        'azienda_nome': azienda_nome,
+        'azienda_logo_url': azienda_logo_url,
     }
 
 

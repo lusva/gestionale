@@ -48,6 +48,10 @@ PERM_MATRIX: dict[str, tuple[bool, bool, bool]] = {
     'documenti.vedi':          (True,  True,  True),
     'documenti.modifica':      (True,  True,  False),
     'documenti.elimina':       (True,  False, False),
+    # Cashflow (scadenze fiscali, spese ricorrenti, vista cashflow)
+    'cashflow.vedi':           (True,  True,  True),
+    'cashflow.modifica':       (True,  True,  False),
+    'cashflow.elimina':        (True,  False, False),
 }
 
 

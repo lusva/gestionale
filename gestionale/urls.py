@@ -18,6 +18,7 @@ urlpatterns = [
     path('impostazioni/', include('core_settings.urls', namespace='settings')),
     path('cerca/', include('search.urls', namespace='search')),
     path('api/', include('api.urls', namespace='api')),
+    path('cashflow/', include('cashflow.urls', namespace='cashflow')),
 ]
 
 if settings.DEBUG:
