@@ -23,4 +23,11 @@ urlpatterns = [
     path('spese/<int:pk>/modifica/', views.SpesaRicorrenteUpdateView.as_view(), name='spesa_ricorrente_update'),
     path('spese/<int:pk>/elimina/', views.SpesaRicorrenteDeleteView.as_view(), name='spesa_ricorrente_delete'),
     path('spese/scadenza/<int:pk>/pagata/', views.scadenza_spesa_marca_pagata, name='scadenza_spesa_pagata'),
+
+    # Rimborsi chilometrici
+    path('rimborsi-km/', views.RimborsoChilometricoListView.as_view(), name='rimborso_km_list'),
+    path('rimborsi-km/nuovo/', views.RimborsoChilometricoCreateView.as_view(), name='rimborso_km_create'),
+    path('rimborsi-km/<int:pk>/modifica/', views.RimborsoChilometricoUpdateView.as_view(), name='rimborso_km_update'),
+    path('rimborsi-km/<int:pk>/elimina/', views.RimborsoChilometricoDeleteView.as_view(), name='rimborso_km_delete'),
+    path('rimborsi-km/<int:pk>/pagato/', views.rimborso_km_marca_pagato, name='rimborso_km_pagato'),
 ]

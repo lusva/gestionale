@@ -14,6 +14,7 @@ from calendar import monthrange
 from datetime import date
 from decimal import Decimal
 
+from django.conf import settings
 from django.db import models
 
 
@@ -212,3 +213,84 @@ class ScadenzaSpesa(models.Model):
         if self.pagata:
             return Decimal('0')
         return self.importo
+
+
+class StatoRimborso(models.TextChoices):
+    BOZZA = 'bozza', 'Bozza'
+    APPROVATO = 'approvato', 'Approvato'
+    PAGATO = 'pagato', 'Pagato'
+
+
+class RimborsoChilometrico(models.Model):
+    """Rimborso chilometrico per trasferte degli amministratori.
+
+    L'importo è ricalcolato al salvataggio come ``km * tariffa_km`` (arrotondato
+    a 2 decimali). Quando lo stato passa a ``PAGATO`` viene fissata
+    ``data_pagamento`` se non già impostata.
+    """
+
+    data = models.DateField(help_text='Data della trasferta o mese di riferimento.')
+    amministratore = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.PROTECT,
+        related_name='rimborsi_chilometrici',
+    )
+    is_riepilogo_mensile = models.BooleanField(
+        default=False,
+        help_text='Se attivo, è un totale mensile forfettario: partenza/destinazione/km/tariffa non sono richiesti e l\'importo è inserito manualmente.',
+    )
+    partenza = models.CharField(max_length=200, blank=True, default='')
+    destinazione = models.CharField(max_length=200, blank=True, default='')
+    km = models.DecimalField(
+        max_digits=8, decimal_places=2, blank=True, null=True,
+    )
+    tariffa_km = models.DecimalField(
+        max_digits=6, decimal_places=4, blank=True, null=True,
+        help_text='Tariffa €/km (es. tabelle ACI per cilindrata).',
+    )
+    importo = models.DecimalField(
+        max_digits=12, decimal_places=2, blank=True,
+        help_text='Calcolato come km × tariffa, oppure inserito manualmente per i riepiloghi mensili.',
+    )
+    cliente = models.ForeignKey(
+        'clienti.Cliente', on_delete=models.SET_NULL,
+        blank=True, null=True, related_name='rimborsi_chilometrici',
+        help_text='Cliente/commessa di riferimento (facoltativo).',
+    )
+    causale = models.CharField(max_length=200, blank=True, default='')
+    stato = models.CharField(
+        max_length=20, choices=StatoRimborso.choices,
+        default=StatoRimborso.BOZZA,
+    )
+    data_pagamento = models.DateField(blank=True, null=True)
+    allegato = models.FileField(
+        upload_to='rimborsi_km/', blank=True, null=True,
+        help_text='Foglio di viaggio o altro giustificativo.',
+    )
+    note = models.TextField(blank=True, default='')
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-data', '-id']
+        verbose_name = 'Rimborso chilometrico'
+        verbose_name_plural = 'Rimborsi chilometrici'
+
+    def __str__(self):
+        if self.is_riepilogo_mensile:
+            return f'{self.data:%m/%Y} — {self.amministratore} — riepilogo mensile'
+        return f'{self.data:%d/%m/%Y} — {self.amministratore} — {self.partenza}→{self.destinazione}'
+
+    def calcola_importo(self) -> Decimal:
+        km = self.km or Decimal('0')
+        tariffa = self.tariffa_km or Decimal('0')
+        return (km * tariffa).quantize(Decimal('0.01'))
+
+    def save(self, *args, **kwargs):
+        if not self.is_riepilogo_mensile:
+            self.importo = self.calcola_importo()
+        elif self.importo is None:
+            self.importo = Decimal('0')
+        if self.stato != StatoRimborso.PAGATO:
+            self.data_pagamento = None
+        super().save(*args, **kwargs)

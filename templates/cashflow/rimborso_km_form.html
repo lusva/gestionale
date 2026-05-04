@@ -1,0 +1,110 @@
+{% extends 'base.html' %}
+
+{% block title %}{% if is_create %}Nuovo rimborso chilometrico{% else %}Modifica rimborso{% endif %}{% endblock %}
+{% block crumb_current %}
+  <a href="{% url 'cashflow:rimborso_km_list' %}" style="color: inherit; text-decoration: none;">Rimborsi chilometrici</a>
+  <span class="sep">{% icon 'chevronRight' size=14 %}</span>
+  <span class="current">{% if is_create %}Nuovo{% else %}Modifica{% endif %}</span>
+{% endblock %}
+
+{% block content %}
+<form method="post" enctype="multipart/form-data" class="page">
+  {% csrf_token %}
+  <div class="page-header">
+    <div>
+      <h1 class="page-title">{% if is_create %}Nuovo rimborso chilometrico{% else %}Modifica rimborso{% endif %}</h1>
+      <p class="page-subtitle">Trasferta amministratore — l'importo è calcolato come km × tariffa €/km</p>
+    </div>
+    <div style="display: flex; gap: 8px;">
+      <a href="{% url 'cashflow:rimborso_km_list' %}" class="btn btn-ghost">Annulla</a>
+      <button type="submit" class="btn btn-brand">{% icon 'check' size=14 %} Salva</button>
+    </div>
+  </div>
+
+  {% if form.non_field_errors %}
+    <div class="callout warn mb-24"><div class="ico">{% icon 'x' size=14 %}</div><div>{{ form.non_field_errors }}</div></div>
+  {% endif %}
+
+  <div class="card" style="padding: 24px;">
+    <div class="field" style="margin-bottom: 16px; display: flex; align-items: center; gap: 8px;">
+      {{ form.is_riepilogo_mensile }}
+      <label for="{{ form.is_riepilogo_mensile.id_for_label }}" style="margin: 0;">
+        Riepilogo mensile (totale forfettario, senza tratta/km)
+      </label>
+      {{ form.is_riepilogo_mensile.errors }}
+    </div>
+
+    <div class="grid grid-2" style="gap: 16px;">
+      <div class="field">
+        <label for="{{ form.data.id_for_label }}" data-label-trasferta>Data trasferta *</label>
+        <label for="{{ form.data.id_for_label }}" data-label-mensile style="display: none;">Mese di riferimento *</label>
+        {{ form.data }}{{ form.data.errors }}
+      </div>
+      <div class="field">
+        <label for="{{ form.amministratore.id_for_label }}">Amministratore *</label>
+        {{ form.amministratore }}{{ form.amministratore.errors }}
+      </div>
+      <div class="field" data-field-trasferta>
+        <label for="{{ form.partenza.id_for_label }}">Partenza *</label>
+        {{ form.partenza }}{{ form.partenza.errors }}
+      </div>
+      <div class="field" data-field-trasferta>
+        <label for="{{ form.destinazione.id_for_label }}">Destinazione *</label>
+        {{ form.destinazione }}{{ form.destinazione.errors }}
+      </div>
+      <div class="field" data-field-trasferta>
+        <label for="{{ form.km.id_for_label }}">Km percorsi *</label>
+        {{ form.km }}{{ form.km.errors }}
+      </div>
+      <div class="field" data-field-trasferta>
+        <label for="{{ form.tariffa_km.id_for_label }}">Tariffa €/km *</label>
+        {{ form.tariffa_km }}{{ form.tariffa_km.errors }}
+      </div>
+      <div class="field" data-field-mensile style="display: none;">
+        <label for="{{ form.importo.id_for_label }}">Importo totale mensile *</label>
+        {{ form.importo }}{{ form.importo.errors }}
+      </div>
+      <div class="field">
+        <label for="{{ form.cliente.id_for_label }}">Cliente / commessa</label>
+        {{ form.cliente }}{{ form.cliente.errors }}
+      </div>
+      <div class="field">
+        <label for="{{ form.causale.id_for_label }}">Causale</label>
+        {{ form.causale }}{{ form.causale.errors }}
+      </div>
+      <div class="field">
+        <label for="{{ form.stato.id_for_label }}">Stato *</label>
+        {{ form.stato }}{{ form.stato.errors }}
+      </div>
+      <div class="field">
+        <label for="{{ form.data_pagamento.id_for_label }}">Data pagamento</label>
+        {{ form.data_pagamento }}{{ form.data_pagamento.errors }}
+      </div>
+      <div class="field" style="grid-column: 1 / -1;">
+        <label for="{{ form.allegato.id_for_label }}">Allegato (foglio di viaggio)</label>
+        {{ form.allegato }}{{ form.allegato.errors }}
+      </div>
+      <div class="field" style="grid-column: 1 / -1;">
+        <label for="{{ form.note.id_for_label }}">Note</label>
+        {{ form.note }}{{ form.note.errors }}
+      </div>
+    </div>
+  </div>
+</form>
+
+<script>
+  (function () {
+    var checkbox = document.querySelector('[data-toggle-riepilogo-mensile]');
+    if (!checkbox) return;
+    var trasferta = document.querySelectorAll('[data-field-trasferta], [data-label-trasferta]');
+    var mensile = document.querySelectorAll('[data-field-mensile], [data-label-mensile]');
+    function refresh() {
+      var on = checkbox.checked;
+      trasferta.forEach(function (el) { el.style.display = on ? 'none' : ''; });
+      mensile.forEach(function (el) { el.style.display = on ? '' : 'none'; });
+    }
+    checkbox.addEventListener('change', refresh);
+    refresh();
+  })();
+</script>
+{% endblock %}

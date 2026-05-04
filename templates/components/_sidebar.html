@@ -92,7 +92,7 @@
   </details>
 
   <details class="sidebar-group" data-group="cashflow"
-    {% if active_nav == 'cashflow' or active_nav == 'scadenze_fiscali' or active_nav == 'spese_ricorrenti' %}open{% endif %}>
+    {% if active_nav == 'cashflow' or active_nav == 'scadenze_fiscali' or active_nav == 'spese_ricorrenti' or active_nav == 'rimborsi_km' %}open{% endif %}>
     <summary class="sidebar-section">
       <span>Cashflow</span>
       {% icon 'chevronRight' size=12 %}
@@ -106,6 +106,9 @@
       </a>
       <a href="{% url 'cashflow:spesa_ricorrente_list' %}" class="nav-item {% if active_nav == 'spese_ricorrenti' %}active{% endif %}">
         {% icon 'clock' size=16 %}<span>Spese ricorrenti</span>
+      </a>
+      <a href="{% url 'cashflow:rimborso_km_list' %}" class="nav-item {% if active_nav == 'rimborsi_km' %}active{% endif %}">
+        {% icon 'trendUp' size=16 %}<span>Rimborsi km</span>
       </a>
     </div>
   </details>

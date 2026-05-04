@@ -5,6 +5,7 @@ from datetime import timedelta
 from decimal import Decimal
 
 from django.contrib import messages
+from django.contrib.auth import get_user_model
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.db.models import Q
 from django.http import HttpResponseRedirect
@@ -17,9 +18,12 @@ from django.views.generic import (
 
 from accounts.permissions import PermRequiredMixin
 
-from .forms import ScadenzaFiscaleForm, SpesaRicorrenteForm
+from .forms import (
+    RimborsoChilometricoForm, ScadenzaFiscaleForm, SpesaRicorrenteForm,
+)
 from .models import (
-    ScadenzaFiscale, ScadenzaSpesa, SpesaRicorrente, TipoScadenzaFiscale,
+    RimborsoChilometrico, ScadenzaFiscale, ScadenzaSpesa, SpesaRicorrente,
+    StatoRimborso, TipoScadenzaFiscale,
 )
 
 
@@ -277,6 +281,146 @@ def scadenza_spesa_marca_pagata(request, pk):
 
 
 # ---------------------------------------------------------------------------
+# Rimborsi chilometrici
+# ---------------------------------------------------------------------------
+
+
+class RimborsoChilometricoListView(LoginRequiredMixin, PermRequiredMixin, ListView):
+    required_perm = 'cashflow.vedi'
+    model = RimborsoChilometrico
+    template_name = 'cashflow/rimborso_km_list.html'
+    context_object_name = 'rimborsi'
+    paginate_by = 30
+
+    def get_queryset(self):
+        qs = RimborsoChilometrico.objects.select_related('amministratore', 'cliente')
+        stato = (self.request.GET.get('stato') or '').strip()
+        if stato in {s.value for s in StatoRimborso}:
+            qs = qs.filter(stato=stato)
+        amm = (self.request.GET.get('amministratore') or '').strip()
+        if amm.isdigit():
+            qs = qs.filter(amministratore_id=int(amm))
+        q = (self.request.GET.get('q') or '').strip()
+        if q:
+            qs = qs.filter(
+                Q(partenza__icontains=q)
+                | Q(destinazione__icontains=q)
+                | Q(causale__icontains=q),
+            )
+        return qs
+
+    def get_context_data(self, **kwargs):
+        from accounts.models import Ruolo
+        ctx = super().get_context_data(**kwargs)
+        ctx['active_nav'] = 'rimborsi_km'
+        ctx['stato'] = self.request.GET.get('stato', '')
+        ctx['amministratore_sel'] = self.request.GET.get('amministratore', '')
+        ctx['q'] = self.request.GET.get('q', '')
+        ctx['stati'] = StatoRimborso.choices
+        User = get_user_model()
+        filtro = Q(profile__ruolo=Ruolo.AMMINISTRATORE)
+        if self.request.user.is_authenticated:
+            filtro = filtro | Q(pk=self.request.user.pk)
+        ctx['amministratori'] = (
+            User.objects.filter(filtro).distinct()
+            .order_by('first_name', 'last_name', 'username')
+        )
+        aperti = RimborsoChilometrico.objects.exclude(stato=StatoRimborso.PAGATO)
+        ctx['tot_da_pagare'] = sum((r.importo for r in aperti), Decimal('0'))
+        ctx['tot_da_approvare'] = sum(
+            (r.importo for r in aperti if r.stato == StatoRimborso.BOZZA),
+            Decimal('0'),
+        )
+        return ctx
+
+
+class RimborsoChilometricoCreateView(LoginRequiredMixin, PermRequiredMixin, CreateView):
+    required_perm = 'cashflow.modifica'
+    model = RimborsoChilometrico
+    form_class = RimborsoChilometricoForm
+    template_name = 'cashflow/rimborso_km_form.html'
+
+    def get_success_url(self):
+        return reverse('cashflow:rimborso_km_list')
+
+    def get_form_kwargs(self):
+        kwargs = super().get_form_kwargs()
+        kwargs['request'] = self.request
+        return kwargs
+
+    def form_valid(self, form):
+        messages.success(self.request, 'Rimborso chilometrico creato.')
+        return super().form_valid(form)
+
+    def get_context_data(self, **kwargs):
+        ctx = super().get_context_data(**kwargs)
+        ctx['active_nav'] = 'rimborsi_km'
+        ctx['is_create'] = True
+        return ctx
+
+
+class RimborsoChilometricoUpdateView(LoginRequiredMixin, PermRequiredMixin, UpdateView):
+    required_perm = 'cashflow.modifica'
+    model = RimborsoChilometrico
+    form_class = RimborsoChilometricoForm
+    template_name = 'cashflow/rimborso_km_form.html'
+
+    def get_success_url(self):
+        return reverse('cashflow:rimborso_km_list')
+
+    def get_form_kwargs(self):
+        kwargs = super().get_form_kwargs()
+        kwargs['request'] = self.request
+        return kwargs
+
+    def form_valid(self, form):
+        messages.success(self.request, 'Rimborso chilometrico aggiornato.')
+        return super().form_valid(form)
+
+    def get_context_data(self, **kwargs):
+        ctx = super().get_context_data(**kwargs)
+        ctx['active_nav'] = 'rimborsi_km'
+        ctx['is_create'] = False
+        return ctx
+
+
+class RimborsoChilometricoDeleteView(LoginRequiredMixin, PermRequiredMixin, DeleteView):
+    required_perm = 'cashflow.elimina'
+    model = RimborsoChilometrico
+    template_name = 'cashflow/confirm_delete.html'
+    success_url = reverse_lazy('cashflow:rimborso_km_list')
+
+    def get_context_data(self, **kwargs):
+        ctx = super().get_context_data(**kwargs)
+        ctx['active_nav'] = 'rimborsi_km'
+        ctx['object_label'] = str(self.object)
+        ctx['back_url'] = reverse('cashflow:rimborso_km_list')
+        return ctx
+
+    def form_valid(self, form):
+        messages.success(self.request, 'Rimborso eliminato.')
+        return super().form_valid(form)
+
+
+def rimborso_km_marca_pagato(request, pk):
+    if not request.user.is_authenticated:
+        return redirect('accounts:login')
+    r = get_object_or_404(RimborsoChilometrico, pk=pk)
+    if r.stato == StatoRimborso.PAGATO:
+        r.stato = StatoRimborso.APPROVATO
+        r.data_pagamento = None
+        msg = 'Pagamento annullato.'
+    else:
+        r.stato = StatoRimborso.PAGATO
+        r.data_pagamento = timezone.localdate()
+        msg = 'Rimborso marcato come pagato.'
+    r.save()
+    messages.success(request, msg)
+    next_url = request.GET.get('next') or request.META.get('HTTP_REFERER')
+    return HttpResponseRedirect(next_url or reverse('cashflow:rimborso_km_list'))
+
+
+# ---------------------------------------------------------------------------
 # Cashflow timeline
 # ---------------------------------------------------------------------------
 
@@ -359,6 +503,25 @@ class CashflowView(LoginRequiredMixin, PermRequiredMixin, TemplateView):
                 'importo': s.importo,
                 'scaduta': s.data_scadenza < oggi,
                 'url': reverse('cashflow:spesa_ricorrente_detail', args=[s.spesa_id]),
+            })
+
+        # Uscite: rimborsi chilometrici approvati ma non ancora pagati.
+        for r in RimborsoChilometrico.objects.select_related('amministratore').filter(
+            stato=StatoRimborso.APPROVATO, data__lte=fino_a,
+        ):
+            nome = r.amministratore.get_full_name() or r.amministratore.username
+            if r.is_riepilogo_mensile:
+                descrizione = f'{nome} — riepilogo mensile {r.data:%m/%Y}'
+            else:
+                descrizione = f'{nome} — {r.partenza}→{r.destinazione}'
+            eventi.append({
+                'data': r.data,
+                'tipo': 'uscita',
+                'origine': 'Rimborso km',
+                'descrizione': descrizione,
+                'importo': r.importo,
+                'scaduta': r.data < oggi,
+                'url': reverse('cashflow:rimborso_km_update', args=[r.pk]),
             })
 
         eventi.sort(key=lambda e: (e['data'], e['tipo']))
