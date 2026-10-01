@@ -2,9 +2,10 @@ from datetime import timedelta
 from decimal import Decimal
 
 from django.contrib.auth.mixins import LoginRequiredMixin
-from django.db.models import Count, Q, Sum
+from django.db.models import Sum
 from django.http import HttpResponse
 from django.utils import timezone
+from django.views.decorators.http import require_POST
 from django.views.generic import TemplateView
 
 
@@ -31,13 +32,13 @@ class DashboardView(LoginRequiredMixin, TemplateView):
         opp_aperte_count = opp_aperte.count()
 
         fatturato_mtd = Opportunita.objects.filter(
-            stadio=Stadio.CHIUSA_WIN, updated_at__gte=start_of_month,
+            stadio=Stadio.CHIUSA_WIN, data_chiusura__gte=start_of_month.date(),
         ).aggregate(s=Sum('valore'))['s'] or Decimal('0')
 
         fatturato_prev = Opportunita.objects.filter(
             stadio=Stadio.CHIUSA_WIN,
-            updated_at__gte=start_of_prev_month,
-            updated_at__lt=start_of_month,
+            data_chiusura__gte=start_of_prev_month.date(),
+            data_chiusura__lt=start_of_month.date(),
         ).aggregate(s=Sum('valore'))['s'] or Decimal('0')
 
         if fatturato_prev:
@@ -56,8 +57,8 @@ class DashboardView(LoginRequiredMixin, TemplateView):
         for m in range(1, 13):
             s = Opportunita.objects.filter(
                 stadio=Stadio.CHIUSA_WIN,
-                updated_at__year=year,
-                updated_at__month=m,
+                data_chiusura__year=year,
+                data_chiusura__month=m,
             ).aggregate(s=Sum('valore'))['s'] or 0
             monthly.append(float(s))
         month_labels = ['Gen', 'Feb', 'Mar', 'Apr', 'Mag', 'Giu', 'Lug', 'Ago', 'Set', 'Ott', 'Nov', 'Dic']
@@ -215,7 +216,7 @@ def _spark_fatturato():
     for y, m, first, last in _last_10_months():
         opp = Opportunita.objects.filter(
             stadio=Stadio.CHIUSA_WIN,
-            updated_at__year=y, updated_at__month=m,
+            data_chiusura__gte=first, data_chiusura__lte=last,
         ).aggregate(s=Sum('valore'))['s'] or _D('0')
         fatt = _D('0')
         if TestataFattura is not None:
@@ -233,17 +234,18 @@ def _spark_tasso_chiusura():
     for y, m, first, last in _last_10_months():
         v = Opportunita.objects.filter(
             stadio=Stadio.CHIUSA_WIN,
-            updated_at__year=y, updated_at__month=m,
+            data_chiusura__gte=first, data_chiusura__lte=last,
         ).count()
         p = Opportunita.objects.filter(
             stadio=Stadio.CHIUSA_LOST,
-            updated_at__year=y, updated_at__month=m,
+            data_chiusura__gte=first, data_chiusura__lte=last,
         ).count()
         total = v + p
         points.append(int(round(v / total * 100)) if total else 0)
     return points
 
 
+@require_POST
 def set_theme(request):
     theme = request.POST.get('theme', 'light')
     if theme not in {'light', 'dark'}:
@@ -258,6 +260,7 @@ def set_theme(request):
     return resp
 
 
+@require_POST
 def set_density(request):
     density = request.POST.get('density', 'normal')
     if density not in {'compact', 'normal', 'comfy'}:

@@ -1,5 +1,25 @@
 from __future__ import annotations
 
+_MISSING = object()
+
+
+def _azienda(request):
+    """``AnagraficaAzienda.objects.first()`` memoizzato sulla request, così i
+    context processor non ripetono la stessa query ad ogni render."""
+    cached = getattr(request, '_anagrafica_azienda_cache', _MISSING)
+    if cached is not _MISSING:
+        return cached
+    try:
+        from anagrafiche.models import AnagraficaAzienda
+        az = AnagraficaAzienda.objects.first()
+    except Exception:
+        az = None
+    try:
+        request._anagrafica_azienda_cache = az
+    except Exception:
+        pass
+    return az
+
 
 def ui_preferences(request):
     """Expose tema/densita e dati dell'azienda configurata in
@@ -12,18 +32,18 @@ def ui_preferences(request):
     azienda_nome = ''
     azienda_logo_url = ''
 
+    theme = request.COOKIES.get('gest_theme', theme)
+    density = request.COOKIES.get('gest_density', density)
+
+    # Il profilo dell'utente autenticato ha la precedenza sul cookie.
     if getattr(request, 'user', None) and request.user.is_authenticated:
         profile = getattr(request.user, 'profile', None)
         if profile:
             theme = profile.tema or theme
             density = profile.densita or density
 
-    theme = request.COOKIES.get('gest_theme', theme)
-    density = request.COOKIES.get('gest_density', density)
-
     try:
-        from anagrafiche.models import AnagraficaAzienda
-        az = AnagraficaAzienda.objects.first()
+        az = _azienda(request)
         if az is not None:
             azienda_nome = (az.ragione_sociale or '').strip()
             if az.logo:
@@ -77,13 +97,9 @@ def sidebar_counts(request):
         counts = {}
 
     modulo_magazzino = True
-    try:
-        from anagrafiche.models import AnagraficaAzienda
-        az = AnagraficaAzienda.objects.first()
-        if az is not None:
-            modulo_magazzino = bool(az.modulo_magazzino_attivo)
-    except Exception:
-        pass
+    az = _azienda(request)
+    if az is not None:
+        modulo_magazzino = bool(getattr(az, 'modulo_magazzino_attivo', True))
 
     return {
         'nav_counts': counts,

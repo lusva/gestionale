@@ -1,3 +1,1 @@
-from django.db import models
-
-# Create your models here.
+# Dashboard app: nessun modello — i dati sono calcolati dalle altre app.

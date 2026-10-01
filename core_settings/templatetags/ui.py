@@ -7,7 +7,7 @@ from __future__ import annotations
 from decimal import Decimal
 
 from django import template
-from django.template.loader import render_to_string
+from django.utils.html import format_html
 from django.utils.safestring import mark_safe
 
 register = template.Library()
@@ -53,6 +53,8 @@ ICON_PATHS = {
     'pin': '<path d="M12 13c1.66 0 3-1.34 3-3V6c0-1.66-1.34-3-3-3s-3 1.34-3 3v4c0 1.66 1.34 3 3 3z"/><path d="M12 13v9"/>',
     'lock': '<rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>',
     'eye': '<path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/>',
+    'eyeOff': '<path d="M9.88 9.88a3 3 0 1 0 4.24 4.24"/><path d="M10.73 5.08A10.43 10.43 0 0 1 12 5c7 0 10 7 10 7a13.16 13.16 0 0 1-1.67 2.68"/><path d="M6.61 6.61A13.53 13.53 0 0 0 2 12s3 7 10 7a9.74 9.74 0 0 0 5.39-1.61"/><path d="m2 2 20 20"/>',
+    'alert': '<circle cx="12" cy="12" r="10"/><path d="M12 8v4"/><path d="M12 16h.01"/>',
     'menu': '<line x1="4" y1="6" x2="20" y2="6"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="18" x2="20" y2="18"/>',
     'grid': '<rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/>',
     'list': '<line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/>',
@@ -96,7 +98,7 @@ def stato_badge(stato_value, stato_label=None):
     key = (stato_value or '').lower()
     cls = STATO_BADGE_MAP.get(key, 'badge-neutral')
     label = stato_label or stato_value or '—'
-    return mark_safe(f'<span class="badge {cls}"><span class="dot"></span>{label}</span>')
+    return format_html('<span class="badge {}"><span class="dot"></span>{}</span>', cls, label)
 
 
 STADIO_BADGE_MAP = {
@@ -114,8 +116,9 @@ def stadio_badge(stadio_value, stadio_label=None):
     key = (stadio_value or '').lower()
     cls, color = STADIO_BADGE_MAP.get(key, ('badge-neutral', 'var(--ink-3)'))
     label = stadio_label or stadio_value or '—'
-    return mark_safe(
-        f'<span class="badge {cls}"><span class="dot" style="background:{color}"></span>{label}</span>'
+    return format_html(
+        '<span class="badge {}"><span class="dot" style="background:{}"></span>{}</span>',
+        cls, color, label,
     )
 
 
@@ -133,9 +136,9 @@ def avatar(initials, size='md', tint='brand'):
         'info': 'background:var(--info-bg);color:var(--info);',
     }
     style = tint_styles.get(tint, tint_styles['brand'])
-    initials = (initials or '?')[:3].upper()
-    return mark_safe(
-        f'<span class="avatar {size_cls}" style="{style}">{initials}</span>'
+    initials = (str(initials or '') or '?')[:3].upper()
+    return format_html(
+        '<span class="avatar {}" style="{}">{}</span>', size_cls, style, initials,
     )
 
 

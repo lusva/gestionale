@@ -53,6 +53,10 @@ class Opportunita(models.Model):
         default=0,
         help_text='Posizione nella colonna Kanban (più basso = più in alto)',
     )
+    data_chiusura = models.DateField(
+        null=True, blank=True, editable=False,
+        help_text='Data di passaggio a Chiusa vinta/persa (valorizzata automaticamente).',
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -63,6 +67,26 @@ class Opportunita(models.Model):
 
     def __str__(self):
         return f'{self.titolo} — {self.cliente}'
+
+    def save(self, *args, **kwargs):
+        # data_chiusura: valorizzata all'ingresso in uno stadio chiuso,
+        # azzerata se l'opportunità viene riaperta.
+        if self.stadio in (Stadio.CHIUSA_WIN, Stadio.CHIUSA_LOST):
+            if self.pk and not self._state.adding:
+                prev_stadio = (
+                    type(self).objects.filter(pk=self.pk)
+                    .values_list('stadio', flat=True).first()
+                )
+                if prev_stadio is not None and prev_stadio != self.stadio:
+                    self.data_chiusura = timezone.localdate()
+            if self.data_chiusura is None:
+                self.data_chiusura = timezone.localdate()
+        else:
+            self.data_chiusura = None
+        update_fields = kwargs.get('update_fields')
+        if update_fields is not None and 'stadio' in update_fields:
+            kwargs['update_fields'] = set(update_fields) | {'data_chiusura'}
+        super().save(*args, **kwargs)
 
     def get_absolute_url(self):
         return reverse('opportunita:detail', args=[self.pk])

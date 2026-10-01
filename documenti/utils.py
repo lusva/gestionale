@@ -12,92 +12,239 @@ from django.http import HttpResponse
 from django.template.loader import render_to_string
 
 
-def calcola_valori(testata):
+_Q = Decimal('0.01')
+
+# Soglia oltre la quale le operazioni esenti/escluse da IVA scontano
+# l'imposta di bollo (art. 6 tariffa DPR 642/72) e importo del bollo virtuale.
+SOGLIA_BOLLO = Decimal('77.47')
+IMPORTO_BOLLO = Decimal('2.00')
+# Natura con cui si addebita al cliente il rimborso del bollo (esclusa ex art. 15).
+NATURA_BOLLO = 'N1'
+
+
+def _ripartisci(importo: Decimal, pesi: list) -> list:
+    """Ripartisce ``importo`` (già al centesimo) in proporzione ai ``pesi``.
+
+    Ogni quota è arrotondata al centesimo e il resto dell'arrotondamento
+    va sull'ultima quota, così la somma coincide esattamente con ``importo``.
+    Con pesi tutti nulli l'importo va interamente sull'ultima quota.
+    """
+    if not pesi:
+        return []
+    totale_pesi = sum(pesi, Decimal('0'))
+    quote = []
+    for p in pesi[:-1]:
+        if totale_pesi:
+            quote.append((importo * p / totale_pesi).quantize(_Q))
+        else:
+            quote.append(Decimal('0.00'))
+    quote.append(importo - sum(quote, Decimal('0')))
+    return quote
+
+
+def _chiave_iva(iva) -> str:
+    return f'{Decimal(iva.aliquota).quantize(_Q)}|{iva.natura or ""}'
+
+
+def calcola_valori(testata, righe=None):
     """Calcola i totali di una testata a partire dalle righe.
+
+    ``righe``: le righe da usare al posto di quelle salvate (anche non
+    salvate, con ``iva`` già risolta): serve all'anteprima dell'API, che
+    calcola i totali di un documento senza scriverlo.
 
     Ritorna dict con: ``imponibile``, ``iva_dettaglio`` (lista di
     {aliquota, imponibile, imposta}), ``imposta_totale``, ``sconto``
     (importo già scalato), ``totale``.
 
+    Tutti gli importi sono calcolati al centesimo per aliquota, nello stesso
+    modo in cui vengono esposti nella FatturaPA (``fatt_el``): per ogni
+    aliquota l'``imponibile`` del riepilogo è la somma di
+
+    - righe (``importo_unitario * quantita`` arrotondato al centesimo)
+    - quota dello sconto di testata (percentuale + incondizionato), negativa
+    - quota delle spese di imballo / trasporto (soggette all'IVA delle
+      operazioni cui sono accessorie, art. 12 DPR 633/72, ripartite in
+      proporzione)
+    - contributo cassa previdenziale (sull'aliquota ``codice_iva`` della
+      cassa o, in mancanza, su quella prevalente)
+    - rimborso bollo (natura N1) se dovuto
+
+    e l'imposta è ricalcolata sull'imponibile arrotondato. Le chiavi extra
+    di ogni voce di ``iva_dettaglio`` (``imponibile_righe``, ``sconto``,
+    ``spese_imballo``, ``spese_trasporto``, ``cassa``, ``bollo``) servono a
+    ``fatt_el`` per generare le linee corrispondenti.
+
     La cassa previdenziale, se configurata sull'AnagraficaAzienda, viene
     applicata sull'imponibile (percentuale_imponibile) e aggiunta al totale.
+
+    Bollo: se almeno una riga ha una posizione IVA con ``bollo=True`` e
+    l'imponibile delle operazioni senza IVA (aliquota 0) supera 77,47 €, si
+    addebitano 2,00 € (``bollo`` nel dict) inclusi nel totale.
     """
-    righe = list(testata.righe.select_related('iva').all())
+    if righe is None:
+        righe = list(testata.righe.select_related('iva').all())
+
+    def _nuovo_slot(aliquota, natura, descrizione):
+        return {
+            'aliquota': Decimal(aliquota).quantize(_Q),
+            'natura': natura or '',
+            'descrizione': descrizione,
+            'imponibile_righe': Decimal('0.00'),
+            'sconto': Decimal('0.00'),
+            'spese_imballo': Decimal('0.00'),
+            'spese_trasporto': Decimal('0.00'),
+            'cassa': Decimal('0.00'),
+            'bollo': Decimal('0.00'),
+        }
 
     imponibile = Decimal('0.00')
-    iva_map: dict[str, dict] = {}
+    # Chiave ``None``: righe senza posizione IVA (non esposte nel riepilogo
+    # IVA ma conteggiate nei totali, come in passato).
+    iva_map: dict = {}
+    bollo_richiesto = False
     for r in righe:
-        row_imp = Decimal(str(r.importo_unitario)) * Decimal(str(r.quantita))
+        row_imp = (
+            Decimal(str(r.importo_unitario)) * Decimal(str(r.quantita))
+        ).quantize(_Q)
         imponibile += row_imp
         if r.iva is not None:
-            key = f'{r.iva.aliquota}|{r.iva.natura}'
-            slot = iva_map.setdefault(key, {
-                'aliquota': r.iva.aliquota,
-                'natura': r.iva.natura or '',
-                'descrizione': r.iva.descrizione,
-                'imponibile': Decimal('0'),
-                'imposta': Decimal('0'),
-            })
-            slot['imponibile'] += row_imp
-            slot['imposta'] += row_imp * r.iva.aliquota / Decimal('100')
+            key = _chiave_iva(r.iva)
+            slot = iva_map.setdefault(
+                key, _nuovo_slot(r.iva.aliquota, r.iva.natura, r.iva.descrizione),
+            )
+            if getattr(r.iva, 'bollo', False):
+                bollo_richiesto = True
+        else:
+            slot = iva_map.setdefault(None, _nuovo_slot(0, '', ''))
+        slot['imponibile_righe'] += row_imp
 
-    # Sconto percentuale sulla testata
-    sconto_pct = getattr(testata, 'sconto', None) or Decimal('0')
-    sconto_incond = getattr(testata, 'sconto_incondizionato', None) or Decimal('0')
-    sconto_value = (imponibile * Decimal(sconto_pct) / Decimal('100')) + Decimal(sconto_incond)
+    chiavi = list(iva_map.keys())
+    chiavi_iva = [k for k in chiavi if k is not None]
+
+    # Sconto sulla testata (percentuale + incondizionato), ripartito per
+    # aliquota in proporzione all'imponibile delle righe.
+    sconto_pct = Decimal(str(getattr(testata, 'sconto', None) or 0))
+    sconto_incond = Decimal(str(getattr(testata, 'sconto_incondizionato', None) or 0))
+    sconto_value = (
+        imponibile * sconto_pct / Decimal('100') + sconto_incond
+    ).quantize(_Q)
     imponibile_scontato = imponibile - sconto_value
+    for k, quota in zip(chiavi, _ripartisci(
+            sconto_value, [iva_map[k]['imponibile_righe'] for k in chiavi])):
+        iva_map[k]['sconto'] = quota
 
-    # Spese accessorie
-    spese = (getattr(testata, 'spese_imballo', None) or Decimal('0')) \
-        + (getattr(testata, 'spese_trasporto', None) or Decimal('0'))
-
-    # Imposta ricalcolata proporzionalmente allo sconto
-    if imponibile > 0:
-        coef = imponibile_scontato / imponibile
-    else:
-        coef = Decimal('1')
-    imposta_totale = Decimal('0')
-    iva_dettaglio = []
-    for slot in iva_map.values():
-        imp_scont = slot['imponibile'] * coef
-        imposta = slot['imposta'] * coef
-        imposta_totale += imposta
-        iva_dettaglio.append({
-            'descrizione': slot['descrizione'],
-            'aliquota': slot['aliquota'],
-            'natura': slot['natura'],
-            'imponibile': imp_scont.quantize(Decimal('0.01')),
-            'imposta': imposta.quantize(Decimal('0.01')),
-        })
+    # Spese accessorie: seguono l'IVA delle operazioni principali, ripartite
+    # in proporzione all'imponibile scontato di ciascuna aliquota.
+    spese_imballo = Decimal(str(getattr(testata, 'spese_imballo', None) or 0)).quantize(_Q)
+    spese_trasporto = Decimal(str(getattr(testata, 'spese_trasporto', None) or 0)).quantize(_Q)
+    spese = spese_imballo + spese_trasporto
+    chiavi_spese = chiavi_iva or chiavi
+    pesi_spese = [
+        iva_map[k]['imponibile_righe'] - iva_map[k]['sconto'] for k in chiavi_spese
+    ]
+    if spese and not chiavi_spese:
+        iva_map[None] = _nuovo_slot(0, '', '')
+        chiavi_spese = [None]
+        pesi_spese = [Decimal('0')]
+    for campo, importo in (('spese_imballo', spese_imballo),
+                           ('spese_trasporto', spese_trasporto)):
+        if not importo:
+            continue
+        for k, quota in zip(chiavi_spese, _ripartisci(importo, pesi_spese)):
+            iva_map[k][campo] = quota
 
     # Cassa previdenziale (dalla AnagraficaAzienda.profilo_fiscale se presente)
-    cassa = Decimal('0')
+    cassa = Decimal('0.00')
+    cassa_info = None
     try:
         from anagrafiche.models import AnagraficaAzienda
         azienda = AnagraficaAzienda.objects.first()
         if azienda and azienda.profilo_fiscale_id:
             cp = azienda.profilo_fiscale.cassa_previdenziale
             if cp and cp.attiva:
-                base = imponibile_scontato * (cp.percentuale_imponibile / Decimal('100'))
-                cassa = base * cp.aliquota_cassa / Decimal('100')
+                base = (
+                    imponibile_scontato * (cp.percentuale_imponibile / Decimal('100'))
+                ).quantize(_Q)
+                cassa = (base * cp.aliquota_cassa / Decimal('100')).quantize(_Q)
+                cassa_info = {'cassa': cp, 'imponibile_cassa': base}
     except Exception:
-        pass
+        cassa = Decimal('0.00')
+        cassa_info = None
+    if cassa:
+        chiave_cassa = None
+        cp = cassa_info['cassa']
+        if getattr(cp, 'codice_iva_id', None):
+            iva_cassa = cp.codice_iva
+            chiave_cassa = _chiave_iva(iva_cassa)
+            iva_map.setdefault(chiave_cassa, _nuovo_slot(
+                iva_cassa.aliquota, iva_cassa.natura, iva_cassa.descrizione,
+            ))
+        elif chiavi_iva:
+            # Aliquota prevalente (imponibile scontato più alto)
+            chiave_cassa = max(
+                chiavi_iva,
+                key=lambda k: iva_map[k]['imponibile_righe'] - iva_map[k]['sconto'],
+            )
+        else:
+            iva_map.setdefault(None, _nuovo_slot(0, '', ''))
+        iva_map[chiave_cassa]['cassa'] = cassa
+        cassa_info['chiave_iva'] = chiave_cassa
 
-    totale = imponibile_scontato + imposta_totale + spese + cassa
+    def _imp_slot(s):
+        return (s['imponibile_righe'] - s['sconto'] + s['spese_imballo']
+                + s['spese_trasporto'] + s['cassa'] + s['bollo'])
+
+    # Bollo: dovuto se una riga è su posizione IVA "con bollo" e le
+    # operazioni senza IVA superano la soglia di legge.
+    bollo = Decimal('0.00')
+    if bollo_richiesto:
+        imponibile_esente = sum(
+            (_imp_slot(iva_map[k]) for k in iva_map
+             if k is not None and iva_map[k]['aliquota'] == 0),
+            Decimal('0'),
+        )
+        if imponibile_esente > SOGLIA_BOLLO:
+            bollo = IMPORTO_BOLLO
+            chiave_bollo = f'{Decimal("0.00")}|{NATURA_BOLLO}'
+            iva_map.setdefault(chiave_bollo, _nuovo_slot(
+                0, NATURA_BOLLO, 'Escluse ex art. 15 DPR 633/72',
+            ))
+            iva_map[chiave_bollo]['bollo'] = bollo
+
+    imposta_totale = Decimal('0.00')
+    iva_dettaglio = []
+    for k, slot in iva_map.items():
+        if k is None:
+            continue
+        imp = _imp_slot(slot)
+        imposta = (imp * slot['aliquota'] / Decimal('100')).quantize(_Q)
+        imposta_totale += imposta
+        iva_dettaglio.append({
+            **slot,
+            'imponibile': imp,
+            'imposta': imposta,
+        })
+
+    totale = imponibile_scontato + spese + cassa + bollo + imposta_totale
 
     return {
-        'imponibile_lordo': imponibile.quantize(Decimal('0.01')),
-        'sconto': sconto_value.quantize(Decimal('0.01')),
-        'imponibile': imponibile_scontato.quantize(Decimal('0.01')),
-        'spese': spese.quantize(Decimal('0.01')),
-        'cassa_prev': cassa.quantize(Decimal('0.01')),
+        'imponibile_lordo': imponibile.quantize(_Q),
+        'sconto': sconto_value,
+        'imponibile': imponibile_scontato.quantize(_Q),
+        'spese': spese,
+        'spese_imballo': spese_imballo,
+        'spese_trasporto': spese_trasporto,
+        'cassa_prev': cassa,
+        'cassa_info': cassa_info,
+        'bollo': bollo,
         'iva_dettaglio': iva_dettaglio,
-        'imposta_totale': imposta_totale.quantize(Decimal('0.01')),
-        'totale': totale.quantize(Decimal('0.01')),
+        'imposta_totale': imposta_totale,
+        'totale': totale.quantize(_Q),
     }
 
 
-def genera_scadenze_da_forma_pagamento(testata):
+def genera_scadenze_da_forma_pagamento(testata, totale=None):
     """Auto-genera scadenze in base a ``testata.forme_pagamento``.
 
     Presuppone una ``data_documento`` valorizzata e una lista di ``Scadenza``
@@ -107,11 +254,13 @@ def genera_scadenze_da_forma_pagamento(testata):
     """
     if not testata.forme_pagamento_id or not testata.data_documento:
         return []
-    totals = calcola_valori(testata)
-    totale = totals['totale']
+    if totale is None:
+        totale = calcola_valori(testata)['totale']
     base = testata.data_documento
+    totale = Decimal(str(totale)).quantize(_Q)
+    regole = list(testata.forme_pagamento.scadenze.all())
     scadenze = []
-    for s in testata.forme_pagamento.scadenze.all():
+    for idx, s in enumerate(regole):
         giorni = int(s.numero_giorni or 0)
         data = base + timedelta(days=giorni)
         if s.fine_mese:
@@ -121,8 +270,18 @@ def genera_scadenze_da_forma_pagamento(testata):
                 data = date(data.year, data.month + 1, 1) - timedelta(days=1)
             if s.numero_giorni_fm:
                 data += timedelta(days=int(s.numero_giorni_fm))
-        importo = (totale * Decimal(s.percentuale) / Decimal('100')).quantize(Decimal('0.01'))
+        importo = (totale * Decimal(s.percentuale) / Decimal('100')).quantize(_Q)
         scadenze.append({'data': data, 'importo': importo})
+    # Il resto dell'arrotondamento va sull'ultima rata, così la somma delle
+    # scadenze coincide al centesimo con il totale (se le percentuali
+    # coprono il 100%).
+    if scadenze:
+        tot_perc = sum((Decimal(s.percentuale) for s in regole), Decimal('0'))
+        if tot_perc == Decimal('100'):
+            gia_assegnato = sum(
+                (x['importo'] for x in scadenze[:-1]), Decimal('0'),
+            )
+            scadenze[-1]['importo'] = totale - gia_assegnato
     return scadenze
 
 

@@ -11,7 +11,7 @@
       <div style="flex: 1;">
         <h1 style="font: 600 20px var(--font-display); margin: 0 0 6px;">Eliminare {{ object.ragione_sociale }}?</h1>
         <p style="color: var(--ink-3); font-size: 14px; margin: 0 0 18px;">
-          L'operazione è irreversibile. Saranno eliminati anche tutti i contatti, le opportunità e le attività collegate.
+          L'operazione è irreversibile: saranno eliminati anche i contatti, le opportunità e le attività collegate. Un cliente con documenti collegati (offerte, ordini, DDT, fatture) non può essere eliminato: in quel caso impostalo come inattivo.
         </p>
         <form method="post" style="display: flex; gap: 8px; justify-content: flex-end;">
           {% csrf_token %}

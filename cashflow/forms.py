@@ -9,6 +9,7 @@ from accounts.models import Ruolo
 
 from .models import (
     RimborsoChilometrico, ScadenzaFiscale, ScadenzaSpesa, SpesaRicorrente,
+    StatoRimborso, puo_approvare_rimborsi,
 )
 
 
@@ -62,6 +63,19 @@ class SpesaRicorrenteForm(forms.ModelForm):
             'note': TEXTAREA,
         }
 
+    def clean_giorno_del_mese(self):
+        giorno = self.cleaned_data.get('giorno_del_mese')
+        if giorno is not None and not 1 <= giorno <= 31:
+            raise forms.ValidationError('Il giorno del mese deve essere tra 1 e 31.')
+        return giorno
+
+    def clean(self):
+        cleaned = super().clean()
+        inizio, fine = cleaned.get('data_inizio'), cleaned.get('data_fine')
+        if inizio and fine and fine < inizio:
+            self.add_error('data_fine', 'La data di fine precede la data di inizio.')
+        return cleaned
+
 
 class ScadenzaSpesaForm(forms.ModelForm):
     class Meta:
@@ -112,11 +126,18 @@ class RimborsoChilometricoForm(forms.ModelForm):
             'note': TEXTAREA,
         }
 
+    # Campi modificabili solo da chi può approvare i rimborsi.
+    CAMPI_APPROVAZIONE = ('stato', 'data_pagamento', 'amministratore')
+
     def __init__(self, *args, request=None, **kwargs):
         super().__init__(*args, **kwargs)
         User = get_user_model()
         filtro = Q(profile__ruolo=Ruolo.AMMINISTRATORE)
         utente_corrente = getattr(request, 'user', None)
+        self._utente = utente_corrente
+        self._stato_iniziale = self.instance.stato if self.instance.pk else None
+        self._amministratore_iniziale = self.instance.amministratore_id
+        self.puo_approvare = puo_approvare_rimborsi(utente_corrente)
         if utente_corrente is not None and utente_corrente.is_authenticated:
             filtro = filtro | Q(pk=utente_corrente.pk)
         if self.instance and self.instance.amministratore_id:
@@ -133,6 +154,16 @@ class RimborsoChilometricoForm(forms.ModelForm):
             'Compilato solo per i riepiloghi mensili. Per le trasferte singole '
             'è calcolato automaticamente come km × tariffa.'
         )
+        if not self.puo_approvare:
+            # I campi disabilitati ignorano i dati POST e usano l'initial.
+            if not self.instance.pk and utente_corrente is not None \
+                    and utente_corrente.is_authenticated:
+                self.initial['amministratore'] = utente_corrente.pk
+            for campo in self.CAMPI_APPROVAZIONE:
+                self.fields[campo].disabled = True
+                self.fields[campo].help_text = (
+                    'Modificabile solo da un amministratore.'
+                )
 
     def clean(self):
         cleaned = super().clean()
@@ -150,4 +181,23 @@ class RimborsoChilometricoForm(forms.ModelForm):
             ]
             for campo in mancanti:
                 self.add_error(campo, 'Campo obbligatorio per le trasferte singole.')
+        # Niente auto-approvazione: chi è l'amministratore del rimborso non può
+        # portarlo (o mantenerlo, cambiandone il titolare) in approvato/pagato.
+        stato = cleaned.get('stato')
+        amministratore = cleaned.get('amministratore')
+        utente = self._utente
+        if (
+            utente is not None and utente.is_authenticated
+            and amministratore is not None and amministratore.pk == utente.pk
+            and stato in (StatoRimborso.APPROVATO, StatoRimborso.PAGATO)
+            and (
+                stato != self._stato_iniziale
+                or amministratore.pk != self._amministratore_iniziale
+            )
+        ):
+            self.add_error(
+                'stato',
+                'Non puoi approvare o pagare un tuo rimborso: '
+                'serve un altro amministratore.',
+            )
         return cleaned

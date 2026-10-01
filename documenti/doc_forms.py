@@ -8,7 +8,7 @@ scadenze.
 from django import forms
 
 from .doc_generic import make_riga_formset
-from .forms import DefaultDateMixin, RigaDocumentoForm
+from .forms import DefaultDateMixin, RigaDocumentoForm, SezionaleBloccatoMixin
 from .models import (
     TestataDdt,
     TestataDdtFornitore,
@@ -127,7 +127,7 @@ RigaDdtFormSet = make_riga_formset(TestataDdt, 'testata_ddt', RigaDocumentoForm)
 # ---------------------------------------------------------------------------
 
 
-class TestataNotaCreditoForm(DefaultDateMixin, forms.ModelForm):
+class TestataNotaCreditoForm(SezionaleBloccatoMixin, DefaultDateMixin, forms.ModelForm):
     class Meta:
         model = TestataNotaCredito
         fields = [

@@ -16,6 +16,14 @@ class UserAdmin(BaseUserAdmin):
     inlines = [ProfileInline]
     list_display = ('username', 'email', 'first_name', 'last_name', 'ruolo', 'stato_profilo', 'is_staff')
 
+    def get_inline_instances(self, request, obj=None):
+        # In fase di creazione il Profile viene generato dal signal post_save
+        # di User: mostrare l'inline causerebbe un secondo INSERT (IntegrityError
+        # sul OneToOne). L'inline è disponibile solo in modifica.
+        if obj is None:
+            return []
+        return super().get_inline_instances(request, obj)
+
     def ruolo(self, obj):
         return getattr(obj.profile, 'get_ruolo_display', lambda: '—')()
     ruolo.short_description = 'Ruolo'

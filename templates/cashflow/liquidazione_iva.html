@@ -1,0 +1,115 @@
+{% extends 'base.html' %}
+
+{% block title %}Liquidazione IVA{% endblock %}
+{% block crumb_current %}Liquidazione IVA{% endblock %}
+
+{% block content %}
+<div class="page">
+  <div class="page-header">
+    <div>
+      <h1 class="page-title">Liquidazione IVA {{ anno }}</h1>
+      <p class="page-subtitle">
+        {% if liq.periodicita %}
+          Stima {{ liq.periodicita }} dalle fatture emesse e ricevute
+          · da versare nell'anno {{ totali.da_versare|euro:2 }}
+        {% else %}
+          Stima non attiva
+        {% endif %}
+      </p>
+    </div>
+    <form method="get" style="display: flex; gap: 8px; margin: 0;">
+      <select name="anno" class="select" onchange="this.form.requestSubmit()" style="width: 110px;">
+        {% for a in anni %}<option value="{{ a }}" {% if a == anno %}selected{% endif %}>{{ a }}</option>{% endfor %}
+      </select>
+    </form>
+  </div>
+
+  {% if not liq.periodicita %}
+    <div class="card" style="padding: 20px;">
+      <p style="margin: 0 0 8px; font: 500 14px var(--font-body);">La stima della liquidazione IVA è spenta.</p>
+      <p style="margin: 0; font: 13px var(--font-body); color: var(--ink-3);">
+        Scegli la periodicità (mensile o trimestrale) in
+        <a href="{% url 'anagrafiche:anagrafica_azienda' %}">Anagrafica azienda</a>.
+        Con un regime forfettario o dei minimi l'IVA non si liquida.
+      </p>
+    </div>
+  {% else %}
+    <div class="callout warn" style="margin-bottom: 16px;">
+      <div class="ico">{% icon 'alert' size=14 %}</div>
+      <div style="font: 12px/1.5 var(--font-body); color: var(--ink-2);">
+        {% for a in liq.avvisi %}<div>{{ a }}</div>{% endfor %}
+        <div>Le stime finiscono fra le <a href="{% url 'cashflow:scadenza_fiscale_list' %}?tipo=iva">scadenze fiscali</a>
+          e nel cashflow; se correggi l'importo a mano, il gestionale non lo aggiorna più.
+          Periodicità: <a href="{% url 'anagrafiche:anagrafica_azienda' %}">Anagrafica azienda</a>.</div>
+      </div>
+    </div>
+
+    <div class="card" style="overflow-x: auto;">
+      <table class="tbl">
+        <thead>
+          <tr>
+            <th>Periodo</th>
+            <th style="text-align: right;">IVA vendite</th>
+            <th style="text-align: right;">IVA acquisti</th>
+            <th style="text-align: right;">Riporto</th>
+            <th style="text-align: right;">Interessi</th>
+            <th style="text-align: right;">Da versare</th>
+            <th>Scadenza</th>
+            <th>Stato</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for p in liq.periodi %}
+            {% with s=scadenze|get_item:p.chiave %}
+            <tr {% if p.inizio > oggi %}style="opacity: .45;"{% endif %}>
+              <td>
+                <div style="font: 500 13px var(--font-body); color: var(--ink);">{{ p.etichetta|capfirst }}</div>
+                <div style="font: 11px var(--font-body); color: var(--ink-3);">
+                  {{ p.documenti }} document{{ p.documenti|pluralize:"o,i" }}
+                  {% if p.in_corso %}· <b>in corso</b>{% endif %}
+                  {% if p.split_payment %}· split payment {{ p.split_payment|euro:2 }}{% endif %}
+                  {% if p.in_sospeso %}· in sospeso {{ p.in_sospeso|euro:2 }}{% endif %}
+                </div>
+              </td>
+              <td class="mono" style="text-align: right;" title="Vendite {{ p.vendite|euro:2 }} − note di credito {{ p.note_credito|euro:2 }}{% if p.integrazioni %} + reverse charge {{ p.integrazioni|euro:2 }}{% endif %}">{{ p.debito|euro:2 }}</td>
+              <td class="mono" style="text-align: right;" title="Acquisti {{ p.acquisti|euro:2 }} − note di credito fornitori {{ p.note_credito_fornitori|euro:2 }}{% if p.integrazioni %} + reverse charge {{ p.integrazioni|euro:2 }}{% endif %}">{{ p.credito|euro:2 }}</td>
+              <td class="mono" style="text-align: right; color: var(--ink-3);">
+                {% if p.credito_precedente %}− {{ p.credito_precedente|euro:2 }}{% elif p.debito_precedente %}+ {{ p.debito_precedente|euro:2 }}{% else %}—{% endif %}
+              </td>
+              <td class="mono" style="text-align: right; color: var(--ink-3);">{% if p.interessi %}{{ p.interessi|euro:2 }}{% else %}—{% endif %}</td>
+              <td class="mono" style="text-align: right; font-weight: 600;">
+                {% if p.da_versare %}{{ p.da_versare|euro:2 }}
+                {% elif p.credito_riportato %}<span style="color: var(--success); font-weight: 500;">credito {{ p.credito_riportato|euro:2 }}</span>
+                {% elif p.debito_riportato %}<span style="color: var(--ink-3); font-weight: 500;" title="Sotto 25,82 € non si versa: passa al periodo dopo">riportato</span>
+                {% else %}—{% endif %}
+              </td>
+              <td>{{ p.scadenza|date:'d/m/Y' }}</td>
+              <td>
+                {% if s %}
+                  <a href="{% url 'cashflow:scadenza_fiscale_update' s.pk %}" style="text-decoration: none;">
+                    {% if s.pagata %}<span class="badge badge-success">Pagata</span>
+                    {% elif s.stimata %}<span class="badge badge-info">Stima</span>
+                    {% else %}<span class="badge badge-neutral" title="Importo corretto a mano: {{ s.importo|euro:2 }}">Manuale</span>{% endif %}
+                  </a>
+                {% elif p.da_versare %}<span class="badge badge-neutral" title="Scadenza già passata: il gestionale non la aggiunge da solo. Se l'hai versata non serve altro; altrimenti creala nelle scadenze fiscali.">Non registrata</span>{% endif %}
+              </td>
+            </tr>
+            {% endwith %}
+          {% endfor %}
+        </tbody>
+        <tfoot>
+          <tr style="font-weight: 600;">
+            <td>Totale {{ anno }}</td>
+            <td class="mono" style="text-align: right;">{{ totali.debito|euro:2 }}</td>
+            <td class="mono" style="text-align: right;">{{ totali.credito|euro:2 }}</td>
+            <td></td>
+            <td class="mono" style="text-align: right;">{{ totali.interessi|euro:2 }}</td>
+            <td class="mono" style="text-align: right;">{{ totali.da_versare|euro:2 }}</td>
+            <td colspan="2"></td>
+          </tr>
+        </tfoot>
+      </table>
+    </div>
+  {% endif %}
+</div>
+{% endblock %}

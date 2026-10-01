@@ -5,22 +5,25 @@ import io
 
 from django.contrib import messages
 from django.contrib.auth.mixins import LoginRequiredMixin
-from django.contrib.auth.models import User
-from django.db.models import Q
-from django.http import HttpResponse, JsonResponse
-from django.shortcuts import get_object_or_404, redirect, render
+from django.db import IntegrityError, transaction
+from django.db.models import ProtectedError, Q
+from django.http import HttpResponse, HttpResponseRedirect, JsonResponse
+from django.shortcuts import get_object_or_404, render
 from django.urls import reverse_lazy
 from django.utils.http import url_has_allowed_host_and_scheme
 from django.utils.text import slugify
 from django.views.generic import (
-    CreateView, DeleteView, DetailView, ListView, TemplateView, UpdateView, View,
+    CreateView, DeleteView, DetailView, ListView, UpdateView,
 )
 
 from accounts.permissions import PermRequiredMixin, require_perm
 from audit.models import Azione
 from audit.utils import log as audit_log
 
-from .forms import ClienteForm, ContattoForm
+from .forms import (
+    SDI_RE, ClienteForm, ContattoForm, normalizza_partita_iva,
+    valida_codice_fiscale,
+)
 from .models import Cliente, Contatto, Settore, StatoCliente, TipoCliente
 
 
@@ -161,6 +164,20 @@ class ClienteDeleteView(PermRequiredMixin, LoginRequiredMixin, DeleteView):
         ctx['active_nav'] = 'clienti'
         return ctx
 
+    def form_valid(self, form):
+        try:
+            response = super().form_valid(form)
+        except ProtectedError:
+            messages.error(
+                self.request,
+                f'Impossibile eliminare «{self.object.ragione_sociale}»: '
+                'ci sono documenti (offerte, ordini, DDT, fatture…) collegati. '
+                'Puoi impostare il cliente come inattivo.',
+            )
+            return HttpResponseRedirect(self.object.get_absolute_url())
+        messages.success(self.request, 'Cliente eliminato.')
+        return response
+
 
 def valida_partita_iva(request):
     """Async endpoint called on blur of P.IVA field.
@@ -202,13 +219,19 @@ class ContattoListView(LoginRequiredMixin, ListView):
         return ctx
 
 
-class ContattoCreateView(LoginRequiredMixin, CreateView):
+class ContattoCreateView(PermRequiredMixin, LoginRequiredMixin, CreateView):
+    required_perm = 'clienti.modifica'
     model = Contatto
     form_class = ContattoForm
     template_name = 'clienti/contatto_form.html'
 
+    def setup(self, request, *args, **kwargs):
+        super().setup(request, *args, **kwargs)
+        self.cliente = None
+
     def dispatch(self, request, *args, **kwargs):
-        self.cliente = get_object_or_404(Cliente, pk=kwargs['cliente_pk'])
+        if request.user.is_authenticated:
+            self.cliente = get_object_or_404(Cliente, pk=kwargs['cliente_pk'])
         return super().dispatch(request, *args, **kwargs)
 
     def form_valid(self, form):
@@ -325,6 +348,134 @@ def _guess_mapping(source_headers):
 
 SESSION_KEY = '_csv_import_payload'
 
+def _settore_da_nome(nome: str):
+    """Trova o crea un Settore per nome, con lookup per slug (evita
+    IntegrityError su slug già presenti con nome diverso). Nome senza slug
+    valido → None."""
+    slug = slugify(nome)[:120]
+    if not slug:
+        return None
+    settore = Settore.objects.filter(Q(slug=slug) | Q(nome__iexact=nome)).first()
+    if settore is not None:
+        return settore
+    try:
+        with transaction.atomic():
+            return Settore.objects.create(nome=nome[:100], slug=slug)
+    except IntegrityError:
+        return Settore.objects.filter(Q(slug=slug) | Q(nome__iexact=nome)).first()
+
+
+def _esegui_import(headers, rows, mapping):
+    """Upsert dei clienti per partita IVA.
+
+    In aggiornamento vengono toccati solo i campi mappati e non vuoti nella
+    riga; in creazione i campi mancanti prendono i default del modello.
+    Tutto l'import gira in una transazione; ogni riga in un savepoint così
+    una riga invalida diventa una riga di errore senza annullare le altre.
+    Ritorna ``(created, updated, skipped, errors)``.
+    """
+    source_index = {h: i for i, h in enumerate(headers)}
+    target_to_idx = {}
+    for src, tgt in mapping.items():
+        if tgt and src in source_index and tgt not in target_to_idx:
+            target_to_idx[tgt] = source_index[src]
+    tipi = {v for v, _ in TipoCliente.choices}
+    stati = {v for v, _ in StatoCliente.choices}
+    created, updated, skipped = 0, 0, 0
+    errors: list[tuple[int, str]] = []
+
+    def get_mapped(row, target):
+        """Ritorna il valore grezzo per il `target` applicando il mapping."""
+        idx = target_to_idx.get(target)
+        if idx is None or idx >= len(row):
+            return ''
+        return (row[idx] or '').strip()
+
+    def scarta(lineno, msg):
+        nonlocal skipped
+        skipped += 1
+        errors.append((lineno, msg))
+
+    with transaction.atomic():
+        for lineno, row in enumerate(rows, start=2):
+            rs = get_mapped(row, 'ragione_sociale')
+            piva_raw = get_mapped(row, 'partita_iva')
+            nazione = get_mapped(row, 'nazione').upper()[:2]
+            if not rs or not piva_raw:
+                scarta(lineno, 'ragione_sociale o partita_iva mancante')
+                continue
+            piva, errore = normalizza_partita_iva(piva_raw, nazione or 'IT')
+            if errore:
+                scarta(lineno, f'P.IVA non valida: {piva_raw}')
+                continue
+
+            valori = {'ragione_sociale': rs[:200]}
+            tipo = get_mapped(row, 'tipo').lower()
+            if tipo:
+                if tipo not in tipi:
+                    scarta(lineno, f'Tipo non valido: {tipo}')
+                    continue
+                valori['tipo'] = tipo
+            stato = get_mapped(row, 'stato').lower()
+            if stato:
+                if stato not in stati:
+                    scarta(lineno, f'Stato non valido: {stato}')
+                    continue
+                valori['stato'] = stato
+            cf = get_mapped(row, 'codice_fiscale').upper().replace(' ', '')
+            if cf:
+                if (nazione or 'IT') == 'IT' and not valida_codice_fiscale(cf):
+                    scarta(lineno, f'Codice fiscale non valido: {cf}')
+                    continue
+                valori['codice_fiscale'] = cf
+            sdi = get_mapped(row, 'codice_sdi').upper()
+            if sdi:
+                if not SDI_RE.match(sdi):
+                    scarta(lineno, f'Codice SDI non valido: {sdi}')
+                    continue
+                valori['codice_sdi'] = sdi
+            for campo, maxlen in (('pec', 254), ('indirizzo', 200), ('cap', 5),
+                                  ('citta', 100), ('note', None)):
+                v = get_mapped(row, campo)
+                if v:
+                    valori[campo] = v[:maxlen] if maxlen else v
+            provincia = get_mapped(row, 'provincia').upper()[:2]
+            if provincia:
+                valori['provincia'] = provincia
+            if nazione:
+                valori['nazione'] = nazione
+            settore_nome = get_mapped(row, 'settore')
+            if settore_nome:
+                settore_obj = _settore_da_nome(settore_nome)
+                if settore_obj is not None:
+                    valori['settore'] = settore_obj
+
+            # Lookup tollerante: P.IVA italiane storiche possono essere
+            # salvate senza il prefisso IT.
+            candidati = [piva]
+            if piva.startswith('IT'):
+                candidati.append(piva[2:])
+            esistenti = list(Cliente.objects.filter(partita_iva__in=candidati)[:2])
+            if len(esistenti) > 1:
+                scarta(lineno, f'P.IVA {piva} presente su più clienti')
+                continue
+            try:
+                with transaction.atomic():
+                    if esistenti:
+                        cliente = esistenti[0]
+                        for campo, v in valori.items():
+                            setattr(cliente, campo, v)
+                        cliente.save()
+                        updated += 1
+                    else:
+                        valori.setdefault('tipo', TipoCliente.AZIENDA)
+                        valori.setdefault('stato', StatoCliente.PROSPECT)
+                        Cliente.objects.create(partita_iva=piva, **valori)
+                        created += 1
+            except IntegrityError as exc:
+                scarta(lineno, f'Errore di salvataggio: {exc}')
+    return created, updated, skipped, errors
+
 
 @require_perm('clienti.importa')
 def import_csv(request):
@@ -418,75 +569,13 @@ def import_csv(request):
             return render(request, 'clienti/import_csv.html', ctx)
 
         # Esegui import
-        source_index = {h: i for i, h in enumerate(headers)}
-        tipi = {v for v, _ in TipoCliente.choices}
-        stati = {v for v, _ in StatoCliente.choices}
-        created, updated, skipped = 0, 0, 0
-        errors: list[tuple[int, str]] = []
-
-        def get_mapped(row, target):
-            """Ritorna il valore grezzo per il `target` applicando il mapping."""
-            for src, tgt in mapping.items():
-                if tgt == target:
-                    idx = source_index.get(src)
-                    if idx is None or idx >= len(row):
-                        return ''
-                    return (row[idx] or '').strip()
-            return ''
-
-        for lineno, row in enumerate(rows, start=2):
-            rs = get_mapped(row, 'ragione_sociale')
-            piva_raw = get_mapped(row, 'partita_iva').upper().replace(' ', '')
-            if not rs or not piva_raw:
-                skipped += 1
-                errors.append((lineno, 'ragione_sociale o partita_iva mancante'))
-                continue
-            piva = piva_raw[2:] if piva_raw.startswith('IT') else piva_raw
-            if not piva.isdigit() or len(piva) != 11:
-                skipped += 1
-                errors.append((lineno, f'P.IVA non valida: {piva_raw}'))
-                continue
-
-            settore_nome = get_mapped(row, 'settore')
-            settore_obj = None
-            if settore_nome:
-                settore_obj, _ = Settore.objects.get_or_create(
-                    nome=settore_nome,
-                    defaults={'slug': slugify(settore_nome)[:120]},
-                )
-
-            tipo = (get_mapped(row, 'tipo') or TipoCliente.AZIENDA).lower()
-            if tipo not in tipi:
-                tipo = TipoCliente.AZIENDA
-            stato = (get_mapped(row, 'stato') or StatoCliente.PROSPECT).lower()
-            if stato not in stati:
-                stato = StatoCliente.PROSPECT
-
-            defaults = {
-                'ragione_sociale': rs,
-                'tipo': tipo,
-                'settore': settore_obj,
-                'codice_fiscale': get_mapped(row, 'codice_fiscale'),
-                'codice_sdi': get_mapped(row, 'codice_sdi'),
-                'pec': get_mapped(row, 'pec'),
-                'indirizzo': get_mapped(row, 'indirizzo'),
-                'cap': get_mapped(row, 'cap'),
-                'citta': get_mapped(row, 'citta'),
-                'provincia': get_mapped(row, 'provincia').upper()[:2],
-                'nazione': (get_mapped(row, 'nazione') or 'IT').upper()[:2] or 'IT',
-                'stato': stato,
-                'note': get_mapped(row, 'note'),
-            }
-            _, was_created = Cliente.objects.update_or_create(
-                partita_iva=f'IT{piva}', defaults=defaults,
+        try:
+            created, updated, skipped, errors = _esegui_import(
+                headers, rows, mapping,
             )
-            if was_created:
-                created += 1
-            else:
-                updated += 1
-
-        # Pulisci la session
-        request.session.pop(SESSION_KEY, None)
+        finally:
+            # Pulisci la session anche in caso di errore imprevisto.
+            request.session.pop(SESSION_KEY, None)
 
         total = created + updated
         if total:
@@ -518,6 +607,17 @@ def import_csv(request):
     return render(request, 'clienti/import_csv.html', base_ctx)
 
 
+_FORMULA_PREFIXES = ('=', '+', '-', '@', '\t', '\r')
+
+
+def _csv_safe(value):
+    """Neutralizza la formula injection (Excel/LibreOffice) anteponendo un
+    apice alle celle che iniziano con caratteri interpretati come formula."""
+    if isinstance(value, str) and value.startswith(_FORMULA_PREFIXES):
+        return "'" + value
+    return value
+
+
 @require_perm('clienti.esporta')
 def export_csv(request):
     """Export CSV dei clienti che matchano gli stessi filtri della list view."""
@@ -543,12 +643,12 @@ def export_csv(request):
     writer.writerow(CSV_HEADERS)
     count = 0
     for c in qs:
-        writer.writerow([
+        writer.writerow([_csv_safe(v) for v in (
             c.ragione_sociale, c.tipo, (c.settore.nome if c.settore else ''),
-            c.partita_iva, c.codice_fiscale, c.codice_sdi, c.pec,
+            c.partita_iva or '', c.codice_fiscale, c.codice_sdi, c.pec,
             c.indirizzo, c.cap, c.citta, c.provincia, c.nazione,
             c.stato, c.note.replace('\n', ' ').strip() if c.note else '',
-        ])
+        )])
         count += 1
     audit_log(
         Azione.EXPORT, target_type='Cliente',

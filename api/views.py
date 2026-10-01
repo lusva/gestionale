@@ -9,10 +9,16 @@ Endpoint coperti:
     GET  /api/v1/attivita             → lista
 
 Paginazione: `?page=N&page_size=K` (page_size max 100).
+
+Token solo nell'header `Authorization: Bearer <token>`. Come in v2 conta
+il ruolo dell'utente: senza il permesso di lettura → 403. Opportunità e
+attività non hanno un permesso «vedi» proprio: sono dati CRM del cliente,
+come per i tool MCP si usa ``clienti.vedi``.
 """
 from __future__ import annotations
 
 from django.core.paginator import Paginator
+from django.db.models import Q
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404
 from django.views.decorators.http import require_GET
@@ -52,12 +58,11 @@ def health(request):
 
 
 @require_GET
-@token_auth_required
+@token_auth_required(perm='clienti.vedi')
 def clienti_list(request):
     qs = Cliente.objects.select_related('settore').order_by('-updated_at')
     q = (request.GET.get('q') or '').strip()
     if q:
-        from django.db.models import Q
         qs = qs.filter(
             Q(ragione_sociale__icontains=q) | Q(partita_iva__icontains=q),
         )
@@ -71,14 +76,14 @@ def clienti_list(request):
 
 
 @require_GET
-@token_auth_required
+@token_auth_required(perm='clienti.vedi')
 def cliente_detail(request, pk):
     c = get_object_or_404(Cliente.objects.select_related('settore'), pk=pk)
     return JsonResponse(cliente_to_dict(c))
 
 
 @require_GET
-@token_auth_required
+@token_auth_required(perm='clienti.vedi')
 def opportunita_list(request):
     qs = Opportunita.objects.select_related('cliente', 'owner').order_by('-updated_at')
     stadio = request.GET.get('stadio')
@@ -94,7 +99,7 @@ def opportunita_list(request):
 
 
 @require_GET
-@token_auth_required
+@token_auth_required(perm='clienti.vedi')
 def opportunita_detail(request, pk):
     o = get_object_or_404(
         Opportunita.objects.select_related('cliente', 'owner'), pk=pk,
@@ -103,7 +108,7 @@ def opportunita_detail(request, pk):
 
 
 @require_GET
-@token_auth_required
+@token_auth_required(perm='clienti.vedi')
 def attivita_list(request):
     qs = Attivita.objects.select_related('cliente', 'owner').order_by('-data')
     page_obj, paginator = _paginate(request, qs)

@@ -12,6 +12,8 @@ from __future__ import annotations
 import threading
 from typing import Any
 
+from django.conf import settings
+
 from .models import AuditLog
 
 
@@ -32,10 +34,23 @@ def get_current_request():
 
 
 def _client_ip(request) -> str | None:
+    """IP del client per l'audit.
+
+    Default: ``REMOTE_ADDR`` (non falsificabile dal client). Gli header
+    ``X-Forwarded-For`` sono considerati solo se
+    ``settings.AUDIT_TRUST_X_FORWARDED_FOR`` è True (app dietro reverse proxy
+    fidato, es. nginx con ``$proxy_add_x_forwarded_for``): in tal caso si usa
+    l'ultima voce, cioè quella aggiunta dal proxy (le precedenti possono
+    essere forgiate dal client).
+    """
     if not request:
         return None
-    xff = request.META.get('HTTP_X_FORWARDED_FOR', '').split(',')[0].strip()
-    return xff or request.META.get('REMOTE_ADDR')
+    if getattr(settings, 'AUDIT_TRUST_X_FORWARDED_FOR', False):
+        xff = request.META.get('HTTP_X_FORWARDED_FOR', '')
+        parts = [p.strip() for p in xff.split(',') if p.strip()]
+        if parts:
+            return parts[-1]
+    return request.META.get('REMOTE_ADDR') or None
 
 
 def _actor_label(user) -> str:

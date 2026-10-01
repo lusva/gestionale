@@ -23,6 +23,8 @@ CRM server-rendered in Django 5, tradotto dal design handoff "gestionale-4.zip" 
 17. **Export PDF report** — `/report/pdf/?periodo=…` (via xhtml2pdf)
 18. **Audit log** — eventi tracciati automaticamente (create/update/delete + login/logout/import/export), UI in `/impostazioni/audit/`
 19. **API REST read-only** — `/api/v1/{health,clienti,opportunita,attivita}` con Bearer token
+19b. **API v2 (lettura e scrittura)** — `/api/v2/{health,clienti,posizioni-iva,forme-pagamento,conti-correnti,fatture}`: `POST /api/v2/fatture` crea una fattura (TD01 di default, IVA e pagamento predefiniti del cliente), `?anteprima=1` calcola totali e scadenze senza salvare, l'header `Idempotency-Key` evita i doppioni. Serve un token con «Può scrivere» (Impostazioni › API) e il permesso `documenti.modifica` del ruolo. Per integrazioni esterne: NIKI usa il server MCP. Logica in `documenti/servizi.py`, test in `api/tests.py`.
+19c. **Server MCP** — `/mcp` (Model Context Protocol, JSON-RPC su HTTP, stesso token Bearer): 30 tool di lettura e scrittura su clienti, forme di pagamento, documenti del ciclo attivo e workflow, incassi, acquisti, magazzino, CRM e cashflow. Le scritture accettano `anteprima` (eseguite e annullate: si vede il risultato senza salvare) e `chiave` (idempotenza). `tools/list` mostra solo i tool permessi dal ruolo e, per le scritture, dai token con «Può scrivere». Lo usa NIKI; funziona anche con Claude Desktop (`mcp-remote`). Codice in `api/mcp.py` e `api/mcp_tools.py`, logica in `documenti/servizi.py`, test in `api/tests_mcp.py`.
 20. **Webhook outbound** — POST JSON su URL configurati a ogni evento di dominio, firma HMAC-SHA256 opzionale
 
 ## Stack
@@ -201,6 +203,63 @@ Payload POST:
 
 Header aggiuntivi: `X-CRM-Event`, `X-CRM-Signature: sha256=<hmac>` (se `secret` impostato).
 Delivery **sincrono** (timeout 5s) — per traffici seri, sostituire con una coda.
+
+## Fatturazione elettronica — SDI via PEC
+
+Le fatture partono dalla PEC aziendale verso il SDI; ricevute (RC/MC/NS/NE)
+e fatture passive (`.xml` e `.xml.p7m` firmate) arrivano sulla stessa casella
+e le legge `sdi_pull`. Il codice è in `documenti/sdi.py`.
+
+**Configurazione** — `/admin/` → Anagrafica azienda (esempio Aruba PEC):
+
+| Campo | Valore |
+|---|---|
+| `sdi_provider` | PEC SMTP/IMAP |
+| `pec_mittente`, `pec_smtp_user`, `pec_imap_user` | indirizzo PEC aziendale |
+| `pec_smtp_password`, `pec_imap_password` | password della casella PEC |
+| `pec_smtp_host` / `pec_smtp_port` | `smtps.pec.aruba.it` / `465` (vuoto = 465) |
+| `pec_imap_host` / `pec_imap_port` | `imaps.pec.aruba.it` / `993` |
+| `pec_destinatario_sdi` | `sdi01@pec.fatturapa.it` (poi lo aggiorna `sdi_pull`) |
+
+**Primo invio** — il canale PEC non ha un ambiente di prova: ogni invio è una
+fattura emessa.
+
+```bash
+python manage.py sdi_verifica             # login SMTP/IMAP, nessun invio
+# invio dal dettaglio fattura → "Invia al SDI"
+python manage.py sdi_pull --dry-run       # cosa farebbe, senza applicare
+python manage.py sdi_pull                 # applica ricevute, importa passive
+python manage.py sdi_pull --giorni 365    # fatture passive più vecchie
+```
+
+Il SDI risponde al primo invio da una casella `sdiNN@pec.fatturapa.it`, da
+usare per gli invii successivi: `sdi_pull` la salva da sola su
+`pec_destinatario_sdi`.
+
+`sdi_pull` non tocca i flag letto/non letto della casella: tiene traccia
+delle email elaborate nel database (`MessaggioPecElaborato`) e considera solo
+quelle spedite dal SDI.
+
+**Esecuzione automatica** (ogni 15 minuti, una volta sul server):
+
+```bash
+cp deploy/gestionale-sdi-pull.service deploy/gestionale-sdi-pull.timer /etc/systemd/system/
+systemctl daemon-reload
+systemctl enable --now gestionale-sdi-pull.timer
+journalctl -u gestionale-sdi-pull -n 50     # output delle ultime run
+```
+
+Se le fatture si emettono da un altro canale (es. Aruba Fatturazione
+Elettronica) lascia `sdi_provider` su **Disabilitato**: "Invia al SDI"
+riemetterebbe fatture già emesse. Le fatture ricevute su quel canale si
+importano da Acquisti → Importa XML: più file insieme o lo zip dello
+scaricamento multiplo (`.xml`, `.xml.p7m`; metadati e PDF vengono ignorati,
+le fatture già presenti saltate).
+
+Le fatture con esito NS (scartata) restano non emesse: vanno corrette e
+reinviate entro 5 giorni. Consigliato registrare la PEC aziendale come
+indirizzo telematico in «Fatture e Corrispettivi», così tutte le fatture
+passive arrivano lì.
 
 ## Da fare
 

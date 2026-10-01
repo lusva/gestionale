@@ -1,18 +1,19 @@
 """Seed the CRM with demo data that mirrors the design handoff mock.
 
-Usage: `python manage.py seed [--reset]`
+Usage: `python manage.py seed [--reset] [--force]` (senza --force richiede DEBUG=True)
 """
 from __future__ import annotations
 
 import datetime as dt
 from decimal import Decimal
 
+from django.conf import settings
 from django.contrib.auth.models import User
-from django.core.management.base import BaseCommand
+from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction
 from django.utils import timezone
 
-from accounts.models import Profile, Ruolo, StatoUtente
+from accounts.models import Ruolo, StatoUtente
 from attivita.models import Attivita, TipoAttivita
 from clienti.models import Cliente, Contatto, Settore, StatoCliente, Tag, TipoCliente
 from core_settings.models import Organizzazione
@@ -79,9 +80,25 @@ class Command(BaseCommand):
 
     def add_arguments(self, parser):
         parser.add_argument('--reset', action='store_true', help='Elimina prima tutti i dati CRM (clienti, opp, att, utenti non-admin)')
+        parser.add_argument(
+            '--force', action='store_true',
+            help='Esegui anche con DEBUG=False (ATTENZIONE: crea utenti demo con password nota).',
+        )
+
+    def handle(self, *args, **opts):
+        if not settings.DEBUG and not opts['force']:
+            raise CommandError(
+                'Seed rifiutato: DEBUG=False. Il comando crea utenti demo con '
+                'password nota; usa --force solo se sei certo (mai in produzione).'
+            )
+        self.stdout.write(self.style.WARNING(
+            'ATTENZIONE: il seed crea/aggiorna dati e utenti demo con password "demo1234". '
+            'Non usarlo su un database di produzione.'
+        ))
+        self._seed(**opts)
 
     @transaction.atomic
-    def handle(self, *args, **opts):
+    def _seed(self, **opts):
         if opts['reset']:
             self.stdout.write('Reset dati esistenti…')
             Attivita.objects.all().delete()
@@ -171,7 +188,7 @@ class Command(BaseCommand):
                 continue
             chiusura = (now + dt.timedelta(days=offset)).date() if offset >= 0 else None
             ingresso = now - dt.timedelta(days=abs(offset) if stadio == Stadio.CHIUSA_WIN or stadio == Stadio.CHIUSA_LOST else 5)
-            updated = now + dt.timedelta(days=offset) if offset < 0 else now
+            data_chiusura = (now + dt.timedelta(days=offset)).date() if offset < 0 else now.date()
             o, created = Opportunita.objects.get_or_create(
                 cliente=cliente, titolo=titolo,
                 defaults={
@@ -191,9 +208,10 @@ class Command(BaseCommand):
                 o.owner = user_map.get(owner)
                 o.ingresso_stadio = ingresso
                 o.save()
-            # Fudge updated_at for historical wins so dashboard fatturato per mese si popoli
-            if stadio == Stadio.CHIUSA_WIN and offset < 0:
-                Opportunita.objects.filter(pk=o.pk).update(updated_at=updated)
+            # Data chiusura storica per le opportunità chiuse, così che
+            # dashboard/report (fatturato per mese) si popolino.
+            if stadio in (Stadio.CHIUSA_WIN, Stadio.CHIUSA_LOST):
+                Opportunita.objects.filter(pk=o.pk).update(data_chiusura=data_chiusura)
             opp_count += 1
 
         self.stdout.write(self.style.SUCCESS(f'Opportunità: {opp_count}'))
@@ -217,8 +235,8 @@ class Command(BaseCommand):
         self.stdout.write(self.style.SUCCESS(f'Attività: {att_count}'))
 
         self.stdout.write(self.style.SUCCESS(
-            f'\nSeed completato!\n'
-            f'Login:   marco@studiorossi.it   (amministratore)\n'
-            f'Password: demo1234\n\n'
-            f'Superuser: usa `createsuperuser` se preferisci Django admin separato.'
+            '\nSeed completato!\n'
+            'Login:   marco@studiorossi.it   (amministratore)\n'
+            'Password: demo1234\n\n'
+            'Superuser: usa `createsuperuser` se preferisci Django admin separato.'
         ))

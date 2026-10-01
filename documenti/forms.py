@@ -43,12 +43,24 @@ class DefaultDateMixin:
         return cleaned
 
 
+class SezionaleBloccatoMixin:
+    """Il sezionale fa parte della numerazione (anno, sezionale, numero):
+    su un documento già salvato non si cambia, altrimenti il numero finirebbe
+    nel progressivo di un altro sezionale (doppione o buco)."""
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        instance = getattr(self, 'instance', None)
+        if instance is not None and instance.pk and 'sezionale' in self.fields:
+            self.fields['sezionale'].disabled = True
+
+
 # ---------------------------------------------------------------------------
 # Fattura cliente (testata + righe + scadenze)
 # ---------------------------------------------------------------------------
 
 
-class TestataFatturaForm(DefaultDateMixin, forms.ModelForm):
+class TestataFatturaForm(SezionaleBloccatoMixin, DefaultDateMixin, forms.ModelForm):
     class Meta:
         model = TestataFattura
         fields = [

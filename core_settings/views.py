@@ -141,7 +141,17 @@ def ruoli(request):
 def cambia_ruolo(request, pk):
     profile = get_object_or_404(Profile, user_id=pk)
     nuovo = request.POST.get('ruolo')
-    if nuovo in dict(Ruolo.choices):
+    if nuovo in dict(Ruolo.choices) and nuovo != profile.ruolo:
+        if profile.ruolo == Ruolo.AMMINISTRATORE:
+            altri_admin = Profile.objects.filter(
+                ruolo=Ruolo.AMMINISTRATORE, user__is_active=True,
+            ).exclude(pk=profile.pk).exists()
+            if not altri_admin:
+                messages.error(
+                    request,
+                    "Impossibile cambiare ruolo: deve restare almeno un Amministratore attivo.",
+                )
+                return _user_row_response(request, profile.user)
         profile.ruolo = nuovo
         profile.save(update_fields=['ruolo'])
     return _user_row_response(request, profile.user)
@@ -195,8 +205,10 @@ def invita_utente(request):
 
         if not email:
             messages.error(request, 'Email obbligatoria')
-        elif User.objects.filter(email=email).exists():
+        elif User.objects.filter(email__iexact=email).exists():
             messages.error(request, 'Utente già presente con questa email')
+        elif User.objects.filter(username__iexact=email).exists():
+            messages.error(request, 'Esiste già un utente con questo username')
         else:
             password = get_random_string(12)
             user = User.objects.create_user(
@@ -248,8 +260,12 @@ def api_tokens(request):
     if request.method == 'POST':
         if action == 'create_token':
             name = (request.POST.get('name') or 'Token').strip()[:80]
-            tok = ApiToken.objects.create(user=request.user, name=name)
-            new_token_value = tok.token
+            tok = ApiToken.objects.create(
+                user=request.user, name=name,
+                scrittura=request.POST.get('scrittura') == '1',
+            )
+            # in DB c'è solo l'hash: il valore in chiaro si vede ora e mai più
+            new_token_value = tok.token_in_chiaro
             messages.success(request, 'Token creato. Copialo ora — non sarà più visibile.')
         elif action == 'revoke_token':
             tid = request.POST.get('token_id')
@@ -260,9 +276,18 @@ def api_tokens(request):
             url = (request.POST.get('wh_url') or '').strip()
             secret = (request.POST.get('wh_secret') or '').strip()[:64]
             eventi = request.POST.getlist('wh_eventi')
+            eventi = [e for e in eventi if e in WebhookEvento.values]
             if not name or not url:
                 messages.error(request, 'Nome e URL sono obbligatori.')
+            elif len(url) > 300:
+                messages.error(request, 'URL troppo lungo (max 300 caratteri).')
             else:
+                from api.webhooks import UrlWebhookNonValida, valida_url_webhook
+                try:
+                    valida_url_webhook(url)
+                except UrlWebhookNonValida as e:
+                    messages.error(request, f'URL del webhook non ammesso: {e}')
+                    return render(request, 'settings/api.html', _api_ctx(request))
                 Webhook.objects.create(
                     name=name, url=url, secret=secret, eventi=eventi, attivo=True,
                 )
@@ -313,7 +338,7 @@ def audit_log(request):
         )
 
     paginator = Paginator(qs, 50)
-    page_obj = paginator.page(request.GET.get('page') or 1)
+    page_obj = paginator.get_page(request.GET.get('page'))
 
     ctx = _base_context(request, 'audit')
     ctx.update({

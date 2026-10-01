@@ -5,10 +5,12 @@ from .models import ApiToken, Webhook
 
 @admin.register(ApiToken)
 class ApiTokenAdmin(admin.ModelAdmin):
-    list_display = ('name', 'user', 'created_at', 'last_used_at', 'revoked')
-    list_filter = ('revoked',)
-    search_fields = ('name', 'user__email', 'user__username')
-    readonly_fields = ('token', 'created_at', 'last_used_at')
+    list_display = ('name', 'prefisso', 'user', 'scrittura', 'created_at', 'last_used_at', 'revoked')
+    list_filter = ('revoked', 'scrittura')
+    search_fields = ('name', 'prefisso', 'user__email', 'user__username')
+    # Il token non è recuperabile: in DB c'è solo l'hash (mai mostrato).
+    exclude = ('token_hash',)
+    readonly_fields = ('prefisso', 'created_at', 'last_used_at')
 
 
 @admin.register(Webhook)

@@ -47,13 +47,13 @@
             {{ form.settore.errors }}
           </div>
           <div class="field">
-            <label for="{{ form.partita_iva.id_for_label }}">Partita IVA *</label>
+            <label for="{{ form.partita_iva.id_for_label }}">Partita IVA <span style="color: var(--ink-3); font-weight: 400;">(obbligatoria per aziende italiane)</span></label>
             <input class="input mono" type="text" name="partita_iva" id="{{ form.partita_iva.id_for_label }}" value="{{ form.partita_iva.value|default:'' }}" placeholder="IT00000000000" @blur="checkPiva($event.target.value)" />
             {{ form.partita_iva.errors }}
             <div class="help-inline" x-show="pivaMsg" :class="{ ok: pivaOk }" x-text="pivaMsg" x-cloak></div>
           </div>
           <div class="field">
-            <label for="{{ form.codice_fiscale.id_for_label }}">Codice fiscale</label>
+            <label for="{{ form.codice_fiscale.id_for_label }}">Codice fiscale <span style="color: var(--ink-3); font-weight: 400;">(obbligatorio per i privati)</span></label>
             {{ form.codice_fiscale }}
             {{ form.codice_fiscale.errors }}
           </div>

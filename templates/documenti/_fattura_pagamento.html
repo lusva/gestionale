@@ -1,0 +1,42 @@
+{% comment %}
+  Stato di pagamento di una fattura nella lista: il badge apre un riquadro per
+  segnarla pagata (con la data) o annullare il pagamento. HTMX sostituisce
+  solo questa cella (views.fattura_toggle_pagata).
+{% endcomment %}
+{% with puo=user_perms_map|get_item:'documenti.modifica' %}
+<div class="pag-cella" id="pag-{{ f.pk }}" x-data="{ open: {% if errore %}true{% else %}false{% endif %} }" @click.stop>
+  {% if puo %}
+    <button type="button" class="badge pag-badge {% if f.pagata %}badge-success{% else %}badge-warn{% endif %}"
+            @click="open = !open" :aria-expanded="open"
+            title="{% if f.pagata %}Pagata: clicca per i dettagli{% else %}Clicca per segnarla pagata{% endif %}">
+      {% if f.pagata %}{% icon 'check' size=11 %} Pagata{% if f.data_pagamento %} {{ f.data_pagamento|date:'d/m' }}{% endif %}{% else %}Da pagare{% endif %}
+      {% icon 'chevronDown' size=11 %}
+    </button>
+  {% else %}
+    <span class="badge {% if f.pagata %}badge-success{% else %}badge-warn{% endif %}">
+      {% if f.pagata %}Pagata{% if f.data_pagamento %} {{ f.data_pagamento|date:'d/m' }}{% endif %}{% else %}Da pagare{% endif %}
+    </span>
+  {% endif %}
+
+  {% if puo %}
+    <div class="pag-pop" x-show="open" @click.outside="open = false" @keydown.escape.window="open = false" x-cloak>
+      <form hx-post="{% url 'documenti:fattura_toggle_pagata' f.pk %}"
+            hx-target="#pag-{{ f.pk }}" hx-swap="outerHTML">
+        {% csrf_token %}
+        {% if f.pagata %}
+          <div class="pag-titolo">Pagata il {{ f.data_pagamento|date:'d/m/Y'|default:'—' }}</div>
+          <input type="hidden" name="azione" value="non_pagata" />
+          <button type="submit" class="btn btn-ghost pag-btn">{% icon 'x' size=13 %} Annulla pagamento</button>
+        {% else %}
+          <label class="pag-titolo" for="pag-data-{{ f.pk }}">Data dell'incasso</label>
+          <input class="input pag-data" type="date" id="pag-data-{{ f.pk }}" name="data_pagamento"
+                 value="{% now 'Y-m-d' %}" required />
+          <input type="hidden" name="azione" value="pagata" />
+          <button type="submit" class="btn btn-brand pag-btn">{% icon 'check' size=13 %} Segna pagata</button>
+        {% endif %}
+        {% if errore %}<div class="pag-errore">{{ errore }}</div>{% endif %}
+      </form>
+    </div>
+  {% endif %}
+</div>
+{% endwith %}

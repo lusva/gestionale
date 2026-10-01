@@ -1,3 +1,4 @@
+from django.contrib.auth.decorators import login_required
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404, render
@@ -6,6 +7,8 @@ from django.views.decorators.http import require_POST
 from django.views.generic import (
     CreateView, DeleteView, DetailView, ListView, UpdateView,
 )
+
+from accounts.permissions import PermRequiredMixin, has_perm
 
 from .forms import AttivitaForm
 from .models import Attivita, TipoAttivita
@@ -49,7 +52,8 @@ class AttivitaDetailView(LoginRequiredMixin, DetailView):
         return ctx
 
 
-class AttivitaCreateView(LoginRequiredMixin, CreateView):
+class AttivitaCreateView(PermRequiredMixin, LoginRequiredMixin, CreateView):
+    required_perm = 'attivita.modifica'
     model = Attivita
     form_class = AttivitaForm
     template_name = 'attivita/form.html'
@@ -62,7 +66,8 @@ class AttivitaCreateView(LoginRequiredMixin, CreateView):
         return ctx
 
 
-class AttivitaUpdateView(LoginRequiredMixin, UpdateView):
+class AttivitaUpdateView(PermRequiredMixin, LoginRequiredMixin, UpdateView):
+    required_perm = 'attivita.modifica'
     model = Attivita
     form_class = AttivitaForm
     template_name = 'attivita/form.html'
@@ -75,14 +80,18 @@ class AttivitaUpdateView(LoginRequiredMixin, UpdateView):
         return ctx
 
 
-class AttivitaDeleteView(LoginRequiredMixin, DeleteView):
+class AttivitaDeleteView(PermRequiredMixin, LoginRequiredMixin, DeleteView):
+    required_perm = 'attivita.modifica'
     model = Attivita
     success_url = reverse_lazy('attivita:list')
     template_name = 'attivita/confirm_delete.html'
 
 
+@login_required
 @require_POST
 def toggle_completata(request, pk):
+    if not has_perm(request.user, 'attivita.modifica'):
+        return HttpResponse(status=403)
     att = get_object_or_404(Attivita, pk=pk)
     att.completata = not att.completata
     att.save(update_fields=['completata'])

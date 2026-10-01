@@ -9,87 +9,89 @@
   <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="{% static 'css/app.css' %}" />
   <link rel="icon" type="image/png" href="{% static 'img/logo.png' %}" />
+  <style>[x-cloak] { display: none !important; }</style>
 </head>
 <body>
 
 <div class="login-wrap">
-  <div class="login-left">
-    <div class="brand-chip">
-      <span class="mark">A</span>
-      <span class="name">AIGIS <span class="lab">lab</span></span>
+  <aside class="login-left">
+    <div class="login-brand">
+      <img class="login-logo" src="{% static 'img/logo-aigis.png' %}" alt="AIGIS lab" width="180" height="60" />
     </div>
 
-    <div>
-      <h2 style="font: 600 34px var(--font-display); letter-spacing: -0.03em; line-height: 1.15; margin: 0 0 16px; max-width: 420px;">
-        Gestisci i tuoi clienti con <span style="background: var(--brand-grad); -webkit-background-clip: text; background-clip: text; color: transparent;">intelligenza</span> e semplicità.
-      </h2>
-      <p style="font: 15px var(--font-body); color: var(--ink-2); max-width: 420px; line-height: 1.6;">
-        Il gestionale CRM pensato per studi professionali e PMI italiane. Anagrafica, opportunità, attività — tutto in un unico posto.
-      </p>
+    <div class="login-pitch">
+      <h2>Il tuo gestionale, <span class="grad">tutto in un posto.</span></h2>
+      <ul class="login-features">
+        <li><span class="ico">{% icon 'users' size=16 %}</span>Clienti, opportunità e attività</li>
+        <li><span class="ico">{% icon 'doc' size=16 %}</span>Documenti e fatturazione elettronica SDI</li>
+        <li><span class="ico">{% icon 'euro' size=16 %}</span>Cashflow, scadenze e magazzino</li>
+      </ul>
     </div>
 
-    <div style="font: 12px var(--font-body); color: var(--ink-3);">© {% now 'Y' %} AIGIS lab — Tutti i diritti riservati</div>
-  </div>
+    <div class="login-foot">© {% now 'Y' %} AIGIS lab</div>
+  </aside>
 
-  <div class="login-right">
-    <form class="login-card" method="post" action="">
+  <main class="login-right">
+    <form class="login-card" method="post" action="" x-data="{ show: false, sending: false }" @submit="sending = true" novalidate>
       {% csrf_token %}
-      <div style="text-align: center; margin-bottom: 32px;">
-        <div style="width: 56px; height: 56px; border-radius: 16px; background: var(--brand-grad); margin: 0 auto 16px; display: inline-flex; align-items: center; justify-content: center; color: white; font: 700 24px var(--font-display); box-shadow: 0 8px 24px rgba(139, 95, 191, 0.35);">A</div>
-        <h1 style="font: 600 24px var(--font-display); margin: 0 0 6px; letter-spacing: -0.02em;">Accedi al tuo account</h1>
-        <p style="font: 14px var(--font-body); color: var(--ink-3); margin: 0;">Benvenuto di nuovo</p>
-      </div>
+
+      <header class="login-head">
+        <span class="login-mark" aria-hidden="true">A</span>
+        <h1>Accedi</h1>
+        <p>Inserisci le tue credenziali per continuare.</p>
+      </header>
 
       {% if form.errors %}
-        <div class="callout warn" style="margin-bottom: 16px;">
-          <div class="ico">{% icon 'x' size=14 %}</div>
+        <div class="login-error" role="alert">
+          {% icon 'alert' size=16 %}
           <div>
-            <div style="font: 600 13px var(--font-display); margin-bottom: 4px;">Credenziali non valide</div>
-            <div style="font: 12px var(--font-body); color: var(--ink-2);">Controlla nome utente e password.</div>
+            {% if form.non_field_errors %}
+              {% for err in form.non_field_errors %}{{ err }}{% endfor %}
+            {% else %}
+              Inserisci nome utente e password.
+            {% endif %}
           </div>
         </div>
       {% endif %}
 
-      <div class="flex-col gap-16">
-        <div class="field">
-          <label for="id_username">Nome utente o email</label>
-          <input class="input" type="text" name="username" id="id_username" placeholder="nome@azienda.it" autofocus required />
-        </div>
-        <div class="field" x-data="{ show: false }">
-          <div style="display: flex; justify-content: space-between; align-items: baseline;">
-            <label for="id_password">Password</label>
-            <a href="#" style="font: 12px var(--font-body); color: var(--brand-purple); text-decoration: none;">Dimenticata?</a>
-          </div>
-          <div style="position: relative;">
-            <input class="input" :type="show ? 'text' : 'password'" name="password" id="id_password" placeholder="••••••••••" style="padding-right: 36px;" required />
-            <button type="button" class="btn-icon" style="position: absolute; right: 4px; top: 4px;" @click="show = !show">{% icon 'eye' size=14 %}</button>
-          </div>
-        </div>
-
-        <label style="display: flex; align-items: center; gap: 8px; font: 13px var(--font-body); color: var(--ink-2);">
-          <input type="checkbox" name="remember" /> Ricordami per 30 giorni
-        </label>
-
-        <input type="hidden" name="next" value="{{ next }}" />
-
-        <button type="submit" class="btn btn-brand" style="height: 44px; justify-content: center; font-size: 14px; font-weight: 600;">Accedi</button>
-
-        <div style="text-align: center; font: 12px var(--font-body); color: var(--ink-3); margin: 8px 0; position: relative;">
-          <span style="padding: 0 10px; background: var(--bg); position: relative; z-index: 1;">oppure</span>
-          <hr style="border: none; border-top: 1px solid var(--border); margin: -8px 0 0;" />
-        </div>
-
-        <button type="button" class="btn btn-ghost" style="height: 42px; justify-content: center;">
-          {% icon 'lock' size=14 %} Accedi con SSO aziendale
-        </button>
+      <div class="field">
+        <label for="id_username">Email o nome utente</label>
+        <input class="input" type="text" name="username" id="id_username"
+               value="{{ form.username.value|default:'' }}"
+               placeholder="nome@azienda.it" autocomplete="username"
+               autocapitalize="none" spellcheck="false"
+               {% if not form.username.value %}autofocus{% endif %} required />
       </div>
 
-      <div style="text-align: center; margin-top: 24px; font: 13px var(--font-body); color: var(--ink-3);">
-        Non hai un account?
-        <a href="#" style="color: var(--brand-purple); text-decoration: none; font-weight: 500;">Richiedi una demo</a>
+      <div class="field">
+        <label for="id_password">Password</label>
+        <div class="login-password">
+          <input class="input" :type="show ? 'text' : 'password'" type="password" name="password" id="id_password"
+                 placeholder="••••••••••" autocomplete="current-password"
+                 {% if form.username.value %}autofocus{% endif %} required />
+          <button type="button" class="btn-icon" @click="show = !show"
+                  :aria-label="show ? 'Nascondi password' : 'Mostra password'" aria-label="Mostra password">
+            <span x-show="!show">{% icon 'eye' size=16 %}</span>
+            <span x-show="show" x-cloak>{% icon 'eyeOff' size=16 %}</span>
+          </button>
+        </div>
       </div>
+
+      <label class="login-remember">
+        <input type="checkbox" name="remember" value="1" {% if request.POST.remember %}checked{% endif %} />
+        <span>Ricordami per 30 giorni</span>
+      </label>
+
+      <input type="hidden" name="next" value="{{ next }}" />
+
+      <button type="submit" class="btn btn-brand login-submit" :disabled="sending">
+        <span x-show="!sending">Accedi</span>
+        <span x-show="sending" x-cloak>Accesso in corso…</span>
+      </button>
+
+      <p class="login-help">Password dimenticata? Contatta un amministratore.</p>
     </form>
-  </div>
+  </main>
 </div>
 
 <script defer src="https://unpkg.com/alpinejs@3.14.1/dist/cdn.min.js"></script>

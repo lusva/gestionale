@@ -9,7 +9,7 @@
         <th>Cliente</th>
         <th style="width: 90px;">Tipo</th>
         <th style="text-align: right; width: 130px;">Imponibile</th>
-        <th style="width: 110px;">Stato</th>
+        <th style="width: 150px;">Stato</th>
         <th style="width: 40px;"></th>
       </tr>
     </thead>
@@ -31,13 +31,7 @@
           </td>
           <td><span class="badge badge-neutral">{{ f.tipo_documento }}</span></td>
           <td class="mono" style="text-align: right; font-weight: 500;">{{ f.imponibile|euro:2 }}</td>
-          <td>
-            {% if f.pagata %}
-              <span class="badge badge-success">Pagata</span>
-            {% else %}
-              <span class="badge badge-warn">Da pagare</span>
-            {% endif %}
-          </td>
+          <td>{% include 'documenti/_fattura_pagamento.html' %}</td>
           <td>
             <div x-data="{ open: false }" style="position: relative;">
               <button type="button" class="btn-icon" @click.stop="open = !open">{% icon 'more' size=14 %}</button>

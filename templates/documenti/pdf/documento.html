@@ -245,6 +245,12 @@
               <span class="tabular">{{ totals.cassa_prev|floatformat:2 }} €</span>
             </div>
           {% endif %}
+          {% if totals.bollo %}
+            <div class="row">
+              <span class="muted">Imposta di bollo</span>
+              <span class="tabular">{{ totals.bollo|floatformat:2 }} €</span>
+            </div>
+          {% endif %}
           <div class="row grand">
             <span>Totale</span>
             <span class="tabular">{{ totals.totale|floatformat:2 }} €</span>

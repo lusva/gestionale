@@ -1,3 +1,1 @@
-from django.contrib import admin
-
-# Register your models here.
+# Reports app: nessun modello da registrare in admin.

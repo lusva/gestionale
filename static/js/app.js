@@ -13,7 +13,7 @@ window.UI = {
     applyUI(theme, document.documentElement.getAttribute('data-density') || 'normal');
     fetch('/ui/theme/', {
       method: 'POST',
-      headers: { 'X-CSRFToken': getCookie('csrftoken'), 'Content-Type': 'application/x-www-form-urlencoded' },
+      headers: { 'X-CSRFToken': csrfToken(), 'Content-Type': 'application/x-www-form-urlencoded' },
       body: 'theme=' + encodeURIComponent(theme),
     });
   },
@@ -21,7 +21,7 @@ window.UI = {
     applyUI(document.documentElement.getAttribute('data-theme') || 'light', density);
     fetch('/ui/density/', {
       method: 'POST',
-      headers: { 'X-CSRFToken': getCookie('csrftoken'), 'Content-Type': 'application/x-www-form-urlencoded' },
+      headers: { 'X-CSRFToken': csrfToken(), 'Content-Type': 'application/x-www-form-urlencoded' },
       body: 'density=' + encodeURIComponent(density),
     });
   },
@@ -30,6 +30,11 @@ window.UI = {
 function getCookie(name) {
   const match = document.cookie.match(new RegExp('(^| )' + name + '=([^;]+)'));
   return match ? decodeURIComponent(match[2]) : '';
+}
+
+// Nome del cookie CSRF = settings.CSRF_COOKIE_NAME
+function csrfToken() {
+  return getCookie('aigiscrm_csrftoken');
 }
 
 // ---- Toast stack ------------------------------------------------------------
@@ -156,7 +161,7 @@ document.addEventListener('drop', (e) => {
 
   fetch(`/opportunita/${oppId}/sposta/`, {
     method: 'POST',
-    headers: { 'X-CSRFToken': getCookie('csrftoken'), 'HX-Request': 'true' },
+    headers: { 'X-CSRFToken': csrfToken(), 'HX-Request': 'true' },
     body: form,
   })
     .then(r => r.text())

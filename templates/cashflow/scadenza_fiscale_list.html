@@ -10,7 +10,7 @@
     <div>
       <h1 class="page-title">Scadenze fiscali</h1>
       <p class="page-subtitle">
-        IVA, F24, INPS e altre scadenze inserite manualmente
+        IVA (stimata dal gestionale), F24, INPS e altre scadenze
         · {{ tot_aperte|euro }} aperto
         {% if tot_scadute %}· <span style="color: var(--danger);">{{ tot_scadute|euro }} scaduto</span>{% endif %}
       </p>
@@ -65,7 +65,7 @@
               {% endif %}
             </td>
             <td>{{ s.get_tipo_display }}</td>
-            <td>{{ s.descrizione }}</td>
+            <td>{{ s.descrizione }}{% if s.stimata and not s.pagata %} <a href="{% url 'cashflow:liquidazione_iva' %}" class="badge badge-info" style="text-decoration: none;" title="Calcolata dal gestionale: si aggiorna da sola finché non la modifichi">stima</a>{% endif %}</td>
             <td class="mono" style="text-align: right;">{{ s.importo|euro }}</td>
             <td>
               {% if s.pagata %}
@@ -76,9 +76,13 @@
             </td>
             <td style="white-space: nowrap; text-align: right;">
               {% if user_perms_map|get_item:'cashflow.modifica' %}
-                <a href="{% url 'cashflow:scadenza_fiscale_pagata' s.pk %}?next={{ request.get_full_path|urlencode }}" class="btn btn-ghost btn-sm" title="{% if s.pagata %}Annulla pagamento{% else %}Marca come pagata{% endif %}">
-                  {% if s.pagata %}{% icon 'x' size=12 %}{% else %}{% icon 'check' size=12 %}{% endif %}
-                </a>
+                <form method="post" action="{% url 'cashflow:scadenza_fiscale_pagata' s.pk %}" style="display: inline;">
+                  {% csrf_token %}
+                  <input type="hidden" name="next" value="{{ request.get_full_path }}">
+                  <button type="submit" class="btn btn-ghost btn-sm" title="{% if s.pagata %}Annulla pagamento{% else %}Marca come pagata{% endif %}">
+                    {% if s.pagata %}{% icon 'x' size=12 %}{% else %}{% icon 'check' size=12 %}{% endif %}
+                  </button>
+                </form>
                 <a href="{% url 'cashflow:scadenza_fiscale_update' s.pk %}" class="btn btn-ghost btn-sm">{% icon 'edit' size=12 %}</a>
               {% endif %}
               {% if user_perms_map|get_item:'cashflow.elimina' %}

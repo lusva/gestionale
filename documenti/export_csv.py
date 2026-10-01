@@ -9,6 +9,7 @@ da ``/documenti/fatture/export/?anno=2026&pagata=no``.
 from __future__ import annotations
 
 import csv
+import re
 from decimal import Decimal
 
 from django.contrib.auth.decorators import login_required
@@ -27,12 +28,42 @@ from .models import (
 )
 
 
-def _csv_response(filename: str) -> tuple[HttpResponse, csv.writer]:
+# Caratteri iniziali che Excel/LibreOffice interpretano come formula
+# (CSV/formula injection, CWE-1236).
+_FORMULA_PREFIX = ('=', '+', '-', '@', '\t', '\r')
+_RE_NUMERO = re.compile(r'^[+-]?\d+(?:[.,]\d+)?$')
+
+
+def _cella_sicura(value):
+    """Neutralizza le celle testuali che verrebbero eseguite come formula,
+    anteponendo un apice. I numeri (anche già formattati come stringa, es.
+    ``-12,50`` di ``_euro``) restano invariati."""
+    if isinstance(value, str) and value.startswith(_FORMULA_PREFIX) \
+            and not _RE_NUMERO.match(value):
+        return "'" + value
+    return value
+
+
+class _WriterSicuro:
+    """Wrapper di ``csv.writer`` che applica ``_cella_sicura`` a ogni cella."""
+
+    def __init__(self, writer):
+        self._writer = writer
+
+    def writerow(self, row):
+        return self._writer.writerow([_cella_sicura(v) for v in row])
+
+    def writerows(self, rows):
+        for row in rows:
+            self.writerow(row)
+
+
+def _csv_response(filename: str) -> tuple[HttpResponse, _WriterSicuro]:
     response = HttpResponse(content_type='text/csv; charset=utf-8')
     response['Content-Disposition'] = f'attachment; filename="{filename}"'
-    response.write('﻿')  # BOM UTF-8 per Excel
+    response.write('\ufeff')  # BOM UTF-8 per Excel
     writer = csv.writer(response, delimiter=';', quoting=csv.QUOTE_MINIMAL)
-    return response, writer
+    return response, _WriterSicuro(writer)
 
 
 def _euro(v):

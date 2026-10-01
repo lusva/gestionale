@@ -68,7 +68,11 @@ class Cliente(models.Model):
         related_name='clienti',
     )
 
-    partita_iva = models.CharField(max_length=16, unique=True, db_index=True)
+    # Nullable: privati ed esteri possono non averla. Il vincolo unique
+    # ammette più NULL; le stringhe vuote vengono salvate come NULL (vedi save).
+    partita_iva = models.CharField(
+        max_length=16, unique=True, db_index=True, null=True, blank=True,
+    )
     codice_fiscale = models.CharField(max_length=16, blank=True)
     codice_sdi = models.CharField(max_length=7, blank=True)
     pec = models.EmailField(blank=True)
@@ -147,6 +151,11 @@ class Cliente(models.Model):
 
     def get_absolute_url(self):
         return reverse('clienti:detail', args=[self.pk])
+
+    def save(self, *args, **kwargs):
+        if not (self.partita_iva or '').strip():
+            self.partita_iva = None
+        super().save(*args, **kwargs)
 
     @property
     def iniziali(self):

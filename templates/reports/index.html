@@ -14,7 +14,7 @@
     <form method="get" style="display: flex; gap: 8px; align-items: center;">
       <select name="periodo" class="select" style="height: 36px;" onchange="this.form.submit()">
         <option value="30g" {% if periodo == '30g' %}selected{% endif %}>Ultimi 30 giorni</option>
-        <option value="q2" {% if periodo == 'q2' %}selected{% endif %}>Q2 {{ today|date:'Y' }}</option>
+        <option value="trimestre" {% if periodo == 'trimestre' %}selected{% endif %}>{{ trimestre_label }} (trimestre corrente)</option>
         <option value="anno" {% if periodo == 'anno' %}selected{% endif %}>Anno corrente</option>
       </select>
       {% if user_perms_map|get_item:'report.esporta' %}

@@ -16,3 +16,5 @@ reportlab<4.4
 lxml>=5.2
 pyHanko>=0.25
 pyhanko-certvalidator>=0.26
+# Estrazione XML dalle fatture passive firmate (.xml.p7m).
+asn1crypto>=1.5

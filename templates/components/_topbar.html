@@ -1,15 +1,7 @@
-{% load static %}
-<header class="topbar">
-  <button class="btn-icon" type="button" onclick="toggleSidebar()" style="display: none;" aria-label="Toggle menu">{% icon 'menu' size=18 %}</button>
-
-  <nav class="breadcrumb">
-    {% if azienda_nome %}<span>{{ azienda_nome }}</span>{% endif %}
-    {% block breadcrumb %}
-      {% if azienda_nome %}<span class="sep">{% icon 'chevronRight' size=14 %}</span>{% endif %}
-      <span class="current">{% block crumb_current %}{{ active_nav|title|default:'' }}{% endblock %}</span>
-    {% endblock %}
-  </nav>
-
+{% comment %}
+  Ricerca e azioni della topbar. L'<header> e il breadcrumb stanno in
+  base.html: i {% block %} di un template incluso non sono sovrascrivibili.
+{% endcomment %}
   <div class="search">
     {% icon 'search' size=14 %}
     <form action="{% url 'search:cerca' %}" method="get" style="margin: 0;">
@@ -68,6 +60,3 @@
       </div>
     </div>
   </div>
-</header>
-
-<style>[x-cloak] { display: none !important; }</style>

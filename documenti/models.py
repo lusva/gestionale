@@ -19,7 +19,9 @@ from django.core.exceptions import ValidationError
 from django.db import models, transaction
 from django.db.models.signals import post_delete, post_save
 from django.dispatch import receiver
-from django.utils.timezone import now
+from datetime import datetime
+
+from django.utils.timezone import is_aware, localdate, localtime, now
 
 
 # ---------------------------------------------------------------------------
@@ -60,6 +62,25 @@ def _next_numero_per_anno(model, anno, sezionale=None):
     return (last.numero + 1) if last else 1
 
 
+def _anno_documento(data_documento):
+    """Anno di numerazione: quello della data del documento (ora locale),
+    oppure l'anno di oggi (ora locale, non UTC) se la data manca."""
+    if isinstance(data_documento, datetime):
+        if is_aware(data_documento):
+            data_documento = localtime(data_documento)
+        return data_documento.year
+    if data_documento:
+        return data_documento.year
+    return localdate().year
+
+
+def _vincolo_numero(nome, con_sezionale=False):
+    """Unicità del numero per anno (e sezionale): impedisce numeri doppi
+    anche se due salvataggi concorrenti leggono lo stesso ultimo numero."""
+    campi = ['anno', 'sezionale', 'numero'] if con_sezionale else ['anno', 'numero']
+    return models.UniqueConstraint(fields=campi, name=f'documenti_{nome}_numero_unico')
+
+
 def _recalc_imponibile(testata, related_name='righe'):
     """Ricalcola imponibile sommando ``importo_unitario * quantita`` delle righe."""
     imponibile = Decimal('0.00')
@@ -76,8 +97,8 @@ def _recalc_imponibile(testata, related_name='righe'):
 class TestataDocumento(models.Model):
     numero = models.PositiveIntegerField(editable=False)
     anno = models.PositiveIntegerField(editable=False)
-    data_documento = models.DateField(default=now, null=True, blank=True)
-    data_registrazione = models.DateField(default=now, null=True, blank=True)
+    data_documento = models.DateField(default=localdate, null=True, blank=True)
+    data_registrazione = models.DateField(default=localdate, null=True, blank=True)
     cliente = models.ForeignKey(
         'clienti.Cliente',
         on_delete=models.PROTECT,
@@ -117,11 +138,30 @@ class TestataDocumento(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
+    # True per i documenti con progressivi separati per sezionale
+    NUMERAZIONE_PER_SEZIONALE = False
+
     def clean(self):
         if not self.cliente and not self.fornitore:
             raise ValidationError(
                 'Devi specificare almeno un Cliente o un Fornitore.'
             )
+
+    def save(self, *args, **kwargs):
+        """Al primo salvataggio assegna anno (dalla data del documento) e
+        numero progressivo: lettura dell'ultimo numero (con lock) e INSERT
+        stanno nella stessa transazione, così il lock copre anche il save."""
+        if not self._state.adding:
+            return super().save(*args, **kwargs)
+        with transaction.atomic():
+            anno = _anno_documento(self.data_documento)
+            sezionale = None
+            if self.NUMERAZIONE_PER_SEZIONALE:
+                self.sezionale = self.sezionale or ''
+                sezionale = self.sezionale
+            self.numero = _next_numero_per_anno(type(self), anno, sezionale=sezionale)
+            self.anno = anno
+            super().save(*args, **kwargs)
 
     class Meta:
         abstract = True
@@ -148,13 +188,6 @@ class TestataOfferta(TestataDocumento):
         'TestataOrdine', blank=True, related_name='offerte_origine',
     )
 
-    def save(self, *args, **kwargs):
-        if self._state.adding:
-            anno = now().year
-            with transaction.atomic():
-                self.numero = _next_numero_per_anno(TestataOfferta, anno)
-                self.anno = anno
-        super().save(*args, **kwargs)
 
     def __str__(self):
         return f'Offerta {self.numero}/{self.anno} - {self.cliente or self.fornitore or ""}'
@@ -163,6 +196,7 @@ class TestataOfferta(TestataDocumento):
         ordering = ['-anno', '-numero']
         verbose_name = 'Offerta'
         verbose_name_plural = 'Offerte'
+        constraints = [_vincolo_numero('offerta')]
 
 
 class TestataOrdine(TestataDocumento):
@@ -183,13 +217,6 @@ class TestataOrdine(TestataDocumento):
         'TestataFattura', blank=True, related_name='ordini_origine',
     )
 
-    def save(self, *args, **kwargs):
-        if self._state.adding:
-            anno = now().year
-            with transaction.atomic():
-                self.numero = _next_numero_per_anno(TestataOrdine, anno)
-                self.anno = anno
-        super().save(*args, **kwargs)
 
     def __str__(self):
         return f'Ordine {self.numero}/{self.anno} - {self.cliente or self.fornitore or ""}'
@@ -198,6 +225,7 @@ class TestataOrdine(TestataDocumento):
         ordering = ['-anno', '-numero']
         verbose_name = 'Ordine'
         verbose_name_plural = 'Ordini'
+        constraints = [_vincolo_numero('ordine')]
 
 
 class TestataDdt(TestataDocumento):
@@ -226,13 +254,6 @@ class TestataDdt(TestataDocumento):
         default=StatoDdt.CONFERMATO,
     )
 
-    def save(self, *args, **kwargs):
-        if self._state.adding:
-            anno = now().year
-            with transaction.atomic():
-                self.numero = _next_numero_per_anno(TestataDdt, anno)
-                self.anno = anno
-        super().save(*args, **kwargs)
 
     def __str__(self):
         return f'DDT {self.numero}/{self.anno} - {self.cliente or ""}'
@@ -241,6 +262,7 @@ class TestataDdt(TestataDocumento):
         ordering = ['-anno', '-numero']
         verbose_name = 'DDT'
         verbose_name_plural = 'DDT'
+        constraints = [_vincolo_numero('ddt')]
 
 
 class TestataFattura(TestataDocumento):
@@ -273,6 +295,8 @@ class TestataFattura(TestataDocumento):
         help_text="Sezionale di numerazione (es. 'A' per immediate, 'B' per "
                   "differite). Lasciare vuoto per progressivo unico.",
     )
+    NUMERAZIONE_PER_SEZIONALE = True
+
     nota_credito_collegata = models.ManyToManyField(
         'TestataNotaCredito', blank=True, related_name='fatture_origine',
     )
@@ -290,6 +314,10 @@ class TestataFattura(TestataDocumento):
         ACCETTATA = 'accettata', 'Accettata (consegnata al destinatario)'
         SCARTATA = 'scartata', 'Scartata'
         MANCATA_CONSEGNA = 'mancata_consegna', 'Mancata consegna (in giacenza)'
+        RIFIUTATA = 'rifiutata', 'Rifiutata dal committente (esito EC02)'
+
+    # stati da cui la fattura, corretta, si può rinviare al SDI
+    SDI_STATI_REINVIO = (SdiStato.SCARTATA, SdiStato.RIFIUTATA)
 
     sdi_stato = models.CharField(
         max_length=20,
@@ -302,16 +330,27 @@ class TestataFattura(TestataDocumento):
         help_text="ID trasmissione assegnato dal SDI (ricevuta RC).",
     )
     sdi_ultimo_messaggio = models.TextField(blank=True, default='')
+    tentativo_sdi = models.PositiveSmallIntegerField(
+        default=0,
+        help_text="Numero di reinvii al SDI dopo scarto/rifiuto: entra nel "
+                  "progressivo del file, che il SDI non accetta due volte.",
+    )
 
-    def save(self, *args, **kwargs):
-        if self._state.adding:
-            anno = now().year
-            with transaction.atomic():
-                self.numero = _next_numero_per_anno(
-                    TestataFattura, anno, sezionale=self.sezionale or '',
-                )
-                self.anno = anno
-        super().save(*args, **kwargs)
+    @property
+    def trasmessa_sdi(self):
+        """True se la fattura è partita verso il SDI (anche se poi scartata o
+        rifiutata):
+        il suo numero è ormai noto al SDI e non va riusato."""
+        return self.sdi_stato != self.SdiStato.NON_INVIATA
+
+    @property
+    def emessa_sdi(self):
+        """True se il SDI l'ha presa in carico (inviata/ricevuta/consegnata o
+        in giacenza): la fattura è emessa e non va più modificata. Una
+        fattura scartata o rifiutata invece si corregge e si rinvia."""
+        return (self.sdi_stato != self.SdiStato.NON_INVIATA
+                and self.sdi_stato not in self.SDI_STATI_REINVIO)
+
 
     def __str__(self):
         sez = f'{self.sezionale}/' if self.sezionale else ''
@@ -321,6 +360,7 @@ class TestataFattura(TestataDocumento):
         ordering = ['-anno', '-numero']
         verbose_name = 'Fattura'
         verbose_name_plural = 'Fatture'
+        constraints = [_vincolo_numero('fattura', con_sezionale=True)]
 
 
 class TestataNotaCredito(TestataDocumento):
@@ -338,15 +378,8 @@ class TestataNotaCredito(TestataDocumento):
         help_text="Sezionale di numerazione (separato dalle fatture).",
     )
 
-    def save(self, *args, **kwargs):
-        if self._state.adding:
-            anno = now().year
-            with transaction.atomic():
-                self.numero = _next_numero_per_anno(
-                    TestataNotaCredito, anno, sezionale=self.sezionale or '',
-                )
-                self.anno = anno
-        super().save(*args, **kwargs)
+    NUMERAZIONE_PER_SEZIONALE = True
+
 
     def __str__(self):
         sez = f'{self.sezionale}/' if self.sezionale else ''
@@ -356,6 +389,7 @@ class TestataNotaCredito(TestataDocumento):
         ordering = ['-anno', '-numero']
         verbose_name = 'Nota di credito'
         verbose_name_plural = 'Note di credito'
+        constraints = [_vincolo_numero('nota_credito', con_sezionale=True)]
 
 
 # ---------------------------------------------------------------------------
@@ -369,13 +403,6 @@ class TestataDdtFornitore(TestataDocumento):
     peso_lordo = models.DecimalField(max_digits=10, decimal_places=2, default=0)
     vettore = models.CharField(max_length=50, blank=True, default='')
 
-    def save(self, *args, **kwargs):
-        if self._state.adding:
-            anno = now().year
-            with transaction.atomic():
-                self.numero = _next_numero_per_anno(TestataDdtFornitore, anno)
-                self.anno = anno
-        super().save(*args, **kwargs)
 
     def __str__(self):
         return f'DDT Fornitore {self.numero}/{self.anno} - {self.fornitore or ""}'
@@ -384,6 +411,7 @@ class TestataDdtFornitore(TestataDocumento):
         ordering = ['-anno', '-numero']
         verbose_name = 'DDT fornitore'
         verbose_name_plural = 'DDT fornitore'
+        constraints = [_vincolo_numero('ddt_fornitore')]
 
 
 class TestataFatturaAcquisto(TestataDocumento):
@@ -436,13 +464,6 @@ class TestataFatturaAcquisto(TestataDocumento):
         upload_to='fatture_acquisto_xml/', blank=True, null=True,
     )
 
-    def save(self, *args, **kwargs):
-        if self._state.adding:
-            anno = now().year
-            with transaction.atomic():
-                self.numero = _next_numero_per_anno(TestataFatturaAcquisto, anno)
-                self.anno = anno
-        super().save(*args, **kwargs)
 
     def __str__(self):
         return (
@@ -455,6 +476,7 @@ class TestataFatturaAcquisto(TestataDocumento):
         verbose_name = 'Fattura acquisto'
         verbose_name_plural = 'Fatture acquisto'
         constraints = [
+            _vincolo_numero('fattura_acquisto'),
             models.UniqueConstraint(
                 fields=['fornitore', 'numero_fornitore', 'data_fornitore'],
                 name='documenti_fattura_acq_unique_per_fornitore',
@@ -518,7 +540,7 @@ class RigaDocumento(models.Model):
     quantita = models.DecimalField(max_digits=10, decimal_places=2)
     iva = models.ForeignKey(
         'anagrafiche.PosizioneIva',
-        on_delete=models.SET_NULL,
+        on_delete=models.PROTECT,
         blank=True, null=True,
     )
     um = models.CharField(max_length=10, blank=True, null=True, choices=UM.choices)
@@ -599,7 +621,7 @@ class RigaFatturaAcquisto(models.Model):
     )
     aliquota_iva = models.ForeignKey(
         'anagrafiche.PosizioneIva',
-        on_delete=models.SET_NULL, blank=True, null=True,
+        on_delete=models.PROTECT, blank=True, null=True,
     )
     categoria_costo = models.ForeignKey(
         'anagrafiche.CategoriaCosto',
@@ -717,7 +739,7 @@ class PagamentoScadenzaAcquisto(models.Model):
         ScadenzaFatturaAcquisto, on_delete=models.CASCADE,
         related_name='pagamenti',
     )
-    data_pagamento = models.DateField(default=now)
+    data_pagamento = models.DateField(default=localdate)
     importo = models.DecimalField(max_digits=10, decimal_places=2)
     modalita_pagamento = models.CharField(
         max_length=10,
@@ -835,11 +857,13 @@ def _recalc_fattura_acquisto(sender, instance, **kwargs):
         imponibile += row_imponibile
         if row.aliquota_iva:
             imposta += row_imponibile * row.aliquota_iva.aliquota / Decimal('100')
-    TestataFatturaAcquisto.objects.filter(pk=instance.pk).update(
-        imponibile=imponibile,
-        imposta=imposta,
-        totale_documento=imponibile + imposta,
-    )
+    valori = {'imponibile': imponibile, 'imposta': imposta}
+    # Una fattura importata da XML porta il suo ImportoTotaleDocumento (che
+    # può includere cassa, bollo, arrotondamenti…): quello resta, lo si
+    # ricalcola solo per le fatture inserite a mano o senza totale nell'XML.
+    if not instance.xml_originale or instance.totale_documento is None:
+        valori['totale_documento'] = imponibile + imposta
+    TestataFatturaAcquisto.objects.filter(pk=instance.pk).update(**valori)
 
 
 @receiver([post_save, post_delete], sender=RigaFatturaAcquisto)
@@ -933,3 +957,25 @@ class MessaggioSdi(models.Model):
 
     def __str__(self):
         return f'{self.fattura} — {self.tipo} ({self.timestamp:%d/%m/%Y})'
+
+
+class MessaggioPecElaborato(models.Model):
+    """Email della casella PEC già elaborate da ``sdi_pull``.
+
+    La PEC è quella aziendale, letta anche da persone: ``sdi_pull`` non ne
+    tocca i flag (letto/non letto) e tiene qui traccia di cosa ha già
+    elaborato. ``chiave`` è il Message-ID della busta PEC (o
+    ``uid:<uidvalidity>:<uid>`` se manca). Cancellare una riga fa
+    rielaborare l'email alla run successiva, se ancora nella finestra.
+    """
+
+    chiave = models.CharField(max_length=255, unique=True)
+    elaborato_il = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-elaborato_il']
+        verbose_name = 'Email PEC elaborata'
+        verbose_name_plural = 'Email PEC elaborate'
+
+    def __str__(self):
+        return self.chiave

@@ -50,6 +50,10 @@
       <div class="field"><label>Email</label>{{ form.email }}</div>
       <div class="field"><label>Telefono</label>{{ form.telefono }}</div>
       <div class="field"><label>Profilo fiscale</label>{{ form.profilo_fiscale }}</div>
+      <div class="field">
+        <label>Liquidazione IVA</label>{{ form.liquidazione_iva }}
+        <div style="font: 11px var(--font-body); color: var(--ink-3); margin-top: 4px;">{{ form.liquidazione_iva.help_text }}</div>
+      </div>
       <div class="field"><label>Fatturazione elettronica</label>{{ form.fatturazione_elettronica }}</div>
     </div>
   </div>

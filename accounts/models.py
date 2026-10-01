@@ -69,5 +69,7 @@ class Profile(models.Model):
 
 @receiver(post_save, sender=settings.AUTH_USER_MODEL)
 def create_profile(sender, instance, created, **kwargs):
+    # get_or_create: idempotente se il profilo è già stato creato altrove
+    # (es. inline admin, seed, invito utente).
     if created:
-        Profile.objects.create(user=instance)
+        Profile.objects.get_or_create(user=instance)

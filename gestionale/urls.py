@@ -1,7 +1,11 @@
 from django.conf import settings
 from django.conf.urls.static import static
 from django.contrib import admin
-from django.urls import include, path
+from django.urls import include, path, re_path
+
+from api.mcp import mcp_view
+
+from .media_views import CARTELLE_REGEX, media_protetto
 
 
 urlpatterns = [
@@ -18,7 +22,12 @@ urlpatterns = [
     path('impostazioni/', include('core_settings.urls', namespace='settings')),
     path('cerca/', include('search.urls', namespace='search')),
     path('api/', include('api.urls', namespace='api')),
+    path('mcp', mcp_view, name='mcp'),
     path('cashflow/', include('cashflow.urls', namespace='cashflow')),
+    # media non pubblici (certificati, allegati rimborsi, XML fatture acquisto):
+    # login + permesso; devono precedere lo static() di sviluppo qui sotto
+    re_path(rf'^{settings.MEDIA_URL.lstrip("/")}(?P<cartella>{CARTELLE_REGEX})/(?P<percorso>.+)$',
+            media_protetto, name='media_protetto'),
 ]
 
 if settings.DEBUG:

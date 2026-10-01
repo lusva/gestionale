@@ -10,7 +10,6 @@ from __future__ import annotations
 from decimal import Decimal
 
 from django.contrib.auth.decorators import login_required
-from django.db.models import Case, DecimalField, F, Q, Sum, Value, When
 from django.shortcuts import render
 
 from accounts.permissions import require_perm
@@ -115,7 +114,6 @@ def scadenziario_passivo(request):
 @require_perm('documenti.vedi')
 def vendite_per_cliente(request):
     """Aggrega imponibile delle fatture cliente per cliente, con filtro anno."""
-    from clienti.models import Cliente
 
     qs = TestataFattura.objects.select_related('cliente').exclude(cliente__isnull=True)
 
@@ -347,7 +345,7 @@ def costi_per_categoria(request):
 
     Filtri opzionali: ``anno``, ``fornitore``.
     """
-    from anagrafiche.models import CategoriaCosto, Fornitore
+    from anagrafiche.models import Fornitore
 
     qs = RigaFatturaAcquisto.objects.select_related(
         'categoria_costo', 'testata__fornitore',

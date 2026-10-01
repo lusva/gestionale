@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from django.contrib import messages
 from django.contrib.auth.mixins import LoginRequiredMixin
-from django.db.models import Q
+from django.db.models import ProtectedError, Q
 from django.shortcuts import redirect
 from django.urls import reverse_lazy
 from django.views.generic import (
@@ -46,6 +46,13 @@ def make_anag_views(*, model, form_class, label, label_plural,
         'delete': f'anagrafiche:{url_prefix}_delete',
     }
 
+    def _base_queryset():
+        """Queryset di base: esclude i record soft-deleted (Fornitore)."""
+        qs = _model.objects.all()
+        if hasattr(_model, 'soft_delete'):
+            qs = qs.filter(soft_delete=False)
+        return qs
+
     shared_ctx = {
         'anag_label': label,
         'anag_label_plural': label_plural,
@@ -63,10 +70,8 @@ def make_anag_views(*, model, form_class, label, label_plural,
         paginate_by = 25
 
         def get_queryset(self):
-            qs = _model.objects.all()
             # Soft-delete su modelli che lo supportano (Fornitore)
-            if hasattr(_model, 'soft_delete'):
-                qs = qs.filter(soft_delete=False)
+            qs = _base_queryset()
             q = (self.request.GET.get('q') or '').strip()
             if q and search_fields:
                 cond = Q()
@@ -97,6 +102,9 @@ def make_anag_views(*, model, form_class, label, label_plural,
         model = _model
         template_name = 'anagrafiche/anag_detail.html'
         context_object_name = 'oggetto'
+
+        def get_queryset(self):
+            return _base_queryset()
 
         def get_context_data(self, **kwargs):
             ctx = super().get_context_data(**kwargs)
@@ -145,6 +153,9 @@ def make_anag_views(*, model, form_class, label, label_plural,
         form_class = _form_class
         template_name = 'anagrafiche/anag_form.html'
 
+        def get_queryset(self):
+            return _base_queryset()
+
         def get_context_data(self, **kwargs):
             ctx = super().get_context_data(**kwargs)
             ctx.update(shared_ctx)
@@ -164,6 +175,9 @@ def make_anag_views(*, model, form_class, label, label_plural,
         template_name = 'anagrafiche/confirm_delete.html'
         success_url = reverse_lazy(urls['list'])
 
+        def get_queryset(self):
+            return _base_queryset()
+
         def get_context_data(self, **kwargs):
             ctx = super().get_context_data(**kwargs)
             ctx.update(shared_ctx)
@@ -178,7 +192,16 @@ def make_anag_views(*, model, form_class, label, label_plural,
                 obj.save(update_fields=['soft_delete'])
                 messages.success(self.request, f'{label} eliminato/a (soft delete).')
                 return redirect(self.success_url)
+            try:
+                response = super().form_valid(form)
+            except ProtectedError:
+                messages.error(
+                    self.request,
+                    f'Impossibile eliminare «{obj}»: è utilizzato/a in documenti '
+                    'o movimenti di magazzino. Rimuovi prima i riferimenti.',
+                )
+                return redirect(urls['detail'], obj.pk)
             messages.success(self.request, f'{label} eliminato/a.')
-            return super().form_valid(form)
+            return response
 
     return _List, _Detail, _Create, _Update, _Delete

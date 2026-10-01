@@ -5,7 +5,7 @@ from datetime import timedelta
 from decimal import Decimal
 
 from django.contrib.auth.mixins import LoginRequiredMixin
-from django.db.models import Count, Sum
+from django.db.models import Q, Sum
 from django.http import HttpResponse
 from django.template.loader import render_to_string
 from django.utils import timezone
@@ -14,6 +14,32 @@ from django.views.generic import TemplateView
 from accounts.permissions import require_perm
 from audit.models import Azione
 from audit.utils import log as audit_log
+
+
+PERIODI_VALIDI = ('30g', 'trimestre', 'anno')
+PERIODO_DEFAULT = '30g'
+# Alias storici del parametro ``periodo`` (vecchi link/bookmark).
+PERIODI_ALIAS = {'q2': 'trimestre'}
+
+
+def _periodo_da_request(request) -> str:
+    """Whitelist del parametro ``periodo`` (valori sconosciuti → default)."""
+    periodo = request.GET.get('periodo', PERIODO_DEFAULT)
+    periodo = PERIODI_ALIAS.get(periodo, periodo)
+    return periodo if periodo in PERIODI_VALIDI else PERIODO_DEFAULT
+
+
+def _trimestre_corrente(now):
+    """Ritorna ``(inizio, label)`` del trimestre in corso (mai nel futuro).
+
+    Si usa il trimestre in corso (dal suo primo giorno a oggi): la data di
+    inizio è quindi sempre <= oggi.
+    """
+    q = (now.month - 1) // 3 + 1
+    inizio = now.replace(
+        month=3 * (q - 1) + 1, day=1, hour=0, minute=0, second=0, microsecond=0,
+    )
+    return inizio, f'Q{q} {now.year}'
 
 
 BRAND_PALETTE = [
@@ -37,36 +63,35 @@ class ReportView(LoginRequiredMixin, TemplateView):
         ctx = super().get_context_data(**kwargs)
         now = timezone.now()
 
-        periodo = self.request.GET.get('periodo', '30g')
-        if periodo == '30g':
-            dal = now - timedelta(days=30)
-            label = 'Ultimi 30 giorni'
-        elif periodo == 'q2':
-            dal = now.replace(month=4, day=1, hour=0, minute=0, second=0, microsecond=0)
-            label = 'Q2 2026'
+        periodo = _periodo_da_request(self.request)
+        local_now = timezone.localtime(now)
+        inizio_trimestre, trimestre_label = _trimestre_corrente(local_now)
+        if periodo == 'trimestre':
+            dal, label = inizio_trimestre, trimestre_label
         elif periodo == 'anno':
-            dal = now.replace(month=1, day=1, hour=0, minute=0, second=0, microsecond=0)
-            label = 'Anno 2026'
+            dal = local_now.replace(month=1, day=1, hour=0, minute=0, second=0, microsecond=0)
+            label = f'Anno {local_now.year}'
         else:
-            dal = now - timedelta(days=30)
-            label = 'Periodo personalizzato'
+            dal = local_now - timedelta(days=30)
+            label = 'Ultimi 30 giorni'
+        dal_date = dal.date()
 
-        chiuse_win = Opportunita.objects.filter(stadio=Stadio.CHIUSA_WIN, updated_at__gte=dal)
+        chiuse_win = Opportunita.objects.filter(stadio=Stadio.CHIUSA_WIN, data_chiusura__gte=dal_date)
         ricavi = chiuse_win.aggregate(s=Sum('valore'))['s'] or Decimal('0')
         nuovi_clienti = Cliente.objects.filter(created_at__gte=dal).count()
         vinte_count = chiuse_win.count()
         valore_medio = (ricavi / vinte_count) if vinte_count else Decimal('0')
 
-        perse = Opportunita.objects.filter(stadio=Stadio.CHIUSA_LOST, updated_at__gte=dal).count()
+        perse = Opportunita.objects.filter(stadio=Stadio.CHIUSA_LOST, data_chiusura__gte=dal_date).count()
         total_chiuse = vinte_count + perse
         churn = round((perse / total_chiuse) * 100, 1) if total_chiuse else 0.0
 
-        # Bar chart: fatturato per mese 2026
-        year = now.year
+        # Bar chart: fatturato per mese dell'anno corrente
+        year = local_now.year
         monthly = []
         for m in range(1, 13):
             s = Opportunita.objects.filter(
-                stadio=Stadio.CHIUSA_WIN, updated_at__year=year, updated_at__month=m,
+                stadio=Stadio.CHIUSA_WIN, data_chiusura__year=year, data_chiusura__month=m,
             ).aggregate(s=Sum('valore'))['s'] or 0
             monthly.append(float(s))
         max_m = max(monthly) if monthly else 0
@@ -82,7 +107,6 @@ class ReportView(LoginRequiredMixin, TemplateView):
         )
         sectors = []
         totalv = sum(r['total'] or 0 for r in by_sector) or 1
-        acc = Decimal('0')
         for i, row in enumerate(by_sector[:5]):
             label_s = row['cliente__settore__nome'] or 'Altri'
             val = Decimal(row['total'] or 0)
@@ -107,7 +131,11 @@ class ReportView(LoginRequiredMixin, TemplateView):
         # Top 5 clienti per fatturato
         top5 = (
             Cliente.objects
-            .annotate(fatturato=Sum('opportunita__valore', filter=None))
+            .annotate(fatturato=Sum(
+                'opportunita__valore',
+                filter=Q(opportunita__stadio=Stadio.CHIUSA_WIN),
+            ))
+            .filter(fatturato__gt=0)
             .order_by('-fatturato')[:5]
         )
         top5_rows = []
@@ -127,6 +155,7 @@ class ReportView(LoginRequiredMixin, TemplateView):
             'today': now,
             'periodo': periodo,
             'periodo_label': label,
+            'trimestre_label': trimestre_label,
             'kpi_ricavi': ricavi,
             'kpi_nuovi_clienti': nuovi_clienti,
             'kpi_valore_medio': valore_medio,
@@ -173,7 +202,7 @@ def pdf(request):
     if result.err:
         return HttpResponse('Errore generazione PDF', status=500)
 
-    periodo_slug = ctx.get('periodo', 'report')
+    periodo_slug = _periodo_da_request(request)
     today = timezone.now().strftime('%Y%m%d')
     filename = f'report-{periodo_slug}-{today}.pdf'
 

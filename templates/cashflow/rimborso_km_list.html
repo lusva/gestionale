@@ -87,9 +87,15 @@
             </td>
             <td style="white-space: nowrap; text-align: right;">
               {% if user_perms_map|get_item:'cashflow.modifica' %}
-                <a href="{% url 'cashflow:rimborso_km_pagato' r.pk %}?next={{ request.get_full_path|urlencode }}" class="btn btn-ghost btn-sm" title="{% if r.stato == 'pagato' %}Annulla pagamento{% else %}Marca come pagato{% endif %}">
-                  {% if r.stato == 'pagato' %}{% icon 'x' size=12 %}{% else %}{% icon 'check' size=12 %}{% endif %}
-                </a>
+                {% if r.stato != 'bozza' %}
+                <form method="post" action="{% url 'cashflow:rimborso_km_pagato' r.pk %}" style="display: inline;">
+                  {% csrf_token %}
+                  <input type="hidden" name="next" value="{{ request.get_full_path }}">
+                  <button type="submit" class="btn btn-ghost btn-sm" title="{% if r.stato == 'pagato' %}Annulla pagamento{% else %}Marca come pagato{% endif %}">
+                    {% if r.stato == 'pagato' %}{% icon 'x' size=12 %}{% else %}{% icon 'check' size=12 %}{% endif %}
+                  </button>
+                </form>
+                {% endif %}
                 <a href="{% url 'cashflow:rimborso_km_update' r.pk %}" class="btn btn-ghost btn-sm">{% icon 'edit' size=12 %}</a>
               {% endif %}
               {% if user_perms_map|get_item:'cashflow.elimina' %}

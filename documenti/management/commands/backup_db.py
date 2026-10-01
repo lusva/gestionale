@@ -15,7 +15,6 @@ Output: ``backups/gestionale_<timestamp>.json.gz`` + lista file presenti.
 from __future__ import annotations
 
 import gzip
-import os
 from datetime import datetime
 from pathlib import Path
 

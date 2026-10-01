@@ -109,6 +109,12 @@
     <div class="flex-col gap-16">
       <div class="card" style="padding: 18px;">
         <div style="font: 600 14px var(--font-display); margin-bottom: 12px;">Totali</div>
+        {% if totals.sconto %}
+        <div style="display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid var(--border);">
+          <span style="color: var(--ink-3);">Sconto</span>
+          <span class="mono">− {{ totals.sconto|euro:2 }}</span>
+        </div>
+        {% endif %}
         <div style="display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid var(--border);">
           <span style="color: var(--ink-3);">Imponibile</span>
           <span class="mono" style="font-weight: 500;">{{ imponibile_calc|euro:2 }}</span>
@@ -117,6 +123,24 @@
           <span style="color: var(--ink-3);">IVA</span>
           <span class="mono" style="font-weight: 500;">{{ imposta_calc|euro:2 }}</span>
         </div>
+        {% if totals.spese %}
+        <div style="display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid var(--border);">
+          <span style="color: var(--ink-3);">Spese accessorie</span>
+          <span class="mono">{{ totals.spese|euro:2 }}</span>
+        </div>
+        {% endif %}
+        {% if totals.cassa_prev %}
+        <div style="display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid var(--border);">
+          <span style="color: var(--ink-3);">Cassa previdenziale</span>
+          <span class="mono">{{ totals.cassa_prev|euro:2 }}</span>
+        </div>
+        {% endif %}
+        {% if totals.bollo %}
+        <div style="display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid var(--border);">
+          <span style="color: var(--ink-3);">Bollo</span>
+          <span class="mono">{{ totals.bollo|euro:2 }}</span>
+        </div>
+        {% endif %}
         <div style="display: flex; justify-content: space-between; padding: 8px 0; font-weight: 600;">
           <span>Totale</span>
           <span class="mono">{{ totale_calc|euro:2 }}</span>

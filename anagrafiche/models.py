@@ -314,6 +314,20 @@ class AnagraficaAzienda(models.Model):
     )
     contenuto_footer = models.TextField(blank=True, null=True)
 
+    class LiquidazioneIva(models.TextChoices):
+        NESSUNA = '', 'Non calcolare'
+        MENSILE = 'mensile', 'Mensile'
+        TRIMESTRALE = 'trimestrale', 'Trimestrale (con interessi 1%)'
+
+    liquidazione_iva = models.CharField(
+        'Liquidazione IVA', max_length=12, blank=True,
+        choices=LiquidazioneIva.choices, default=LiquidazioneIva.TRIMESTRALE,
+        help_text=(
+            "Il gestionale stima l'IVA da versare per ogni periodo dalle fatture "
+            "emesse e ricevute e la mette fra le scadenze fiscali (Cashflow › "
+            "Liquidazione IVA). Vuoto = nessuna stima."
+        ),
+    )
     modulo_magazzino_attivo = models.BooleanField(
         default=True,
         help_text=(
@@ -362,14 +376,28 @@ class AnagraficaAzienda(models.Model):
     )
     pec_destinatario_sdi = models.EmailField(
         blank=True, default='sdi01@pec.fatturapa.it',
-        help_text="Casella PEC del SDI per l'invio (default sdi01@pec.fatturapa.it).",
+        help_text="Casella PEC del SDI per l'invio. Il primo invio va a "
+                  "sdi01@pec.fatturapa.it; sdi_pull la sostituisce con la "
+                  "casella sdiNN da cui risponde il SDI, da usare d'ora in poi.",
     )
-    pec_smtp_host = models.CharField(max_length=200, blank=True, default='')
-    pec_smtp_port = models.PositiveIntegerField(null=True, blank=True)
+    pec_smtp_host = models.CharField(
+        max_length=200, blank=True, default='',
+        help_text="Server SMTP del gestore PEC (Aruba: smtps.pec.aruba.it).",
+    )
+    pec_smtp_port = models.PositiveIntegerField(
+        null=True, blank=True,
+        help_text="Vuoto = 465 (SSL), la porta dei gestori PEC.",
+    )
     pec_smtp_user = models.CharField(max_length=200, blank=True, default='')
     pec_smtp_password = models.CharField(max_length=200, blank=True, default='')
-    pec_smtp_use_tls = models.BooleanField(default=True)
-    pec_imap_host = models.CharField(max_length=200, blank=True, default='')
+    pec_smtp_use_tls = models.BooleanField(
+        default=True,
+        help_text="STARTTLS sulle porte diverse da 465 (la 465 è sempre SSL).",
+    )
+    pec_imap_host = models.CharField(
+        max_length=200, blank=True, default='',
+        help_text="Server IMAP del gestore PEC (Aruba: imaps.pec.aruba.it).",
+    )
     pec_imap_port = models.PositiveIntegerField(null=True, blank=True, default=993)
     pec_imap_user = models.CharField(max_length=200, blank=True, default='')
     pec_imap_password = models.CharField(max_length=200, blank=True, default='')

@@ -15,7 +15,29 @@ from datetime import date
 from decimal import Decimal
 
 from django.conf import settings
-from django.db import models
+from django.core.validators import MaxValueValidator, MinValueValidator
+from django.db import models, transaction
+from django.utils import timezone
+
+
+# Orizzonte (in giorni da oggi) fino a cui generare le scadenze delle spese
+# ricorrenti: deve coprire la finestra massima della vista cashflow (365 gg).
+ORIZZONTE_SCADENZE_GIORNI = 400
+
+
+def puo_approvare_rimborsi(user) -> bool:
+    """Chi può cambiare stato/data pagamento/amministratore di un rimborso.
+
+    Non esiste un permesso dedicato nella matrice RBAC: è riservato ai
+    superuser e al ruolo Amministratore.
+    """
+    if not user or not user.is_authenticated:
+        return False
+    if user.is_superuser:
+        return True
+    from accounts.models import Ruolo
+    profile = getattr(user, 'profile', None)
+    return bool(profile and profile.ruolo == Ruolo.AMMINISTRATORE)
 
 
 class TipoScadenzaFiscale(models.TextChoices):
@@ -47,6 +69,11 @@ class ScadenzaFiscale(models.Model):
     pagata = models.BooleanField(default=False)
     data_pagamento = models.DateField(blank=True, null=True)
     note = models.TextField(blank=True, default='')
+    # Liquidazione IVA calcolata dal gestionale (cashflow/iva.py): il periodo
+    # («2026-T3», «2026-09») e se l'importo è ancora la stima, che si aggiorna
+    # da sola. Modificata a mano (o pagata) non la si tocca più.
+    periodo_iva = models.CharField(max_length=10, blank=True, default='', db_index=True)
+    stimata = models.BooleanField(default=False)
 
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -55,6 +82,10 @@ class ScadenzaFiscale(models.Model):
         ordering = ['data_scadenza']
         verbose_name = 'Scadenza fiscale'
         verbose_name_plural = 'Scadenze fiscali'
+        constraints = [
+            models.UniqueConstraint(fields=['periodo_iva'], condition=~models.Q(periodo_iva=''),
+                                    name='scadenza_fiscale_periodo_iva_unico'),
+        ]
 
     def __str__(self):
         return f'{self.get_tipo_display()} — {self.descrizione} ({self.data_scadenza})'
@@ -95,6 +126,7 @@ class SpesaRicorrente(models.Model):
     )
     giorno_del_mese = models.PositiveSmallIntegerField(
         default=1,
+        validators=[MinValueValidator(1), MaxValueValidator(31)],
         help_text='Giorno del mese in cui cade la scadenza (1-31). '
                   'Se il mese ha meno giorni, viene troncato all\'ultimo.',
     )
@@ -128,7 +160,7 @@ class SpesaRicorrente(models.Model):
     @staticmethod
     def _giorno_in_mese(anno: int, mese: int, giorno: int) -> date:
         last = monthrange(anno, mese)[1]
-        return date(anno, mese, min(giorno, last))
+        return date(anno, mese, max(1, min(giorno, last)))
 
     def date_attese(self, fino_a: date) -> list[date]:
         """Date di scadenza attese da ``data_inizio`` a ``fino_a``.
@@ -156,22 +188,33 @@ class SpesaRicorrente(models.Model):
                 anno += 1
         return out
 
-    def genera_scadenze(self, fino_a: date) -> int:
+    def genera_scadenze(self, fino_a: date, rigenera: bool = False) -> int:
         """Crea le ``ScadenzaSpesa`` mancanti fino alla data indicata.
 
-        Non sovrascrive le scadenze esistenti — l'utente potrebbe averle
-        modificate o segnate come pagate. Ritorna quante ne sono state create.
+        Di default non sovrascrive le scadenze esistenti — l'utente potrebbe
+        averle modificate o segnate come pagate. Con ``rigenera=True`` (dopo
+        una modifica del template) le scadenze future non pagate
+        (``data_scadenza >= oggi``) vengono eliminate e ricreate con le
+        impostazioni correnti; se la spesa non è attiva o ha una
+        ``data_fine`` le future non pagate oltre il limite restano eliminate.
+        Ritorna quante scadenze sono state create.
         """
-        date_attese = self.date_attese(fino_a)
-        esistenti = set(self.scadenze.values_list('data_scadenza', flat=True))
-        nuove = 0
-        for d in date_attese:
-            if d in esistenti:
-                continue
-            ScadenzaSpesa.objects.create(
-                spesa=self, data_scadenza=d, importo=self.importo,
-            )
-            nuove += 1
+        with transaction.atomic():
+            if rigenera:
+                oggi = timezone.localdate()
+                self.scadenze.filter(
+                    pagata=False, data_scadenza__gte=oggi,
+                ).delete()
+            date_attese = self.date_attese(fino_a)
+            esistenti = set(self.scadenze.values_list('data_scadenza', flat=True))
+            nuove = 0
+            for d in date_attese:
+                if d in esistenti:
+                    continue
+                ScadenzaSpesa.objects.create(
+                    spesa=self, data_scadenza=d, importo=self.importo,
+                )
+                nuove += 1
         return nuove
 
 
@@ -242,13 +285,16 @@ class RimborsoChilometrico(models.Model):
     destinazione = models.CharField(max_length=200, blank=True, default='')
     km = models.DecimalField(
         max_digits=8, decimal_places=2, blank=True, null=True,
+        validators=[MinValueValidator(0)],
     )
     tariffa_km = models.DecimalField(
         max_digits=6, decimal_places=4, blank=True, null=True,
+        validators=[MinValueValidator(0)],
         help_text='Tariffa €/km (es. tabelle ACI per cilindrata).',
     )
     importo = models.DecimalField(
         max_digits=12, decimal_places=2, blank=True,
+        validators=[MinValueValidator(0)],
         help_text='Calcolato come km × tariffa, oppure inserito manualmente per i riepiloghi mensili.',
     )
     cliente = models.ForeignKey(
@@ -293,4 +339,6 @@ class RimborsoChilometrico(models.Model):
             self.importo = Decimal('0')
         if self.stato != StatoRimborso.PAGATO:
             self.data_pagamento = None
+        elif self.data_pagamento is None:
+            self.data_pagamento = timezone.localdate()
         super().save(*args, **kwargs)

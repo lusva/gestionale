@@ -16,6 +16,8 @@ urlpatterns = [
     path('fiscali/<int:pk>/elimina/', views.ScadenzaFiscaleDeleteView.as_view(), name='scadenza_fiscale_delete'),
     path('fiscali/<int:pk>/pagata/', views.scadenza_fiscale_marca_pagata, name='scadenza_fiscale_pagata'),
 
+    path('iva/', views.LiquidazioneIvaView.as_view(), name='liquidazione_iva'),
+
     # Spese ricorrenti
     path('spese/', views.SpesaRicorrenteListView.as_view(), name='spesa_ricorrente_list'),
     path('spese/nuova/', views.SpesaRicorrenteCreateView.as_view(), name='spesa_ricorrente_create'),

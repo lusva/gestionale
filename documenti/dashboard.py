@@ -6,13 +6,12 @@ mese, e attività recente sui documenti.
 """
 from __future__ import annotations
 
-from datetime import date, timedelta
+from datetime import date
 from decimal import Decimal
 
 from django.contrib.auth.decorators import login_required
-from django.db.models import Q
 from django.shortcuts import render
-from django.utils.timezone import now
+from django.utils.timezone import localdate
 
 from accounts.permissions import require_perm
 
@@ -23,6 +22,10 @@ from .models import (
     TestataFattura,
     TestataFatturaAcquisto,
 )
+
+
+_MESI = ('gen', 'feb', 'mar', 'apr', 'mag', 'giu',
+         'lug', 'ago', 'set', 'ott', 'nov', 'dic')
 
 
 def _sum(qs, field='imponibile') -> Decimal:
@@ -36,7 +39,7 @@ def _sum(qs, field='imponibile') -> Decimal:
 @login_required
 @require_perm('documenti.vedi')
 def dashboard(request):
-    today = now().date()
+    today = localdate()
     inizio_mese = today.replace(day=1)
     if inizio_mese.month == 1:
         prev_mese_inizio = inizio_mese.replace(year=inizio_mese.year - 1, month=12)
@@ -135,7 +138,7 @@ def dashboard(request):
         valore = _sum(TestataFattura.objects.filter(
             data_documento__gte=ms, data_documento__lte=me,
         ))
-        barchart.append({'mese': ms.strftime('%b'), 'anno': m_year, 'valore': valore})
+        barchart.append({'mese': _MESI[m_month - 1], 'anno': m_year, 'valore': valore})
     max_bar = max((b['valore'] for b in barchart), default=Decimal('0')) or Decimal('1')
     for b in barchart:
         b['pct'] = float(b['valore'] / max_bar * 100) if max_bar else 0

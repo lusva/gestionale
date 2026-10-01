@@ -22,9 +22,10 @@ class Movimento(models.Model):
         max_digits=10, decimal_places=2, blank=True, null=True, default=0,
     )
     tipo = models.CharField(max_length=1, choices=Tipo.choices)
+    # PROTECT: cancellare un articolo non deve far sparire lo storico di magazzino
     articolo = models.ForeignKey(
         'anagrafiche.Articolo',
-        on_delete=models.CASCADE,
+        on_delete=models.PROTECT,
         related_name='movimenti',
     )
     riga_documento = models.OneToOneField(

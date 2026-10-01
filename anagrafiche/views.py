@@ -4,7 +4,8 @@ from __future__ import annotations
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.db import transaction
-from django.shortcuts import redirect, render
+from django.db.models import ProtectedError
+from django.shortcuts import get_object_or_404, redirect, render
 
 from accounts.permissions import require_perm
 
@@ -127,31 +128,29 @@ def forme_pagamento_list(request):
 
 
 def _forma_pagamento_form_view(request, pk=None):
-    fp = FormePagamento.objects.get(pk=pk) if pk else None
+    fp = get_object_or_404(FormePagamento, pk=pk) if pk else None
     is_create = fp is None
     if request.method == 'POST':
         form = FormePagamentoForm(request.POST, instance=fp)
-        if not form.is_valid():
-            scad_fs = ScadenzaFormSet(request.POST, instance=fp or FormePagamento(), prefix='scad')
-            return render(request, 'anagrafiche/forma_pagamento_form.html', {
-                'active_nav': 'forme_pagamento',
-                'form': form, 'scad_formset': scad_fs,
-                'is_create': is_create, 'object': fp,
-            })
-        with transaction.atomic():
-            obj = form.save()
-            scad_fs = ScadenzaFormSet(request.POST, instance=obj, prefix='scad')
-            if not scad_fs.is_valid():
-                if is_create:
-                    obj.delete()
-                return render(request, 'anagrafiche/forma_pagamento_form.html', {
-                    'active_nav': 'forme_pagamento',
-                    'form': form, 'scad_formset': scad_fs,
-                    'is_create': is_create, 'object': fp,
-                })
-            scad_fs.save()
-        messages.success(request, 'Forma di pagamento salvata.')
-        return redirect('anagrafiche:forme_pagamento_list')
+        scad_fs = ScadenzaFormSet(
+            request.POST, instance=fp or FormePagamento(), prefix='scad',
+        )
+        # Valida form e formset prima di salvare qualsiasi cosa: se le
+        # scadenze non sono valide la testata non deve essere modificata.
+        form_ok = form.is_valid()
+        fs_ok = scad_fs.is_valid()
+        if form_ok and fs_ok:
+            with transaction.atomic():
+                obj = form.save()
+                scad_fs.instance = obj
+                scad_fs.save()
+            messages.success(request, 'Forma di pagamento salvata.')
+            return redirect('anagrafiche:forme_pagamento_list')
+        return render(request, 'anagrafiche/forma_pagamento_form.html', {
+            'active_nav': 'forme_pagamento',
+            'form': form, 'scad_formset': scad_fs,
+            'is_create': is_create, 'object': fp,
+        })
     form = FormePagamentoForm(instance=fp)
     scad_fs = ScadenzaFormSet(instance=fp or FormePagamento(), prefix='scad')
     return render(request, 'anagrafiche/forma_pagamento_form.html', {
@@ -176,9 +175,16 @@ def forma_pagamento_update(request, pk):
 @login_required
 @require_perm('clienti.elimina')
 def forma_pagamento_delete(request, pk):
-    fp = FormePagamento.objects.get(pk=pk)
+    fp = get_object_or_404(FormePagamento, pk=pk)
     if request.method == 'POST':
-        fp.delete()
+        try:
+            fp.delete()
+        except ProtectedError:
+            messages.error(
+                request,
+                f'Impossibile eliminare «{fp}»: è utilizzata in documenti.',
+            )
+            return redirect('anagrafiche:forme_pagamento_list')
         messages.success(request, 'Forma di pagamento eliminata.')
         return redirect('anagrafiche:forme_pagamento_list')
     return render(request, 'anagrafiche/confirm_delete.html', {

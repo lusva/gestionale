@@ -12,7 +12,7 @@ Modalità:
 from __future__ import annotations
 
 from django.contrib.auth.decorators import login_required
-from django.core.paginator import EmptyPage, Paginator
+from django.core.paginator import Paginator
 from django.db.models import Q
 from django.shortcuts import render
 
@@ -70,50 +70,91 @@ def _querysets(q: str):
         ),
     }
     if _DOCUMENTI_AVAILABLE:
-        # Aggrego risultati documenti in un'unica lista (non un queryset)
-        # perché vengono da modelli diversi. Tagliato successivamente in
-        # base alla modalità (overview/focus).
+        # Risultati documenti da modelli diversi: oggetto lazy con count()
+        # e slicing, valutato solo per la finestra richiesta.
         documenti = _search_documenti(q)
         out['documenti'] = documenti
     return out
 
 
-def _search_documenti(q: str):
-    """Cerca su tutte e 5 le testate ciclo attivo: ritorna lista di dict
-    omogenei ``{tipo, numero, anno, data, cliente, totale, url, sezionale}``
-    ordinati per data desc.
+class _DocumentiResults:
+    """Risultati documenti su 5 modelli diversi, valutati in modo lazy.
+
+    Espone ``count()`` (somma dei COUNT per modello) e lo slicing, così da
+    essere usabile sia nella panoramica sia con ``Paginator``. Lo slice
+    ``[a:b]`` carica al massimo ``b`` righe per modello (ordinate per
+    anno/numero desc), le fonde e restituisce la finestra richiesta.
     """
-    from django.urls import reverse
 
-    rows = []
-    cond = (
-        Q(numero__icontains=q)
-        | Q(cliente__ragione_sociale__icontains=q)
-        | Q(cliente__partita_iva__icontains=q)
-        | Q(note__icontains=q)
-    )
+    ordered = True
 
-    docs_meta = [
-        ('Fattura', TestataFattura, 'documenti:fattura_detail'),
-        ('Offerta', TestataOfferta, 'documenti:offerta_detail'),
-        ('Ordine', TestataOrdine, 'documenti:ordine_detail'),
-        ('DDT', TestataDdt, 'documenti:ddt_detail'),
-        ('Nota credito', TestataNotaCredito, 'documenti:nota_credito_detail'),
-    ]
-    for tipo, model, url_name in docs_meta:
-        for d in model.objects.filter(cond).select_related('cliente')[:50]:
-            rows.append({
-                'tipo': tipo,
-                'numero': d.numero, 'anno': d.anno,
-                'sezionale': getattr(d, 'sezionale', '') or '',
-                'data': d.data_documento,
-                'cliente': d.cliente,
-                'totale': d.imponibile,
-                'url': reverse(url_name, args=[d.pk]),
-                '_pk': d.pk,
-            })
-    rows.sort(key=lambda r: (r['anno'], r['numero']), reverse=True)
-    return rows
+    def __init__(self, q: str):
+        cond = (
+            Q(numero__icontains=q)
+            | Q(cliente__ragione_sociale__icontains=q)
+            | Q(cliente__partita_iva__icontains=q)
+            | Q(note__icontains=q)
+        )
+        docs_meta = [
+            ('Fattura', TestataFattura, 'documenti:fattura_detail'),
+            ('Offerta', TestataOfferta, 'documenti:offerta_detail'),
+            ('Ordine', TestataOrdine, 'documenti:ordine_detail'),
+            ('DDT', TestataDdt, 'documenti:ddt_detail'),
+            ('Nota credito', TestataNotaCredito, 'documenti:nota_credito_detail'),
+        ]
+        self._sources = [
+            (
+                tipo,
+                model.objects.filter(cond)
+                .select_related('cliente').order_by('-anno', '-numero', '-pk'),
+                url_name,
+            )
+            for tipo, model, url_name in docs_meta
+        ]
+        self._count = None
+
+    def count(self):
+        if self._count is None:
+            self._count = sum(qs.count() for _, qs, _ in self._sources)
+        return self._count
+
+    def __len__(self):
+        return self.count()
+
+    def _rows(self, limit):
+        from django.urls import reverse
+
+        rows = []
+        for tipo, qs, url_name in self._sources:
+            for d in qs[:limit]:
+                rows.append({
+                    'tipo': tipo,
+                    'numero': d.numero, 'anno': d.anno,
+                    'sezionale': getattr(d, 'sezionale', '') or '',
+                    'data': d.data_documento,
+                    'cliente': d.cliente,
+                    'totale': d.imponibile,
+                    'url': reverse(url_name, args=[d.pk]),
+                    '_pk': d.pk,
+                })
+        rows.sort(key=lambda r: (r['anno'], r['numero']), reverse=True)
+        return rows
+
+    def __getitem__(self, key):
+        if isinstance(key, slice):
+            start = key.start or 0
+            stop = key.stop if key.stop is not None else self.count()
+            return self._rows(stop)[start:stop]
+        return self._rows(key + 1)[key]
+
+
+def _search_documenti(q: str):
+    """Cerca su tutte e 5 le testate ciclo attivo. Ritorna un oggetto lazy
+    (``count()`` + slicing) i cui elementi sono dict omogenei
+    ``{tipo, numero, anno, data, cliente, totale, url, sezionale}``
+    ordinati per anno/numero desc.
+    """
+    return _DocumentiResults(q)
 
 
 GROUP_META = {
@@ -144,10 +185,7 @@ def cerca(request):
         # Vista focus: paginazione completa sul singolo gruppo
         qs = qsets[group]
         paginator = Paginator(qs, GROUP_PAGE_SIZE)
-        try:
-            page_obj = paginator.page(request.GET.get('page') or 1)
-        except EmptyPage:
-            page_obj = paginator.page(paginator.num_pages or 1)
+        page_obj = paginator.get_page(request.GET.get('page'))
         label, icon_name = GROUP_META[group]
         ctx.update({
             'mode': 'focus',
@@ -168,8 +206,7 @@ def cerca(request):
             if qs is None:
                 items, count = [], 0
             else:
-                # ``documenti`` è una lista in memoria (modelli misti).
-                count = qs.count() if hasattr(qs, 'count') and not isinstance(qs, list) else len(qs)
+                count = qs.count()
                 items = list(qs[:OVERVIEW_CAP])
             total += count
             groups.append({

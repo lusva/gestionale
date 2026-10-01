@@ -130,21 +130,22 @@ def make_doc_views(*, model, form_class, riga_formset_class, label, label_plural
             )
 
         def get_context_data(self, **kwargs):
-            from decimal import Decimal
             from .models import (
-                TestataDdt, TestataFattura, TestataNotaCredito,
+                TestataDdt, TestataNotaCredito,
                 TestataOfferta, TestataOrdine,
             )
+            from .utils import calcola_valori
             ctx = super().get_context_data(**kwargs)
             ctx.update(shared_ctx)
             doc = self.object
             righe = list(doc.righe.select_related('articolo', 'iva').all())
-            imp = sum((r.imponibile for r in righe), Decimal('0'))
-            imposta = sum((r.imposta for r in righe), Decimal('0'))
             ctx['righe'] = righe
-            ctx['imponibile_calc'] = imp
-            ctx['imposta_calc'] = imposta
-            ctx['totale_calc'] = imp + imposta
+            # gli stessi totali di PDF e XML (sconti, spese, cassa)
+            totals = calcola_valori(doc, righe)
+            ctx['totals'] = totals
+            ctx['imponibile_calc'] = totals['imponibile']
+            ctx['imposta_calc'] = totals['imposta_totale']
+            ctx['totale_calc'] = totals['totale']
 
             # Catena documenti collegati: navigo le M2M correlate al modello
             # corrente per costruire una lista omogenea ``[{tipo, doc,

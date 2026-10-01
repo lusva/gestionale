@@ -7,24 +7,40 @@ from decimal import Decimal
 from django.contrib import messages
 from django.contrib.auth import get_user_model
 from django.contrib.auth.mixins import LoginRequiredMixin
+from django.db import transaction
 from django.db.models import Q
 from django.http import HttpResponseRedirect
-from django.shortcuts import get_object_or_404, redirect
+from django.shortcuts import get_object_or_404
 from django.urls import reverse, reverse_lazy
 from django.utils import timezone
+from django.utils.http import url_has_allowed_host_and_scheme
+from django.views.decorators.http import require_POST
 from django.views.generic import (
     CreateView, DeleteView, ListView, TemplateView, UpdateView,
 )
 
-from accounts.permissions import PermRequiredMixin
+from accounts.permissions import PermRequiredMixin, require_perm
 
+from . import iva
 from .forms import (
     RimborsoChilometricoForm, ScadenzaFiscaleForm, SpesaRicorrenteForm,
 )
 from .models import (
-    RimborsoChilometrico, ScadenzaFiscale, ScadenzaSpesa, SpesaRicorrente,
-    StatoRimborso, TipoScadenzaFiscale,
+    ORIZZONTE_SCADENZE_GIORNI, RimborsoChilometrico, ScadenzaFiscale,
+    ScadenzaSpesa, SpesaRicorrente, StatoRimborso, TipoScadenzaFiscale,
+    puo_approvare_rimborsi,
 )
+
+
+def _redirect_next(request, fallback: str):
+    """Redirect a ``next`` (POST o GET) solo se punta al nostro host."""
+    next_url = request.POST.get('next') or request.GET.get('next')
+    if next_url and url_has_allowed_host_and_scheme(
+        next_url, allowed_hosts={request.get_host()},
+        require_https=request.is_secure(),
+    ):
+        return HttpResponseRedirect(next_url)
+    return HttpResponseRedirect(fallback)
 
 
 # ---------------------------------------------------------------------------
@@ -40,6 +56,7 @@ class ScadenzaFiscaleListView(LoginRequiredMixin, PermRequiredMixin, ListView):
     paginate_by = 30
 
     def get_queryset(self):
+        iva.sincronizza()
         qs = ScadenzaFiscale.objects.all()
         stato = (self.request.GET.get('stato') or '').strip()
         if stato == 'aperte':
@@ -103,6 +120,10 @@ class ScadenzaFiscaleUpdateView(LoginRequiredMixin, PermRequiredMixin, UpdateVie
         return reverse('cashflow:scadenza_fiscale_list')
 
     def form_valid(self, form):
+        # corretta a mano (es. l'importo del commercialista): la stima
+        # automatica della liquidazione IVA non la sovrascrive più
+        if form.has_changed():
+            form.instance.stimata = False
         messages.success(self.request, 'Scadenza fiscale aggiornata.')
         return super().form_valid(form)
 
@@ -131,9 +152,9 @@ class ScadenzaFiscaleDeleteView(LoginRequiredMixin, PermRequiredMixin, DeleteVie
         return super().form_valid(form)
 
 
+@require_POST
+@require_perm('cashflow.modifica')
 def scadenza_fiscale_marca_pagata(request, pk):
-    if not request.user.is_authenticated:
-        return redirect('accounts:login')
     s = get_object_or_404(ScadenzaFiscale, pk=pk)
     s.pagata = not s.pagata
     s.data_pagamento = timezone.localdate() if s.pagata else None
@@ -142,8 +163,7 @@ def scadenza_fiscale_marca_pagata(request, pk):
         request,
         'Marcata come pagata.' if s.pagata else 'Pagamento annullato.',
     )
-    next_url = request.GET.get('next') or request.META.get('HTTP_REFERER')
-    return HttpResponseRedirect(next_url or reverse('cashflow:scadenza_fiscale_list'))
+    return _redirect_next(request, reverse('cashflow:scadenza_fiscale_list'))
 
 
 # ---------------------------------------------------------------------------
@@ -188,9 +208,10 @@ class SpesaRicorrenteCreateView(LoginRequiredMixin, PermRequiredMixin, CreateVie
         return reverse('cashflow:spesa_ricorrente_detail', args=[self.object.pk])
 
     def form_valid(self, form):
-        response = super().form_valid(form)
-        fino_a = timezone.localdate() + timedelta(days=180)
-        nuove = self.object.genera_scadenze(fino_a)
+        fino_a = timezone.localdate() + timedelta(days=ORIZZONTE_SCADENZE_GIORNI)
+        with transaction.atomic():
+            response = super().form_valid(form)
+            nuove = self.object.genera_scadenze(fino_a)
         messages.success(
             self.request,
             f'Spesa ricorrente creata. Generate {nuove} scadenze fino al {fino_a:%d/%m/%Y}.',
@@ -214,9 +235,10 @@ class SpesaRicorrenteUpdateView(LoginRequiredMixin, PermRequiredMixin, UpdateVie
         return reverse('cashflow:spesa_ricorrente_detail', args=[self.object.pk])
 
     def form_valid(self, form):
-        response = super().form_valid(form)
-        fino_a = timezone.localdate() + timedelta(days=180)
-        nuove = self.object.genera_scadenze(fino_a)
+        fino_a = timezone.localdate() + timedelta(days=ORIZZONTE_SCADENZE_GIORNI)
+        with transaction.atomic():
+            response = super().form_valid(form)
+            nuove = self.object.genera_scadenze(fino_a, rigenera=True)
         if nuove:
             messages.success(
                 self.request,
@@ -265,9 +287,9 @@ class SpesaRicorrenteDeleteView(LoginRequiredMixin, PermRequiredMixin, DeleteVie
         return super().form_valid(form)
 
 
+@require_POST
+@require_perm('cashflow.modifica')
 def scadenza_spesa_marca_pagata(request, pk):
-    if not request.user.is_authenticated:
-        return redirect('accounts:login')
     s = get_object_or_404(ScadenzaSpesa, pk=pk)
     s.pagata = not s.pagata
     s.data_pagamento = timezone.localdate() if s.pagata else None
@@ -276,8 +298,9 @@ def scadenza_spesa_marca_pagata(request, pk):
         request,
         'Marcata come pagata.' if s.pagata else 'Pagamento annullato.',
     )
-    next_url = request.GET.get('next') or request.META.get('HTTP_REFERER')
-    return HttpResponseRedirect(next_url or reverse('cashflow:spesa_ricorrente_list'))
+    return _redirect_next(
+        request, reverse('cashflow:spesa_ricorrente_detail', args=[s.spesa_id]),
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -402,22 +425,44 @@ class RimborsoChilometricoDeleteView(LoginRequiredMixin, PermRequiredMixin, Dele
         return super().form_valid(form)
 
 
+@require_POST
+@require_perm('cashflow.modifica')
 def rimborso_km_marca_pagato(request, pk):
-    if not request.user.is_authenticated:
-        return redirect('accounts:login')
+    """Toggle APPROVATO ↔ PAGATO. Una bozza non può essere pagata.
+
+    Cambiare lo stato è riservato a chi può approvare i rimborsi (vedi
+    ``puo_approvare_rimborsi``) e mai sui propri rimborsi.
+    """
     r = get_object_or_404(RimborsoChilometrico, pk=pk)
+    fallback = reverse('cashflow:rimborso_km_list')
+    if not puo_approvare_rimborsi(request.user):
+        messages.error(
+            request,
+            'Solo un amministratore può cambiare lo stato di pagamento dei rimborsi.',
+        )
+        return _redirect_next(request, fallback)
+    if r.amministratore_id == request.user.pk:
+        messages.error(
+            request, 'Non puoi cambiare lo stato di un tuo rimborso.',
+        )
+        return _redirect_next(request, fallback)
     if r.stato == StatoRimborso.PAGATO:
         r.stato = StatoRimborso.APPROVATO
         r.data_pagamento = None
         msg = 'Pagamento annullato.'
-    else:
+    elif r.stato == StatoRimborso.APPROVATO:
         r.stato = StatoRimborso.PAGATO
         r.data_pagamento = timezone.localdate()
         msg = 'Rimborso marcato come pagato.'
+    else:
+        messages.error(
+            request,
+            'Il rimborso è in bozza: va approvato prima di poter essere pagato.',
+        )
+        return _redirect_next(request, fallback)
     r.save()
     messages.success(request, msg)
-    next_url = request.GET.get('next') or request.META.get('HTTP_REFERER')
-    return HttpResponseRedirect(next_url or reverse('cashflow:rimborso_km_list'))
+    return _redirect_next(request, fallback)
 
 
 # ---------------------------------------------------------------------------
@@ -435,6 +480,7 @@ class CashflowView(LoginRequiredMixin, PermRequiredMixin, TemplateView):
         )
         ctx = super().get_context_data(**kwargs)
         ctx['active_nav'] = 'cashflow'
+        iva.sincronizza()                 # la liquidazione IVA stimata fra le uscite
 
         oggi = timezone.localdate()
         try:
@@ -443,6 +489,14 @@ class CashflowView(LoginRequiredMixin, PermRequiredMixin, TemplateView):
             giorni = 90
         giorni = max(7, min(giorni, 365))
         fino_a = oggi + timedelta(days=giorni)
+
+        # Generazione lazy: assicura che le spese ricorrenti attive abbiano le
+        # scadenze almeno fino alla fine della finestra visualizzata.
+        orizzonte = oggi + timedelta(days=ORIZZONTE_SCADENZE_GIORNI)
+        for spesa in SpesaRicorrente.objects.filter(attiva=True).filter(
+            Q(data_fine__isnull=True) | Q(data_fine__gte=oggi),
+        ):
+            spesa.genera_scadenze(orizzonte)
 
         eventi: list[dict] = []
 
@@ -557,4 +611,31 @@ class CashflowView(LoginRequiredMixin, PermRequiredMixin, TemplateView):
             'tot_scadute_in': tot_scadute_in,
             'tot_scadute_out': tot_scadute_out,
         })
+        return ctx
+
+
+class LiquidazioneIvaView(LoginRequiredMixin, PermRequiredMixin, TemplateView):
+    """La liquidazione IVA stimata periodo per periodo (cashflow/iva.py)."""
+    required_perm = 'cashflow.vedi'
+    template_name = 'cashflow/liquidazione_iva.html'
+
+    def get_context_data(self, **kwargs):
+        ctx = super().get_context_data(**kwargs)
+        ctx['active_nav'] = 'liquidazione_iva'
+        oggi = timezone.localdate()
+        try:
+            anno = int(self.request.GET.get('anno') or oggi.year)
+        except ValueError:
+            anno = oggi.year
+        anno = max(2000, min(anno, oggi.year + 1))
+        iva.sincronizza()
+        liq = iva.calcola(anno)
+        ctx['liq'] = liq
+        ctx['anno'] = anno
+        ctx['anni'] = list(range(oggi.year + 1, oggi.year - 5, -1))
+        ctx['oggi'] = oggi
+        ctx['scadenze'] = {s.periodo_iva: s for s in ScadenzaFiscale.objects.filter(
+            periodo_iva__in=[p.chiave for p in liq.periodi])}
+        ctx['totali'] = {k: sum((getattr(p, k) for p in liq.periodi), Decimal('0'))
+                         for k in ('debito', 'credito', 'da_versare', 'interessi', 'split_payment')}
         return ctx
