@@ -9,7 +9,7 @@ from accounts.models import Ruolo
 
 from .models import (
     RimborsoChilometrico, ScadenzaFiscale, ScadenzaSpesa, SpesaRicorrente,
-    StatoRimborso, puo_approvare_rimborsi,
+    puo_approvare_rimborsi,
 )
 
 
@@ -17,16 +17,47 @@ SELECT = forms.Select(attrs={'class': 'select'})
 TEXT = forms.TextInput(attrs={'class': 'input'})
 DEC = forms.NumberInput(attrs={'class': 'input mono', 'step': '0.01'})
 INT = forms.NumberInput(attrs={'class': 'input mono', 'step': '1', 'min': '1', 'max': '31'})
-DATE = forms.DateInput(attrs={'class': 'input', 'type': 'date'})
+# type=date vuole ISO: col formato locale (gg/mm/aaaa) il campo resta vuoto
+DATE = forms.DateInput(attrs={'class': 'input', 'type': 'date'}, format='%Y-%m-%d')
 TEXTAREA = forms.Textarea(attrs={'class': 'textarea', 'rows': 3})
 CHECKBOX = forms.CheckboxInput(attrs={'class': 'checkbox', 'data-toggle-riepilogo-mensile': '1'})
 
 
 class ScadenzaFiscaleForm(forms.ModelForm):
+    """Con ``periodo_iva`` una scadenza IVA si lega al suo periodo di
+    riferimento: la liquidazione stimata (cashflow/iva.py) la riconosce e non
+    ne crea un'altra."""
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        from . import iva
+
+        scelte = iva.scelte_periodo(iva.periodicita_attiva())
+        attuale = self.instance.periodo_iva
+        if attuale and attuale not in dict(scelte):
+            scelte.append((attuale, iva.etichetta_periodo(attuale) or attuale))
+        self.fields['periodo_iva'] = forms.ChoiceField(
+            label='Periodo di riferimento', required=False, widget=SELECT,
+            choices=[('', '— nessuno —')] + scelte,
+            help_text='Solo per la liquidazione IVA: il mese o il trimestre che si versa.')
+
+    def clean(self):
+        dati = super().clean()
+        periodo = dati.get('periodo_iva') or ''
+        if periodo and dati.get('tipo') != 'iva':
+            self.add_error('periodo_iva', 'Il periodo di riferimento vale solo per le scadenze IVA.')
+        elif periodo:
+            altra = (ScadenzaFiscale.objects.filter(periodo_iva=periodo)
+                     .exclude(pk=self.instance.pk).first())
+            if altra is not None:
+                self.add_error('periodo_iva', f'Per questo periodo c\'è già «{altra.descrizione}» '
+                                              f'({altra.data_scadenza:%d/%m/%Y}).')
+        return dati
+
     class Meta:
         model = ScadenzaFiscale
         fields = [
-            'data_scadenza', 'tipo', 'descrizione', 'importo',
+            'data_scadenza', 'tipo', 'periodo_iva', 'descrizione', 'importo',
             'pagata', 'data_pagamento', 'note',
         ]
         widgets = {
@@ -134,9 +165,6 @@ class RimborsoChilometricoForm(forms.ModelForm):
         User = get_user_model()
         filtro = Q(profile__ruolo=Ruolo.AMMINISTRATORE)
         utente_corrente = getattr(request, 'user', None)
-        self._utente = utente_corrente
-        self._stato_iniziale = self.instance.stato if self.instance.pk else None
-        self._amministratore_iniziale = self.instance.amministratore_id
         self.puo_approvare = puo_approvare_rimborsi(utente_corrente)
         if utente_corrente is not None and utente_corrente.is_authenticated:
             filtro = filtro | Q(pk=utente_corrente.pk)
@@ -181,23 +209,4 @@ class RimborsoChilometricoForm(forms.ModelForm):
             ]
             for campo in mancanti:
                 self.add_error(campo, 'Campo obbligatorio per le trasferte singole.')
-        # Niente auto-approvazione: chi è l'amministratore del rimborso non può
-        # portarlo (o mantenerlo, cambiandone il titolare) in approvato/pagato.
-        stato = cleaned.get('stato')
-        amministratore = cleaned.get('amministratore')
-        utente = self._utente
-        if (
-            utente is not None and utente.is_authenticated
-            and amministratore is not None and amministratore.pk == utente.pk
-            and stato in (StatoRimborso.APPROVATO, StatoRimborso.PAGATO)
-            and (
-                stato != self._stato_iniziale
-                or amministratore.pk != self._amministratore_iniziale
-            )
-        ):
-            self.add_error(
-                'stato',
-                'Non puoi approvare o pagare un tuo rimborso: '
-                'serve un altro amministratore.',
-            )
         return cleaned

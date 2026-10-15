@@ -2,10 +2,13 @@ from django.contrib import admin
 
 from .models import (
     AgenteFattura,
+    EmissioneRicorrente,
+    FatturaRicorrente,
     MessaggioSdi,
     PagamentoScadenzaAcquisto,
     RigaDocumento,
     RigaFatturaAcquisto,
+    RigaFatturaRicorrente,
     ScadenzaFattura,
     ScadenzaFatturaAcquisto,
     TestataDdt,
@@ -247,9 +250,9 @@ class ScadenzaFatturaAdmin(admin.ModelAdmin):
 
 @admin.register(MessaggioSdi)
 class MessaggioSdiAdmin(admin.ModelAdmin):
-    list_display = ('fattura', 'tipo', 'direzione', 'timestamp', 'id_trasmissione', 'descrizione')
+    list_display = ('documento', 'tipo', 'direzione', 'timestamp', 'id_trasmissione', 'descrizione')
     list_filter = ('tipo', 'direzione', 'timestamp')
-    search_fields = ('id_trasmissione', 'descrizione', 'fattura__numero')
+    search_fields = ('id_trasmissione', 'descrizione', 'fattura__numero', 'nota_credito__numero')
     readonly_fields = ('timestamp',)
     date_hierarchy = 'timestamp'
 
@@ -258,3 +261,25 @@ class MessaggioSdiAdmin(admin.ModelAdmin):
 class AgenteFatturaAdmin(admin.ModelAdmin):
     list_display = ('agente', 'fattura', 'provvigione')
     autocomplete_fields = ('agente',)
+
+
+class RigaFatturaRicorrenteInline(admin.TabularInline):
+    model = RigaFatturaRicorrente
+    extra = 0
+
+
+class EmissioneRicorrenteInline(admin.TabularInline):
+    model = EmissioneRicorrente
+    extra = 0
+    fields = ('periodo', 'esito', 'fattura', 'errore', 'invio')
+    readonly_fields = fields
+    can_delete = False
+
+
+@admin.register(FatturaRicorrente)
+class FatturaRicorrenteAdmin(admin.ModelAdmin):
+    list_display = ('nome', 'cliente', 'periodicita', 'giorno_emissione', 'attiva', 'data_fine')
+    list_filter = ('attiva', 'periodicita')
+    search_fields = ('nome', 'cliente__ragione_sociale')
+    inlines = [RigaFatturaRicorrenteInline, EmissioneRicorrenteInline]
+

@@ -1,0 +1,73 @@
+{% extends 'base.html' %}
+
+{% block title %}Fatture ricorrenti{% endblock %}
+{% block crumb_current %}Fatture ricorrenti{% endblock %}
+
+{% block content %}
+<div class="page">
+  <div class="page-header">
+    <div>
+      <h1 class="page-title">Fatture ricorrenti</h1>
+      <p class="page-subtitle">Canoni e abbonamenti: la fattura di ogni periodo si emette da sola, ogni mattina.</p>
+    </div>
+    <div style="display: flex; gap: 8px;">
+      {% if user_perms_map|get_item:'documenti.modifica' %}
+        <a href="{% url 'documenti:ricorrente_create' %}" class="btn btn-brand" data-scorciatoia="n" title="Nuova fattura ricorrente (N)">
+          {% icon 'plus' size=14 %} Nuova fattura ricorrente
+        </a>
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="card" style="padding: 0;">
+    {% if voci %}
+      <div class="tbl-scroll">
+        <table class="tbl">
+          <thead>
+            <tr>
+              <th>Nome</th>
+              <th>Cliente</th>
+              <th>Ogni</th>
+              <th style="text-align: right;">Importo per periodo</th>
+              <th>Prossima emissione</th>
+              <th>Stato</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for v in voci %}
+              <tr class="clickable" onclick="if (!event.target.closest('a')) location.href='{% url 'documenti:ricorrente_detail' v.r.pk %}'">
+                <td><a href="{% url 'documenti:ricorrente_detail' v.r.pk %}" style="font-weight: 500; color: var(--ink); text-decoration: none;">{{ v.r.nome }}</a></td>
+                <td>{{ v.r.cliente }}</td>
+                <td>{{ v.r.get_periodicita_display|lower }}, il {{ v.r.giorno_emissione }}</td>
+                <td class="mono" style="text-align: right; white-space: nowrap;">{{ v.totale|euro:2 }}</td>
+                <td style="white-space: nowrap;">
+                  {% if v.arretrati %}
+                    <span class="text-warn">{{ v.arretrati }} da emettere</span>
+                  {% elif v.prossima %}
+                    {{ v.prossima.previsto|date:'d/m/Y' }} <span class="text-sm text-muted">· {{ v.prossima.etichetta }}</span>
+                  {% else %}—{% endif %}
+                </td>
+                <td>
+                  {% if v.errori %}<span class="badge badge-danger">Errore</span>
+                  {% elif v.stato == 'attiva' %}<span class="badge badge-success">Attiva</span>
+                  {% elif v.stato == 'sospesa' %}<span class="badge badge-warn">Sospesa</span>
+                  {% else %}<span class="badge badge-neutral">Terminata</span>{% endif %}
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    {% else %}
+      <div class="empty">
+        <div class="ico">{% icon 'clock' size=22 %}</div>
+        <div style="font: 600 15px var(--font-display); color: var(--ink); margin-bottom: 6px;">Nessuna fattura ricorrente</div>
+        <div style="max-width: 440px; margin: 0 auto;">
+          Per un canone mensile crea una ricorrenza: le fatture si emettono da sole con il periodo nella descrizione.
+          Puoi partire anche da una fattura esistente: menu «Altro» › «Crea una ricorrenza da questa fattura».
+        </div>
+      </div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

@@ -35,20 +35,32 @@
           <a href="tel:{{ primary.telefono }}" class="btn btn-ghost">{% icon 'phone' size=14 %} Chiama</a>
         {% endif %}
       {% endwith %}
-      <a href="{% url 'opportunita:create' %}?cliente={{ cliente.pk }}" class="btn btn-brand">{% icon 'plus' size=14 %} Nuova opportunità</a>
+      {% if user_perms_map|get_item:'documenti.modifica' %}
+        <a href="{% url 'documenti:fattura_create' %}?cliente={{ cliente.pk }}" class="btn btn-brand">{% icon 'plus' size=14 %} Nuova fattura</a>
+      {% endif %}
       <div x-data="{ open: false }" style="position: relative;">
-        <button class="btn btn-ghost" type="button" @click="open = !open">{% icon 'more' size=14 %}</button>
-        <div class="menu" x-show="open" @click.outside="open = false" x-cloak>
-          <a href="{% url 'clienti:update' cliente.pk %}">{% icon 'edit' size=13 %} Modifica</a>
-          <a href="{% url 'clienti:contatto_create' cliente.pk %}">{% icon 'user' size=13 %} Aggiungi contatto</a>
-          <div class="sep"></div>
-          <a href="{% url 'clienti:delete' cliente.pk %}" class="danger">{% icon 'trash' size=13 %} Elimina</a>
+        <button class="btn btn-ghost" type="button" @click="open = !open" aria-label="Altre azioni">{% icon 'more' size=14 %}</button>
+        <div class="menu" x-show="open" @click.outside="open = false" x-cloak style="min-width: 220px;">
+          {% if user_perms_map|get_item:'documenti.modifica' %}
+            <a href="{% url 'documenti:offerta_create' %}?cliente={{ cliente.pk }}">{% icon 'doc' size=13 %} Nuova offerta</a>
+          {% endif %}
+          {% if user_perms_map|get_item:'opportunita.modifica' %}<a href="{% url 'opportunita:create' %}?cliente={{ cliente.pk }}">{% icon 'target' size=13 %} Nuova opportunità</a>{% endif %}
+          {% if user_perms_map|get_item:'attivita.modifica' %}<a href="{% url 'attivita:create' %}?cliente={{ cliente.pk }}">{% icon 'calendar' size=13 %} Nuova attività</a>{% endif %}
+          {% if user_perms_map|get_item:'clienti.modifica' %}
+            <div class="sep"></div>
+            <a href="{% url 'clienti:update' cliente.pk %}">{% icon 'edit' size=13 %} Modifica</a>
+            <a href="{% url 'clienti:contatto_create' cliente.pk %}">{% icon 'user' size=13 %} Aggiungi contatto</a>
+          {% endif %}
+          {% if user_perms_map|get_item:'clienti.elimina' %}
+            <div class="sep"></div>
+            <a href="{% url 'clienti:delete' cliente.pk %}" class="danger">{% icon 'trash' size=13 %} Elimina</a>
+          {% endif %}
         </div>
       </div>
     </div>
   </div>
 
-  <div class="grid" style="grid-template-columns: 1fr 320px; gap: 20px;">
+  <div class="grid layout-documento" style="gap: 20px;">
     <div class="flex-col gap-16">
       <div class="tabs">
         {% with at=active_tab %}
@@ -56,7 +68,7 @@
           <a class="tab {% if at == 'opportunita' %}active{% endif %}" href="?tab=opportunita">Opportunità ({{ opportunita_count }})</a>
           <a class="tab {% if at == 'contatti' %}active{% endif %}" href="?tab=contatti">Contatti ({{ contatti|length }})</a>
           <a class="tab {% if at == 'attivita' %}active{% endif %}" href="?tab=attivita">Attività</a>
-          <a class="tab {% if at == 'documenti' %}active{% endif %}" href="?tab=documenti">Documenti</a>
+          {% if vede_documenti %}<a class="tab {% if at == 'documenti' %}active{% endif %}" href="?tab=documenti">Fatture e documenti</a>{% endif %}
           <a class="tab {% if at == 'note' %}active{% endif %}" href="?tab=note">Note</a>
         {% endwith %}
       </div>
@@ -64,22 +76,29 @@
       {% if active_tab == 'panoramica' or not active_tab %}
         <div class="grid grid-3" style="gap: 12px;">
           <div class="card" style="padding: 14px;">
-            <div class="kpi-label">Fatturato totale</div>
+            <div class="kpi-label">Fatturato (imponibile)</div>
             <div style="font: 600 22px var(--font-display); margin-top: 6px;">{{ fatturato_totale|euro_compact }}</div>
           </div>
+          {% if ec %}
+            <a class="card" href="?tab=documenti" style="padding: 14px; text-decoration: none;">
+              <div class="kpi-label">Da incassare</div>
+              <div style="font: 600 22px var(--font-display); margin-top: 6px;">
+                {{ ec.da_incassare|euro_compact }}
+                {% if ec.scaduto %}<span style="color: var(--danger); font-size: 13px; font-weight: 500;">· {{ ec.scaduto|euro_compact }} scaduti</span>{% endif %}
+              </div>
+            </a>
+          {% else %}
+            <div class="card" style="padding: 14px;">
+              <div class="kpi-label">Tasso chiusura</div>
+              <div style="font: 600 22px var(--font-display); margin-top: 6px;">{{ tasso_chiusura }}%</div>
+            </div>
+          {% endif %}
           <div class="card" style="padding: 14px;">
             <div class="kpi-label">Opportunità aperte</div>
             <div style="font: 600 22px var(--font-display); margin-top: 6px;">
               {{ opportunita_attive|length }}
-              <span style="color: var(--ink-3); font-size: 13px; font-weight: 400;">
-                · {% with s=0 %}{% for o in opportunita_attive %}{% endfor %}{% endwith %}
-                {{ opportunita_attive|length|multiply:0 }}
-              </span>
+              {% if valore_opportunita %}<span style="color: var(--ink-3); font-size: 13px; font-weight: 400;">· {{ valore_opportunita|euro_compact }}</span>{% endif %}
             </div>
-          </div>
-          <div class="card" style="padding: 14px;">
-            <div class="kpi-label">Tasso chiusura</div>
-            <div style="font: 600 22px var(--font-display); margin-top: 6px;">{{ tasso_chiusura }}%</div>
           </div>
         </div>
 
@@ -124,7 +143,7 @@
         <div class="card" style="padding: 20px;">
           <div class="flex-between mb-16">
             <div style="font: 600 14px var(--font-display);">Opportunità attive</div>
-            <a href="{% url 'opportunita:create' %}?cliente={{ cliente.pk }}" class="btn btn-subtle" style="height: 28px; padding: 0 10px; font-size: 12px;">{% icon 'plus' size=12 %} Nuova</a>
+            {% if user_perms_map|get_item:'opportunita.modifica' %}<a href="{% url 'opportunita:create' %}?cliente={{ cliente.pk }}" class="btn btn-subtle" style="height: 28px; padding: 0 10px; font-size: 12px;">{% icon 'plus' size=12 %} Nuova</a>{% endif %}
           </div>
           {% for o in opportunita_attive %}
             <a href="{% url 'opportunita:detail' o.pk %}" style="text-decoration: none; color: inherit;">
@@ -168,7 +187,7 @@
         <div class="card" style="padding: 20px;">
           <div class="flex-between mb-16">
             <div class="block-title" style="margin: 0;">Contatti</div>
-            <a href="{% url 'clienti:contatto_create' cliente.pk %}" class="btn btn-subtle">{% icon 'plus' size=12 %} Aggiungi</a>
+            {% if user_perms_map|get_item:'clienti.modifica' %}<a href="{% url 'clienti:contatto_create' cliente.pk %}" class="btn btn-subtle">{% icon 'plus' size=12 %} Aggiungi</a>{% endif %}
           </div>
           {% for c in contatti %}
             <div style="display: flex; gap: 12px; align-items: center; padding: 12px 0; {% if not forloop.last %}border-bottom: 1px solid var(--border);{% endif %}">
@@ -178,12 +197,12 @@
                 <div style="font: 12px var(--font-body); color: var(--ink-3);">{{ c.ruolo|default:'—' }}</div>
                 <div style="font: 12px var(--font-body); color: var(--ink-3); margin-top: 2px;">{{ c.email }} {% if c.telefono %}· {{ c.telefono }}{% endif %}</div>
               </div>
-              <form method="post" action="{% url 'clienti:contatto_delete' c.pk %}" style="margin: 0;"
+              {% if user_perms_map|get_item:'clienti.elimina' %}<form method="post" action="{% url 'clienti:contatto_delete' c.pk %}" style="margin: 0;"
                     onsubmit="return confirm('Eliminare il contatto {{ c.nome_completo|escapejs }}?');">
                 {% csrf_token %}
                 <input type="hidden" name="next" value="{{ cliente.get_absolute_url }}?tab=contatti">
                 <button type="submit" class="btn-icon" title="Elimina contatto" style="color: var(--danger);">{% icon 'trash' size=14 %}</button>
-              </form>
+              </form>{% endif %}
             </div>
           {% empty %}
             <div class="empty">Nessun contatto</div>
@@ -193,14 +212,14 @@
         <div class="card" style="padding: 20px;">
           <div class="flex-between mb-16">
             <div class="block-title" style="margin: 0;">Attività</div>
-            <a href="{% url 'attivita:create' %}?cliente={{ cliente.pk }}" class="btn btn-subtle">{% icon 'plus' size=12 %} Nuova</a>
+            {% if user_perms_map|get_item:'attivita.modifica' %}<a href="{% url 'attivita:create' %}?cliente={{ cliente.pk }}" class="btn btn-subtle">{% icon 'plus' size=12 %} Nuova</a>{% endif %}
           </div>
           <table class="tbl">
             <thead><tr><th>Tipo</th><th>Titolo</th><th>Data</th><th>Stato</th></tr></thead>
             <tbody>
               {% for a in cliente.attivita.all %}
                 <tr><td>{% icon a.icon size=14 %} {{ a.get_tipo_display }}</td>
-                <td>{{ a.titolo }}</td>
+                <td><a href="{{ a.get_absolute_url }}">{{ a.titolo }}</a></td>
                 <td>{{ a.data|date:'d M Y H:i' }}</td>
                 <td>{% if a.completata %}{% stato_badge 'attivo' 'Completata' %}{% else %}{% stato_badge 'prospect' 'Da fare' %}{% endif %}</td></tr>
               {% empty %}
@@ -209,13 +228,75 @@
             </tbody>
           </table>
         </div>
-      {% elif active_tab == 'documenti' %}
-        <div class="card" style="padding: 40px;">
-          <div class="empty">
-            <div class="ico">{% icon 'doc' size=22 %}</div>
-            Area documenti — in costruzione
+      {% elif active_tab == 'documenti' and ec %}
+        <div class="card" style="padding: 20px;">
+          <div class="flex-between mb-16" style="gap: 12px; flex-wrap: wrap;">
+            <div class="block-title" style="margin: 0;">Estratto conto</div>
+            <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+              <a href="{% url 'documenti:scadenziario_attivo' %}?cliente={{ cliente.pk }}" class="btn btn-ghost btn-sm">{% icon 'clock' size=12 %} Scadenziario</a>
+              <a href="{% url 'documenti:fattura_list' %}?cliente={{ cliente.pk }}" class="btn btn-ghost btn-sm">{% icon 'list' size=12 %} Tutte le fatture</a>
+              {% if user_perms_map|get_item:'documenti.modifica' %}
+                <a href="{% url 'documenti:fattura_create' %}?cliente={{ cliente.pk }}" class="btn btn-brand btn-sm">{% icon 'plus' size=12 %} Nuova fattura</a>
+              {% endif %}
+            </div>
           </div>
+          <div class="ec-kpi">
+            <div><div class="l">Fatturato (con IVA)</div><div class="v">{{ ec.fatturato|euro:2 }}</div></div>
+            <div><div class="l">Incassato</div><div class="v">{{ ec.incassato|euro:2 }}</div></div>
+            <div><div class="l">Da incassare</div><div class="v">{{ ec.da_incassare|euro:2 }}</div></div>
+            <div><div class="l">Di cui scaduto</div><div class="v {% if ec.scaduto %}rosso{% endif %}">{{ ec.scaduto|euro:2 }}</div></div>
+          </div>
+          <div class="tbl-scroll">
+            <table class="tbl">
+              <thead><tr><th>Fattura</th><th>Data</th><th class="num">Totale</th><th>Scadenza</th><th>Incasso</th></tr></thead>
+              <tbody>
+                {% for f in ec.fatture %}
+                  <tr class="clickable {% if not f.pagata and f.giorni_scadenza is not None and f.giorni_scadenza < 0 %}riga-scaduta{% endif %}" onclick="window.location='{% url 'documenti:fattura_detail' f.pk %}'">
+                    <td class="mono"><a href="{% url 'documenti:fattura_detail' f.pk %}" style="color: inherit; text-decoration: none;">{% if f.sezionale %}{{ f.sezionale }}/{% endif %}{{ f.numero }}/{{ f.anno }}</a></td>
+                    <td>{{ f.data_documento|date:'d/m/Y' }}</td>
+                    <td class="num mono">{{ f.totale_calc|euro:2 }}</td>
+                    <td>
+                      {% if f.pagata or f.giorni_scadenza is None %}<span class="scad">{{ f.prima_scadenza|date:'d/m/Y'|default:'—' }}</span>
+                      {% elif f.giorni_scadenza < 0 %}<span class="scad scaduta">scaduta da {{ f.giorni_ritardo }} g{{ f.giorni_ritardo|pluralize:"iorno,g" }}</span>
+                      {% else %}<span class="scad">{{ f.prima_scadenza|date:'d/m/Y' }}</span>{% endif %}
+                    </td>
+                    <td>{% if f.pagata %}<span class="badge badge-success">Incassata{% if f.data_pagamento %} {{ f.data_pagamento|date:'d/m/Y' }}{% endif %}</span>{% elif f.incassato_tot %}<span class="badge badge-warn" title="Incassati {{ f.incassato_tot|euro:2 }}">Parziale · resta {{ f.residuo_tot|euro:0 }}</span>{% else %}<span class="badge badge-warn">Da incassare</span>{% endif %}</td>
+                  </tr>
+                {% empty %}
+                  <tr><td colspan="5"><div class="empty">Nessuna fattura per questo cliente</div></td></tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+          {% if ec.n_fatture > ec.fatture|length %}
+            <div style="margin-top: 10px; font: 12px var(--font-body); color: var(--ink-3);">
+              Le ultime {{ ec.fatture|length }} di {{ ec.n_fatture }}: <a href="{% url 'documenti:fattura_list' %}?cliente={{ cliente.pk }}">vedile tutte</a>.
+            </div>
+          {% endif %}
         </div>
+
+        {% if ec.note_credito or ec.offerte %}
+          <div class="grid grid-2" style="gap: 16px;">
+            <div class="card" style="padding: 20px;">
+              <div class="block-title">Note di credito</div>
+              {% for nc in ec.note_credito %}
+                <a href="{% url 'documenti:nota_credito_detail' nc.pk %}" class="flex-between" style="padding: 8px 0; text-decoration: none; {% if not forloop.first %}border-top: 1px solid var(--border);{% endif %}">
+                  <span class="mono">{{ nc.numero }}/{{ nc.anno }} · {{ nc.data_documento|date:'d/m/Y' }}</span>
+                  <span class="mono">− {{ nc.totale_calc|euro:2 }}</span>
+                </a>
+              {% empty %}<div class="text-sm text-muted">Nessuna</div>{% endfor %}
+            </div>
+            <div class="card" style="padding: 20px;">
+              <div class="block-title">Ultime offerte</div>
+              {% for o in ec.offerte %}
+                <a href="{% url 'documenti:offerta_detail' o.pk %}" class="flex-between" style="padding: 8px 0; text-decoration: none; {% if not forloop.first %}border-top: 1px solid var(--border);{% endif %}">
+                  <span class="mono">{{ o.numero }}/{{ o.anno }} · {{ o.data_documento|date:'d/m/Y' }}</span>
+                  <span class="badge badge-neutral">{{ o.get_stato_display }}</span>
+                </a>
+              {% empty %}<div class="text-sm text-muted">Nessuna</div>{% endfor %}
+            </div>
+          </div>
+        {% endif %}
       {% elif active_tab == 'note' %}
         <div class="card" style="padding: 20px;">
           <div class="block-title">Note</div>

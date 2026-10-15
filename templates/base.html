@@ -5,10 +5,10 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>{% block title %}Gestionale CRM{% endblock %} — AIGIS lab</title>
 
-  <link rel="preconnect" href="https://fonts.googleapis.com" />
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
-
+  {# font e librerie serviti dal sito: niente richieste a terzi che bloccano il rendering #}
+  <link rel="preload" href="{% static 'fonts/plus-jakarta-sans-latin.woff2' %}" as="font" type="font/woff2" crossorigin />
+  <link rel="preload" href="{% static 'fonts/outfit-latin.woff2' %}" as="font" type="font/woff2" crossorigin />
+  <link rel="stylesheet" href="{% static 'css/fonts.css' %}" />
   <link rel="stylesheet" href="{% static 'css/app.css' %}" />
   <link rel="icon" type="image/png" href="{% static 'img/logo.png' %}" />
   {% block extra_css %}{% endblock %}
@@ -16,38 +16,74 @@
 <body>
 
 {% block body %}
+<a class="skip-link" href="#main-content">Vai al contenuto</a>
 <div class="app" data-layout="{{ layout|default:'default' }}">
   {% include 'components/_sidebar.html' %}
-  <div style="min-width: 0;">
+  <script>
+    /* Gruppi della sidebar come li ha lasciati l'utente, prima del primo
+       disegno (niente salti); il gruppo della pagina aperta resta aperto.
+       Prefisso v2: gli stati salvati col menu vecchio non valgono più. */
+    document.querySelectorAll('.sidebar-group[data-group]').forEach(function (g) {
+      if (g.querySelector('.nav-item.active')) return;
+      try {
+        var v = localStorage.getItem('sidebar.v2.' + g.dataset.group);
+        if (v === 'open') g.open = true; else if (v === 'closed') g.open = false;
+      } catch (e) {}
+    });
+  </script>
+  <div class="sfondo-menu" onclick="toggleSidebar(false)"></div>
+  <div class="colonna">
     <header class="topbar">
-      <button class="btn-icon" type="button" onclick="toggleSidebar()" style="display: none;" aria-label="Toggle menu">{% icon 'menu' size=18 %}</button>
-
-      <nav class="breadcrumb">
+      <button class="btn-icon apri-menu" type="button" onclick="toggleSidebar()" aria-label="Apri il menu" aria-controls="main-menu" aria-expanded="false">{% icon 'menu' size=18 %}</button>
+      <a href="{% url 'dashboard:home' %}" class="marchio">
+        <img src="{% if azienda_logo_url %}{{ azienda_logo_url }}{% else %}{% static 'img/logo-128.png' %}{% endif %}" alt="" />
+        <span>{{ azienda_nome|default:'Gestionale' }}</span>
+      </a>
+      {% include 'components/_navbar.html' %}
+      {% include 'components/_topbar.html' %}
+    </header>
+    {% if messages %}
+      <div class="toast-layer" id="server-toast-layer" role="status" aria-live="polite">
+        {% for m in messages %}
+          <div class="toast {{ m.tags|default:'info' }}">{{ m.message }}</div>
+        {% endfor %}
+      </div>
+    {% endif %}
+    <main class="area" id="main-content" tabindex="-1">
+      <nav class="breadcrumb" aria-label="Percorso">
         {% if azienda_nome %}<span>{{ azienda_nome }}</span>{% endif %}
         {% block breadcrumb %}
           {% if azienda_nome %}<span class="sep">{% icon 'chevronRight' size=14 %}</span>{% endif %}
           <span class="current">{% block crumb_current %}{{ active_nav|title|default:'' }}{% endblock %}</span>
         {% endblock %}
       </nav>
-
-      {% include 'components/_topbar.html' %}
-    </header>
-    <style>[x-cloak] { display: none !important; }</style>
-    {% if messages %}
-      <div class="toast-layer" id="server-toast-layer">
-        {% for m in messages %}
-          <div class="toast {{ m.tags|default:'info' }}">{{ m.message }}</div>
-        {% endfor %}
-      </div>
-    {% endif %}
-    {% block content %}{% endblock %}
+      {% block content %}{% endblock %}
+    </main>
   </div>
 </div>
+{% include 'components/_palette.html' %}
 {% endblock %}
 
-<script src="https://unpkg.com/htmx.org@1.9.12/dist/htmx.min.js" defer></script>
-<script defer src="https://unpkg.com/alpinejs@3.14.1/dist/cdn.min.js"></script>
+<script src="{% static 'vendor/htmx-1.9.12.min.js' %}" defer></script>
+<script src="{% static 'vendor/alpine-3.14.1.min.js' %}" defer></script>
 <script src="{% static 'js/app.js' %}" defer></script>
+{# Prefetch della pagina quando il puntatore si ferma su un link (Chromium): #}
+{# il clic la mostra subito. Esclusi download, PDF e azioni. #}
+<script type="speculationrules">
+{"prefetch": [{"where": {"and": [
+  {"href_matches": "/*"},
+  {"not": {"href_matches": "/accounts/*"}},
+  {"not": {"href_matches": "/admin/*"}},
+  {"not": {"href_matches": "/media/*"}},
+  {"not": {"href_matches": "/api/*"}},
+  {"not": {"href_matches": "/*pdf*"}},
+  {"not": {"href_matches": "/*xml*"}},
+  {"not": {"href_matches": "/*zip*"}},
+  {"not": {"href_matches": "/*export*"}},
+  {"not": {"href_matches": "/*elimina*"}},
+  {"not": {"selector_matches": "[download], [target=_blank], [data-no-prefetch]"}}
+]}, "eagerness": "moderate"}]}
+</script>
 {% block extra_js %}{% endblock %}
 
 <script>

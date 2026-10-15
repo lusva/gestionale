@@ -9,12 +9,16 @@
 {% endblock %}
 
 {% block content %}
-<form method="post" class="page" id="fattura-form">
+<form method="post" class="page" id="doc-form" data-documento data-salva-rapido data-avvisa-modifiche>
   {% csrf_token %}
+  {% if fattura.pk %}<input type="hidden" name="documento_pk" value="{{ fattura.pk }}">{% endif %}
   <div class="page-header">
     <div>
       <h1 class="page-title">{% if is_create %}Nuova fattura{% else %}Fattura {{ fattura.numero }}/{{ fattura.anno }}{% endif %}</h1>
-      <p class="page-subtitle">Compila testata, righe e scadenze. Imponibile e numero sono calcolati al salvataggio.</p>
+      <p class="page-subtitle">
+        {% if is_create %}Il numero si assegna al salvataggio.{% endif %}
+        I totali a destra si aggiornano mentre scrivi · <kbd data-tasto-mod>⌘</kbd>&nbsp;<kbd>S</kbd> per salvare
+      </p>
     </div>
     <div style="display: flex; gap: 8px;">
       <a href="{% if is_create %}{% url 'documenti:fattura_list' %}{% else %}{% url 'documenti:fattura_detail' fattura.pk %}{% endif %}" class="btn btn-ghost">Annulla</a>
@@ -33,18 +37,13 @@
     </div>
   {% endif %}
 
-  <div class="grid" style="grid-template-columns: 1fr 320px; gap: 24px;">
+  <div class="layout-documento">
     <div class="flex-col gap-16">
 
       <div class="card" style="padding: 24px;">
         <div class="section-title">Testata</div>
         <div class="grid grid-2" style="gap: 16px;">
-          <div class="field">
-            <label for="{{ form.tipo_documento.id_for_label }}">Tipo documento *</label>
-            {{ form.tipo_documento }}
-            {{ form.tipo_documento.errors }}
-          </div>
-          <div class="field">
+          <div class="field" style="grid-column: 1 / -1;">
             <label for="{{ form.cliente.id_for_label }}">Cliente *</label>
             {{ form.cliente }}
             {{ form.cliente.errors }}
@@ -52,161 +51,133 @@
           <div class="field">
             <label for="{{ form.data_documento.id_for_label }}">Data documento</label>
             {{ form.data_documento }}
+            {{ form.data_documento.errors }}
           </div>
           <div class="field">
-            <label for="{{ form.data_registrazione.id_for_label }}">Data registrazione</label>
-            {{ form.data_registrazione }}
+            <label for="{{ form.tipo_documento.id_for_label }}">Tipo documento *</label>
+            {{ form.tipo_documento }}
+            {{ form.tipo_documento.errors }}
           </div>
           <div class="field">
             <label for="{{ form.forme_pagamento.id_for_label }}">Forma pagamento</label>
             {{ form.forme_pagamento }}
+            {{ form.forme_pagamento.errors }}
           </div>
           <div class="field">
-            <label for="{{ form.conto_corrente.id_for_label }}">Conto corrente</label>
+            <label for="{{ form.conto_corrente.id_for_label }}">Conto corrente (IBAN in fattura)</label>
             {{ form.conto_corrente }}
-          </div>
-          <div class="field">
-            <label for="{{ form.spese_imballo.id_for_label }}">Spese imballo</label>
-            {{ form.spese_imballo }}
-          </div>
-          <div class="field">
-            <label for="{{ form.spese_trasporto.id_for_label }}">Spese trasporto</label>
-            {{ form.spese_trasporto }}
-          </div>
-          <div class="field">
-            <label for="{{ form.sconto.id_for_label }}">Sconto %</label>
-            {{ form.sconto }}
-          </div>
-          <div class="field">
-            <label for="{{ form.sconto_incondizionato.id_for_label }}">Sconto incondizionato</label>
-            {{ form.sconto_incondizionato }}
-          </div>
-          <div class="field" style="grid-column: 1 / -1;">
-            <label for="{{ form.note.id_for_label }}">Note</label>
-            {{ form.note }}
+            {{ form.conto_corrente.errors }}
           </div>
         </div>
+
+        <details class="altre-opzioni" {% if form.spese_imballo.errors or form.spese_trasporto.errors or form.sconto.errors or form.sconto_incondizionato.errors or form.data_registrazione.errors or form.sezionale.errors or form.sconto.value or form.sconto_incondizionato.value or form.spese_imballo.value or form.spese_trasporto.value %}open{% endif %}>
+          <summary>{% icon 'chevronRight' size=12 %} Sconti, spese, data di registrazione{% if is_create %} e sezionale{% endif %}</summary>
+          <div class="grid grid-2" style="gap: 16px;">
+            <div class="field">
+              <label for="{{ form.sconto.id_for_label }}">Sconto %</label>
+              {{ form.sconto }}{{ form.sconto.errors }}
+            </div>
+            <div class="field">
+              <label for="{{ form.sconto_incondizionato.id_for_label }}">Sconto incondizionato (€)</label>
+              {{ form.sconto_incondizionato }}{{ form.sconto_incondizionato.errors }}
+            </div>
+            <div class="field">
+              <label for="{{ form.spese_imballo.id_for_label }}">Spese imballo (€)</label>
+              {{ form.spese_imballo }}{{ form.spese_imballo.errors }}
+            </div>
+            <div class="field">
+              <label for="{{ form.spese_trasporto.id_for_label }}">Spese trasporto (€)</label>
+              {{ form.spese_trasporto }}{{ form.spese_trasporto.errors }}
+            </div>
+            <div class="field">
+              <label for="{{ form.data_registrazione.id_for_label }}">Data registrazione</label>
+              {{ form.data_registrazione }}{{ form.data_registrazione.errors }}
+            </div>
+            {% if is_create %}
+              <div class="field">
+                <label for="{{ form.sezionale.id_for_label }}">Sezionale</label>
+                {{ form.sezionale }}{{ form.sezionale.errors }}
+              </div>
+            {% endif %}
+          </div>
+        </details>
       </div>
 
-      <div class="card" style="padding: 24px;" x-data="formsetMgr('righe', {{ righe_formset.total_form_count }})">
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
-          <div class="section-title" style="margin: 0;">Righe</div>
-          <button type="button" class="btn btn-ghost" @click="addRow($event)">{% icon 'plus' size=14 %} Aggiungi riga</button>
+      {% include 'documenti/_righe_formset.html' %}
+
+      <div class="card" style="padding: 24px;">
+        <div class="field">
+          <label for="{{ form.note.id_for_label }}">Note (in fattura)</label>
+          {{ form.note }}
+          {{ form.note.errors }}
         </div>
 
-        {{ righe_formset.management_form }}
-
-        <table class="tbl">
-          <thead>
-            <tr>
-              <th style="width: 56px;">#</th>
-              <th>Articolo / descrizione</th>
-              <th style="width: 100px;">Quantità</th>
-              <th style="width: 80px;">UM</th>
-              <th style="width: 110px;">Prezzo</th>
-              <th>IVA</th>
-              <th style="width: 30px;"></th>
-            </tr>
-          </thead>
-          <tbody id="righe-rows">
-            {% for rf in righe_formset %}
-              {% include 'documenti/_riga_row.html' with form=rf %}
-            {% endfor %}
-          </tbody>
-        </table>
-
-        {# Template usato da JS per nuove righe (sostituiamo __prefix__ runtime) #}
-        <template id="righe-empty-template">{% include 'documenti/_riga_row.html' with form=righe_formset.empty_form %}</template>
-      </div>
-
-      <div class="card" style="padding: 24px;" x-data="formsetMgr('scadenze', {{ scadenze_formset.total_form_count }})">
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
-          <div class="section-title" style="margin: 0;">Scadenze</div>
-          <button type="button" class="btn btn-ghost" @click="addRow($event)">{% icon 'plus' size=14 %} Aggiungi scadenza</button>
-        </div>
-
-        {{ scadenze_formset.management_form }}
-
-        <table class="tbl">
-          <thead>
-            <tr>
-              <th>Data</th>
-              <th style="width: 160px;">Importo</th>
-              <th style="width: 30px;"></th>
-            </tr>
-          </thead>
-          <tbody id="scadenze-rows">
-            {% for sf in scadenze_formset %}
-              <tr data-form-row>
-                {% for hidden in sf.hidden_fields %}{{ hidden }}{% endfor %}
-                <td>{{ sf.data }}{{ sf.data.errors }}</td>
-                <td>{{ sf.importo }}{{ sf.importo.errors }}</td>
-                <td>
-                  {% if sf.DELETE %}
-                    <label style="display: inline-flex; align-items: center;">
-                      {{ sf.DELETE }}
-                      <span class="sr-only">Elimina</span>
-                    </label>
-                  {% endif %}
-                </td>
-              </tr>
-            {% endfor %}
-          </tbody>
-        </table>
-
-        <template id="scadenze-empty-template"><tr data-form-row>{% for hidden in scadenze_formset.empty_form.hidden_fields %}{{ hidden }}{% endfor %}<td>{{ scadenze_formset.empty_form.data }}</td><td>{{ scadenze_formset.empty_form.importo }}</td><td>{{ scadenze_formset.empty_form.DELETE }}</td></tr></template>
+        {% if scadenze_formset %}
+          <details class="altre-opzioni" data-formset="scadenze" {% if scadenze_formset.total_error_count %}open{% endif %}>
+            <summary>{% icon 'chevronRight' size=12 %} Scadenze personalizzate — di solito si calcolano dalla forma di pagamento</summary>
+            {{ scadenze_formset.management_form }}
+            <table class="tbl" style="margin-top: 12px;">
+              <thead>
+                <tr>
+                  <th>Data</th>
+                  <th style="width: 160px;">Importo</th>
+                  <th style="width: 40px;"></th>
+                </tr>
+              </thead>
+              <tbody data-formset-righe>
+                {% for sf in scadenze_formset %}
+                  <tr data-form-row>
+                    {% for hidden in sf.hidden_fields %}{{ hidden }}{% endfor %}
+                    <td>{{ sf.data }}{{ sf.data.errors }}</td>
+                    <td>{{ sf.importo }}{{ sf.importo.errors }}</td>
+                    <td>
+                      {% if sf.DELETE %}<span hidden>{{ sf.DELETE }}</span>{% endif %}
+                      <button type="button" class="btn-icon" data-formset-rimuovi title="Togli la scadenza" aria-label="Togli la scadenza">{% icon 'trash' size=14 %}</button>
+                    </td>
+                  </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+            <template data-formset-modello><tr data-form-row>{% for hidden in scadenze_formset.empty_form.hidden_fields %}{{ hidden }}{% endfor %}<td>{{ scadenze_formset.empty_form.data }}</td><td>{{ scadenze_formset.empty_form.importo }}</td><td><span hidden>{{ scadenze_formset.empty_form.DELETE }}</span><button type="button" class="btn-icon" data-formset-rimuovi title="Togli la scadenza" aria-label="Togli la scadenza">{% icon 'trash' size=14 %}</button></td></tr></template>
+            <button type="button" class="btn btn-ghost aggiungi-riga" data-formset-aggiungi>{% icon 'plus' size=14 %} Aggiungi scadenza</button>
+          </details>
+        {% else %}
+          <div class="text-sm text-muted" style="margin-top: 16px;">
+            Ci sono incassi registrati: le scadenze restano come sono. Incassi e scadenze si gestiscono dal dettaglio della fattura.
+          </div>
+        {% endif %}
       </div>
     </div>
 
     <div class="flex-col gap-16">
-      <div class="card" style="padding: 18px;">
-        <div style="font: 600 14px var(--font-display); margin-bottom: 12px;">Pagamento</div>
-        <div class="field" style="display: flex; align-items: center; gap: 8px;">
-          {{ form.pagata }}
-          <label for="{{ form.pagata.id_for_label }}" style="margin: 0; font: 13px var(--font-body);">
-            Fattura pagata
-          </label>
+      <div class="card riepilogo" style="padding: 18px;">
+        <div style="font: 600 14px var(--font-display); margin-bottom: 8px;">Riepilogo</div>
+        <div id="riepilogo-documento"
+             hx-post="{% url 'documenti:documento_anteprima' 'fattura' %}"
+             hx-trigger="load, riepilogo from:body"
+             hx-include="#doc-form" hx-swap="innerHTML" hx-sync="this:replace">
+          <div class="riepilogo-nota">Calcolo dei totali…</div>
         </div>
-        <div class="field" style="margin-top: 12px;">
-          <label for="{{ form.data_pagamento.id_for_label }}">Data pagamento</label>
-          {{ form.data_pagamento }}
-        </div>
-      </div>
 
-      <div class="callout">
-        <div class="ico">{% icon 'zap' size=15 %}</div>
-        <div>
-          <div style="font: 600 13px var(--font-display); margin-bottom: 4px;">Numerazione</div>
-          <div style="font: 12px var(--font-body); color: var(--ink-2);">
-            Il numero viene assegnato automaticamente al salvataggio (progressivo per anno).
+        <div style="margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--border);">
+          {% if form.con_incassi %}
+            <div class="text-sm text-muted" style="margin-bottom: 8px;">{% if fattura.pagata %}Incassata il {{ fattura.data_pagamento|date:'d/m/Y' }}{% else %}Incassata in parte{% endif %}: gli incassi si registrano dal dettaglio.</div>
+          {% endif %}
+          <label class="checkbox-inline" for="{{ form.pagata.id_for_label }}">
+            {{ form.pagata }} Fattura già incassata
+          </label>
+          <div class="field" style="margin-top: 10px;">
+            <label for="{{ form.data_pagamento.id_for_label }}">Data incasso</label>
+            {{ form.data_pagamento }}
+            {{ form.data_pagamento.errors }}
           </div>
         </div>
+
+        <button type="submit" class="btn btn-brand" style="width: 100%; justify-content: center; margin-top: 16px;">
+          {% icon 'check' size=14 %} Salva fattura
+        </button>
       </div>
     </div>
   </div>
 </form>
-
-<script>
-function formsetMgr(prefix, initialTotal) {
-  return {
-    prefix,
-    total: initialTotal,
-    addRow(ev) {
-      const tpl = document.getElementById(prefix + '-empty-template');
-      const rows = document.getElementById(prefix + '-rows');
-      if (!tpl || !rows) return;
-      const html = tpl.innerHTML.replaceAll('__prefix__', this.total);
-      const wrapper = document.createElement('tbody');
-      wrapper.innerHTML = html;
-      // Move all <tr> children into the actual tbody
-      while (wrapper.firstChild) {
-        rows.appendChild(wrapper.firstChild);
-      }
-      this.total += 1;
-      const totalInput = document.querySelector('input[name="' + prefix + '-TOTAL_FORMS"]');
-      if (totalInput) totalInput.value = this.total;
-    },
-  };
-}
-</script>
 {% endblock %}

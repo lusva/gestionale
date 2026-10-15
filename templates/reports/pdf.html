@@ -79,7 +79,7 @@
       {% for m in bar_labels %}<th class="right">{{ m }}</th>{% endfor %}
     </tr></thead>
     <tbody><tr>
-      {% for b in bar_data %}<td class="right mono">{{ b }}%</td>{% endfor %}
+      {% for b in bar_values %}<td class="right mono">{{ b|euro_compact }}</td>{% endfor %}
     </tr></tbody>
   </table>
 

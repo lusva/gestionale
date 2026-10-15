@@ -113,6 +113,36 @@ def periodi(anno: int, periodicita: str) -> list[Periodo]:
     return out
 
 
+def da_chiave(chiave: str) -> Periodo | None:
+    """Il periodo di una chiave («2026-T3», «2026-09»), None se non lo è."""
+    try:
+        anno, parte = chiave.split('-')
+        anno = int(anno)
+        if parte.startswith('T'):
+            return periodi(anno, 'trimestrale')[int(parte[1:]) - 1]
+        return periodi(anno, 'mensile')[int(parte) - 1]
+    except (ValueError, IndexError, AttributeError):
+        return None
+
+
+def etichetta_periodo(chiave: str) -> str:
+    """«3° trimestre 2026 · 01/07 – 30/09/2026», o '' se la chiave non è un periodo."""
+    p = da_chiave(chiave)
+    if p is None:
+        return ''
+    return f'{p.etichetta} · {p.inizio:%d/%m} – {p.fine:%d/%m/%Y}'
+
+
+def scelte_periodo(periodicita: str, oggi: date | None = None) -> list[tuple[str, str]]:
+    """I periodi da proporre nel modulo di una scadenza IVA: anno scorso, anno
+    in corso e prossimo, del tipo configurato (trimestrale se non c'è)."""
+    oggi = oggi or localdate()
+    tipo = periodicita or 'trimestrale'
+    return [(p.chiave, f'{p.etichetta} ({p.inizio:%d/%m} – {p.fine:%d/%m/%Y})'.capitalize())
+            for anno in (oggi.year + 1, oggi.year, oggi.year - 1)
+            for p in reversed(periodi(anno, tipo))]
+
+
 def _azienda():
     from anagrafiche.models import AnagraficaAzienda
     return AnagraficaAzienda.objects.select_related('profilo_fiscale').first()
@@ -148,25 +178,29 @@ def _esigibilita(fattura) -> str:
     return 'I'
 
 
-def _imposta(doc) -> Decimal:
+def _imposta(doc, azienda) -> Decimal:
     from documenti.utils import calcola_valori
-    return calcola_valori(doc, list(doc.righe.all()))['imposta_totale']
+    return calcola_valori(doc, list(doc.righe.all()), azienda=azienda)['imposta_totale']
 
 
 def _in(p: Periodo, d: date | None) -> bool:
     return d is not None and p.inizio <= d <= p.fine
 
 
-def _riempi(per: list[Periodo]) -> None:
+def _riempi(per: list[Periodo], azienda=None) -> None:
     """Somma le imposte dei documenti nei periodi."""
+    from django.db.models import Q
+
     from documenti.models import TestataFattura, TestataFatturaAcquisto, TestataNotaCredito
 
     inizio, fine = per[0].inizio, per[-1].fine
     righe = 'righe__iva'
+    # contano le fatture emesse nell'anno e, per l'esigibilità differita,
+    # quelle pagate nell'anno (anche se emesse prima)
     fatture = (TestataFattura.objects
                .exclude(sdi_stato=TestataFattura.SdiStato.SCARTATA)
-               .filter(data_documento__lte=fine)
-               .filter(data_documento__gte=inizio - timedelta(days=3 * 366))
+               .filter(Q(data_documento__range=(inizio, fine))
+                       | Q(data_documento__lt=inizio, data_pagamento__range=(inizio, fine)))
                .select_related('cliente__profilo_fiscale__esigibilita_iva')
                .prefetch_related(righe))
     for f in fatture:
@@ -174,7 +208,7 @@ def _riempi(per: list[Periodo]) -> None:
         quando = f.data_pagamento if esig == 'D' else f.data_documento
         if esig != 'D' and not (inizio <= f.data_documento <= fine):
             continue
-        imposta = _imposta(f)
+        imposta = _imposta(f, azienda)
         for p in per:
             if esig == 'S' and _in(p, f.data_documento):
                 p.split_payment += imposta
@@ -189,9 +223,11 @@ def _riempi(per: list[Periodo]) -> None:
                .prefetch_related(righe)):
         for p in per:
             if _in(p, nc.data_documento):
-                p.note_credito += _imposta(nc)
+                p.note_credito += _imposta(nc, azienda)
                 p.documenti += 1
     acquisti = TestataFatturaAcquisto.objects.filter(
+        Q(data_registrazione__range=(inizio, fine))
+        | Q(data_registrazione__isnull=True, data_documento__range=(inizio, fine)),
         stato=TestataFatturaAcquisto.StatoFattura.CONFERMATA)
     integrazioni = {'TD16', 'TD17', 'TD18', 'TD19'}
     for a in acquisti:
@@ -239,6 +275,26 @@ def _primo_anno() -> int | None:
     return min(date_).year if date_ else None
 
 
+def _calcola_anni(da: int, fino_a: int, periodicita: str) -> dict[int, list[Periodo]]:
+    """I periodi di ogni anno da ``da`` (o dal primo anno con documenti, se
+    viene prima) a ``fino_a``, con i riporti: un solo passaggio sugli anni."""
+    from documenti.utils import azienda_per_calcoli
+
+    azienda = azienda_per_calcoli()
+    oggi = localdate()
+    credito = debito = ZERO
+    primo = _primo_anno() or da
+    anni = {}
+    for a in range(min(primo, da), fino_a + 1):
+        per = periodi(a, periodicita)
+        _riempi(per, azienda)
+        credito, debito = _riporta(per, credito, debito)
+        for p in per:
+            p.in_corso = p.inizio <= oggi <= p.fine
+        anni[a] = per
+    return anni
+
+
 def calcola(anno: int, periodicita: str | None = None) -> Liquidazione:
     """La liquidazione stimata dell'anno, con i riporti dagli anni prima
     (dal primo anno con documenti)."""
@@ -246,17 +302,7 @@ def calcola(anno: int, periodicita: str | None = None) -> Liquidazione:
     liq = Liquidazione(anno=anno, periodicita=periodicita)
     if not periodicita:
         return liq
-    oggi = localdate()
-    credito = debito = ZERO
-    primo = _primo_anno() or anno
-    for a in range(min(primo, anno), anno + 1):
-        per = periodi(a, periodicita)
-        _riempi(per)
-        credito, debito = _riporta(per, credito, debito)
-        if a == anno:
-            for p in per:
-                p.in_corso = p.inizio <= oggi <= p.fine
-            liq.periodi = per
+    liq.periodi = _calcola_anni(anno, anno, periodicita)[anno]
     az = _azienda()
     regime = az.profilo_fiscale.regime_fiscale if az and az.profilo_fiscale_id else 'RF01'
     if regime in REGIMI_PER_CASSA:
@@ -270,46 +316,102 @@ def calcola(anno: int, periodicita: str | None = None) -> Liquidazione:
     return liq
 
 
-@transaction.atomic
 def sincronizza(oggi: date | None = None) -> int:
-    """Allinea le scadenze fiscali stimate ai periodi già iniziati e non ancora
-    scaduti (anche il quarto trimestre dell'anno prima, che si versa a marzo).
+    """Allinea le scadenze fiscali stimate ai periodi già iniziati che scadono
+    da inizio anno in poi (anche il quarto trimestre dell'anno prima, che si
+    versa a marzo), salvo quelli già inseriti a mano.
     Non tocca le scadenze pagate o modificate a mano. Restituisce quante ne ha
-    create, aggiornate o tolte."""
-    from .models import ScadenzaFiscale, TipoScadenzaFiscale
+    create, aggiornate o tolte.
 
+    Gira a ogni apertura delle pagine del cashflow: il calcolo e il confronto
+    sono solo letture, la transazione (e il lock sul database) si apre solo
+    se c'è qualcosa da scrivere."""
     periodicita = periodicita_attiva()
     if not periodicita:
         return 0
     oggi = oggi or localdate()
-    toccate = 0
-    for anno in (oggi.year - 1, oggi.year):
-        for p in calcola(anno, periodicita).periodi:
-            # solo i versamenti ancora da fare: un periodo già scaduto si
-            # vede nella pagina, ma non diventa un debito «scaduto» nelle
-            # scadenze (magari è già stato versato fuori dal gestionale)
-            if p.inizio > oggi or p.scadenza < oggi:
+    inizio_anno = date(oggi.year, 1, 1)
+    anni = _calcola_anni(oggi.year - 1, oggi.year, periodicita)
+    # i periodi già iniziati con scadenza da inizio anno in poi, anche quelle
+    # già passate (si segnano pagate a mano); quelle degli anni prima no, per
+    # non riempire le scadenze di vecchi debiti
+    candidati = [p for anno in (oggi.year - 1, oggi.year) for p in anni.get(anno, [])
+                 if not (p.inizio > oggi or p.scadenza < inizio_anno)]
+    if not _operazioni(candidati):
+        return 0
+    with transaction.atomic():
+        # di nuovo sotto il lock: un'altra richiesta può averle già fatte
+        operazioni = _operazioni(candidati)
+        for op in operazioni:
+            op()
+    return len(operazioni)
+
+
+def _operazioni(candidati: list[Periodo]) -> list:
+    """Le scritture che servono per allineare le scadenze stimate ai periodi
+    (funzioni da chiamare), senza farle."""
+    from .models import ScadenzaFiscale, TipoScadenzaFiscale
+
+    esistenti = {s.periodo_iva: s for s in ScadenzaFiscale.objects.filter(
+        periodo_iva__in=[p.chiave for p in candidati])}
+    operazioni = []
+    for p in candidati:
+        esistente = esistenti.get(p.chiave)
+        if esistente is not None and (esistente.pagata or not esistente.stimata):
+            continue
+        # già inserita a mano, senza periodo: una scadenza IVA tra la fine
+        # del periodo e qualche giorno dopo la scadenza. Le si dà il
+        # periodo di riferimento e non si crea la stima
+        if esistente is None:
+            manuale = ScadenzaFiscale.objects.filter(
+                periodo_iva='', tipo=TipoScadenzaFiscale.IVA,
+                data_scadenza__range=(p.fine + timedelta(days=1),
+                                      p.scadenza + timedelta(days=15))).first()
+            if manuale is not None:
+                operazioni.append(lambda pk=manuale.pk, chiave=p.chiave: (
+                    ScadenzaFiscale.objects.filter(pk=pk).update(periodo_iva=chiave)))
                 continue
-            esistente = ScadenzaFiscale.objects.filter(periodo_iva=p.chiave).first()
-            if esistente is not None and (esistente.pagata or not esistente.stimata):
-                continue
-            if p.da_versare <= 0:
-                if esistente is not None:
-                    esistente.delete()
-                    toccate += 1
-                continue
-            dati = {
-                'data_scadenza': p.scadenza, 'tipo': TipoScadenzaFiscale.IVA,
-                'importo': p.da_versare, 'stimata': True,
-                'descrizione': f'Liquidazione IVA {p.etichetta} (stima)'
-                               + (' — periodo in corso' if p.in_corso else ''),
-            }
-            if esistente is None:
-                ScadenzaFiscale.objects.create(periodo_iva=p.chiave, **dati)
-                toccate += 1
-            elif any(getattr(esistente, k) != v for k, v in dati.items()):
+        if p.da_versare <= 0:
+            if esistente is not None:
+                operazioni.append(esistente.delete)
+            continue
+        dati = {
+            'data_scadenza': p.scadenza, 'tipo': TipoScadenzaFiscale.IVA,
+            'importo': p.da_versare, 'stimata': True,
+            # «stima» e «periodo in corso» non stanno nel testo, che resta
+            # anche dopo la modifica a mano o il pagamento: li mostra
+            # l'etichetta, dallo stato (ScadenzaFiscale.periodo_iva_in_corso)
+            'descrizione': f'Liquidazione IVA {p.etichetta}',
+        }
+        if esistente is None:
+            operazioni.append(lambda chiave=p.chiave, dati=dati: (
+                ScadenzaFiscale.objects.create(periodo_iva=chiave, **dati)))
+        elif any(getattr(esistente, k) != v for k, v in dati.items()):
+            def aggiorna(esistente=esistente, dati=dati):
                 for k, v in dati.items():
                     setattr(esistente, k, v)
                 esistente.save()
-                toccate += 1
-    return toccate
+            operazioni.append(aggiorna)
+    return operazioni
+
+
+@transaction.atomic
+def cambia_periodicita(nuova: str) -> int:
+    """Imposta la periodicità della liquidazione IVA ('mensile', 'trimestrale'
+    o '' per non calcolarla) e rifà le stime: quelle dell'altro schema (o
+    tutte, se spenta) ancora da pagare si tolgono. Le scadenze pagate o
+    modificate a mano restano. Restituisce quante stime ha toccato."""
+    from .models import ScadenzaFiscale
+
+    az = _azienda()
+    if az is None:
+        raise ValueError("Compila prima l'anagrafica dell'azienda.")
+    az.liquidazione_iva = nuova
+    az.save(update_fields=['liquidazione_iva'])
+    da_togliere = ScadenzaFiscale.objects.filter(stimata=True, pagata=False).exclude(periodo_iva='')
+    if nuova == 'mensile':
+        da_togliere = da_togliere.filter(periodo_iva__contains='-T')
+    elif nuova == 'trimestrale':
+        da_togliere = da_togliere.exclude(periodo_iva__contains='-T')
+    tolte = da_togliere.delete()[0]
+    return tolte + sincronizza()

@@ -35,6 +35,7 @@ media/
 staticfiles/
 
 # Backup di fixture / dump
+backups/
 *.json.bak
 *.sql
 *.sql.gz

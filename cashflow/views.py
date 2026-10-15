@@ -431,7 +431,7 @@ def rimborso_km_marca_pagato(request, pk):
     """Toggle APPROVATO ↔ PAGATO. Una bozza non può essere pagata.
 
     Cambiare lo stato è riservato a chi può approvare i rimborsi (vedi
-    ``puo_approvare_rimborsi``) e mai sui propri rimborsi.
+    ``puo_approvare_rimborsi``), anche sui propri.
     """
     r = get_object_or_404(RimborsoChilometrico, pk=pk)
     fallback = reverse('cashflow:rimborso_km_list')
@@ -439,11 +439,6 @@ def rimborso_km_marca_pagato(request, pk):
         messages.error(
             request,
             'Solo un amministratore può cambiare lo stato di pagamento dei rimborsi.',
-        )
-        return _redirect_next(request, fallback)
-    if r.amministratore_id == request.user.pk:
-        messages.error(
-            request, 'Non puoi cambiare lo stato di un tuo rimborso.',
         )
         return _redirect_next(request, fallback)
     if r.stato == StatoRimborso.PAGATO:
@@ -500,28 +495,32 @@ class CashflowView(LoginRequiredMixin, PermRequiredMixin, TemplateView):
 
         eventi: list[dict] = []
 
-        # Incassi: scadenze fatture cliente non pagate.
-        for s in ScadenzaFattura.objects.select_related(
+        # Incassi: il residuo ancora da incassare delle scadenze delle fatture cliente.
+        from documenti.models import crediti_aperti
+        for s in crediti_aperti(ScadenzaFattura.objects.select_related(
             'fattura', 'fattura__cliente',
-        ).filter(fattura__pagata=False, data__lte=fino_a):
+        ).filter(data__lte=fino_a)):
             cli = s.fattura.cliente.ragione_sociale if s.fattura.cliente else ''
             eventi.append({
                 'data': s.data,
                 'tipo': 'incasso',
                 'origine': 'Fattura cliente',
                 'descrizione': f'Fatt. {s.fattura.numero}/{s.fattura.anno} — {cli}',
-                'importo': s.importo,
+                'importo': Decimal(s.residuo_db).quantize(Decimal('0.01')),
                 'scaduta': s.data < oggi,
                 'url': None,
             })
 
-        # Uscite: scadenze fatture acquisto con residuo > 0.
-        for s in ScadenzaFatturaAcquisto.objects.select_related(
+        # Incassi attesi: fatture ricorrenti non ancora emesse.
+        from documenti.ricorrenti import incassi_previsti
+        eventi.extend(incassi_previsti(oggi, fino_a))
+
+        # Uscite: scadenze fatture acquisto con residuo > 0 (calcolato nel database).
+        from documenti.models import scadenze_acquisto_con_residuo
+        for s in scadenze_acquisto_con_residuo(ScadenzaFatturaAcquisto.objects.select_related(
             'fattura', 'fattura__fornitore',
-        ).filter(data_scadenza__lte=fino_a):
-            residuo = s.importo_residuo
-            if residuo <= 0:
-                continue
+        ).filter(data_scadenza__lte=fino_a)).filter(residuo_db__gt=0):
+            residuo = Decimal(s.residuo_db).quantize(Decimal('0.01'))
             forn = s.fattura.fornitore.ragione_sociale if s.fattura.fornitore else ''
             eventi.append({
                 'data': s.data_scadenza,

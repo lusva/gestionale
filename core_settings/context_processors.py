@@ -43,11 +43,13 @@ def ui_preferences(request):
             density = profile.densita or density
 
     try:
-        az = _azienda(request)
+        az = None if _frammento_htmx(request) else _azienda(request)
         if az is not None:
             azienda_nome = (az.ragione_sociale or '').strip()
             if az.logo:
-                azienda_logo_url = az.logo.url
+                # copia ridotta: l'originale può pesare decine di MB
+                from anagrafiche.logo import LATO_SIDEBAR, logo_ridotto_url
+                azienda_logo_url = logo_ridotto_url(az.logo, LATO_SIDEBAR)
     except Exception:
         pass
 
@@ -75,11 +77,20 @@ def user_perms(request):
     return {'user_perms_map': perms_map}
 
 
+def _frammento_htmx(request) -> bool:
+    """True per le risposte HTMX parziali (riepilogo live, lista filtrata…):
+    non hanno sidebar né topbar, i loro dati non servono."""
+    htmx = getattr(request, 'htmx', None)
+    return bool(htmx) and not htmx.boosted
+
+
 def sidebar_counts(request):
     """Counters shown in the sidebar (clienti, contatti, opportunita) +
     flag ``modulo_magazzino_attivo`` dall'AnagraficaAzienda (se configurata)."""
     if not getattr(request, 'user', None) or not request.user.is_authenticated:
         return {'nav_counts': {}, 'modulo_magazzino_attivo': False}
+    if _frammento_htmx(request):
+        return {'nav_counts': {}, 'modulo_magazzino_attivo': True}
 
     counts = {}
     try:

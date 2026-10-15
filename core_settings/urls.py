@@ -1,6 +1,6 @@
 from django.urls import path
 
-from . import views
+from . import integrazioni, views
 
 app_name = 'settings'
 
@@ -13,9 +13,12 @@ urlpatterns = [
     path('utenti/<int:pk>/elimina/', views.utente_elimina, name='utente_elimina'),
     path('utenti/invita/', views.invita_utente, name='utente_invita'),
     path('ruoli/', views.ruoli, name='ruoli'),
-    path('integrazioni/', views.placeholder, {'titolo': 'Integrazioni'}, name='integrazioni'),
-    path('fatturazione/', views.placeholder, {'titolo': 'Fatturazione'}, name='fatturazione'),
+    path('integrazioni/', integrazioni.integrazioni, name='integrazioni'),
+    path('fatturazione/', views.fatturazione, name='fatturazione'),
+    path('documenti/', views.documenti, name='documenti'),
+    path('documenti/anteprima/', views.documenti_anteprima, name='documenti_anteprima'),
     path('api/', views.api_tokens, name='api'),
     path('audit/', views.audit_log, name='audit'),
-    path('backup/', views.placeholder, {'titolo': 'Backup'}, name='backup'),
+    path('backup/', views.backup, name='backup'),
+    path('backup/<str:nome>/', views.backup_scarica, name='backup_scarica'),
 ]

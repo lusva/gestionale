@@ -4,9 +4,12 @@ Helper comuni a tutti i documenti: calcolo totali, generazione PDF
 """
 from __future__ import annotations
 
+import re
 from datetime import date, timedelta
 from decimal import Decimal
 from io import BytesIO
+from pathlib import Path
+from urllib.parse import unquote
 
 from django.http import HttpResponse
 from django.template.loader import render_to_string
@@ -46,12 +49,25 @@ def _chiave_iva(iva) -> str:
     return f'{Decimal(iva.aliquota).quantize(_Q)}|{iva.natura or ""}'
 
 
-def calcola_valori(testata, righe=None):
+_DA_CARICARE = object()
+
+
+def azienda_per_calcoli():
+    """L'anagrafica azienda con profilo fiscale e cassa previdenziale già
+    caricati: da passare a ``calcola_valori`` nei cicli su molti documenti,
+    che altrimenti la rileggerebbe (2-4 query) per ognuno."""
+    from anagrafiche.models import AnagraficaAzienda
+    return AnagraficaAzienda.objects.select_related(
+        'profilo_fiscale__cassa_previdenziale__codice_iva').first()
+
+
+def calcola_valori(testata, righe=None, azienda=_DA_CARICARE):
     """Calcola i totali di una testata a partire dalle righe.
 
     ``righe``: le righe da usare al posto di quelle salvate (anche non
     salvate, con ``iva`` già risolta): serve all'anteprima dell'API, che
-    calcola i totali di un documento senza scriverlo.
+    calcola i totali di un documento senza scriverlo. ``azienda``: quella di
+    ``azienda_per_calcoli()``, se la si ha già (cassa previdenziale).
 
     Ritorna dict con: ``imponibile``, ``iva_dettaglio`` (lista di
     {aliquota, imponibile, imposta}), ``imposta_totale``, ``sconto``
@@ -158,8 +174,8 @@ def calcola_valori(testata, righe=None):
     cassa = Decimal('0.00')
     cassa_info = None
     try:
-        from anagrafiche.models import AnagraficaAzienda
-        azienda = AnagraficaAzienda.objects.first()
+        if azienda is _DA_CARICARE:
+            azienda = azienda_per_calcoli()
         if azienda and azienda.profilo_fiscale_id:
             cp = azienda.profilo_fiscale.cassa_previdenziale
             if cp and cp.attiva:
@@ -361,17 +377,60 @@ def firma_pdf_bytes(pdf_bytes: bytes) -> bytes | None:
     return out_buffer.getvalue()
 
 
+_URL_LOCALE_RE = re.compile(r'''(?P<attr>\b(?:src|href)=["'])(?P<url>/[^"'?#]+)''')
+
+
+def _file_locale(url: str) -> Path | None:
+    """Il file su disco servito all'URL ``/static/…`` o ``/media/…``."""
+    from django.conf import settings
+    from django.contrib.staticfiles import finders
+    from django.core.exceptions import SuspiciousFileOperation
+
+    url = unquote(url)
+    static_url = '/' + settings.STATIC_URL.lstrip('/')
+    media_url = '/' + settings.MEDIA_URL.lstrip('/')
+    if url.startswith(static_url):
+        nome = url[len(static_url):]
+        try:
+            trovato = finders.find(nome)   # file sorgente (sviluppo)
+        except SuspiciousFileOperation:
+            return None
+        if trovato:
+            return Path(trovato)
+        radice = settings.STATIC_ROOT      # nomi con hash, dopo collectstatic
+    elif url.startswith(media_url):
+        nome = url[len(media_url):]
+        radice = settings.MEDIA_ROOT
+    else:
+        return None
+    if not radice:
+        return None
+    radice = Path(radice).resolve()
+    percorso = (radice / nome).resolve()
+    return percorso if percorso.is_file() and percorso.is_relative_to(radice) else None
+
+
+def _url_locali_a_file(html: str) -> str:
+    """Sostituisce gli URL ``/static/…`` e ``/media/…`` con ``file://``: così
+    WeasyPrint legge CSS e logo dal disco invece di richiederli via HTTP al
+    sito stesso (lento, e occupa un worker per ogni risorsa)."""
+    def _sostituisci(m):
+        percorso = _file_locale(m.group('url'))
+        return m.group('attr') + percorso.as_uri() if percorso else m.group(0)
+    return _URL_LOCALE_RE.sub(_sostituisci, html)
+
+
 def render_pdf_bytes(template_path: str, context: dict, request=None) -> bytes:
     """Rende un template HTML come bytes PDF con WeasyPrint.
 
-    ``request`` è opzionale: se passato, ``base_url`` punta alla root del
-    sito così WeasyPrint risolve gli URL ``/static/`` e ``/media/``. Se
-    omesso (es. invio email da job offline) si usa la directory base
-    del progetto, sufficiente per i link relativi presenti nei template.
+    CSS e immagini sotto ``/static/`` e ``/media/`` si leggono dal disco
+    (``_url_locali_a_file``). ``request`` è opzionale: se passato,
+    ``base_url`` punta alla root del sito per gli altri URL relativi; se
+    omesso (es. invio email da job offline) il PDF esce comunque completo.
     """
     from weasyprint import HTML
 
-    html = render_to_string(template_path, context, request=request)
+    html = _url_locali_a_file(render_to_string(template_path, context, request=request))
     base_url = (
         request.build_absolute_uri('/') if request is not None else None
     )

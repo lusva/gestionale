@@ -1,0 +1,32 @@
+{% comment %}
+  Una riga del formset «righe» di una fattura di acquisto inserita a mano.
+  Stesse convenzioni di _riga_row.html (numero rifatto dal JS, «Togli» segna
+  DELETE). Su due livelli: sotto la descrizione la categoria di costo, sotto
+  la quantità l'UM, sotto il prezzo lo sconto.
+{% endcomment %}
+<tr data-form-row>
+  {% for hidden in form.hidden_fields %}{{ hidden }}{% endfor %}
+  {{ form.numero_riga.as_hidden }}
+  <td class="col-n" data-numero>{{ form.numero_riga.value|default_if_none:'' }}</td>
+  <td class="col-articolo">
+    {{ form.descrizione }}
+    <div class="riga-descrizione">{{ form.categoria_costo }}</div>
+    {{ form.descrizione.errors }}{{ form.categoria_costo.errors }}
+  </td>
+  <td class="col-qta">
+    {{ form.quantita }}
+    <div class="riga-descrizione">{{ form.um }}</div>
+    {{ form.quantita.errors }}
+  </td>
+  <td class="col-prezzo">
+    {{ form.prezzo_unitario }}
+    <div class="riga-descrizione">{{ form.sconto_percentuale }}</div>
+    {{ form.prezzo_unitario.errors }}{{ form.sconto_percentuale.errors }}
+  </td>
+  <td class="col-iva-stretta">{{ form.aliquota_iva }}{{ form.aliquota_iva.errors }}</td>
+  <td class="col-importo" data-importo-riga></td>
+  <td class="col-azioni">
+    {% if form.DELETE %}<span hidden>{{ form.DELETE }}</span>{% endif %}
+    <button type="button" class="btn-icon" data-formset-rimuovi title="Togli la riga" aria-label="Togli la riga">{% icon 'trash' size=14 %}</button>
+  </td>
+</tr>

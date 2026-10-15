@@ -1,0 +1,10 @@
+Schemi ufficiali per validare in locale l'XML FatturaPA generato da
+documenti/fatt_el.py (nessun download durante i test).
+
+- Schema_del_file_xml_FatturaPA_v1.2.2.xsd
+  https://www.fatturapa.gov.it/export/documenti/fatturapa/v1.2.2/Schema_del_file_xml_FatturaPA_v1.2.2.xsd
+- xmldsig-core-schema.xsd (importato dallo schema FatturaPA)
+  https://www.w3.org/TR/2002/REC-xmldsig-core-20020212/xmldsig-core-schema.xsd
+
+Lo schema FatturaPA importa xmldsig da un URL: chi valida sostituisce
+quell'indirizzo con il file locale (vedi fatt_el.schema_fatturapa).

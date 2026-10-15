@@ -1,0 +1,7 @@
+{% load humanize %}
+<p class="page-subtitle" id="fatture-kpi" {% if oob %}hx-swap-oob="true"{% endif %}>
+  {{ kpi_count|intcomma }} fattur{{ kpi_count|pluralize:"a,e" }}{% if filtri_attivi %} con questi filtri{% endif %}
+  · imponibile {{ kpi_totale|euro }}
+  · {{ kpi_da_pagare }} da incassare
+  {% if filtri_attivi %}· <a href="{% url 'documenti:fattura_list' %}">togli i filtri</a>{% endif %}
+</p>

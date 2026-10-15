@@ -4,15 +4,22 @@
 {% endcomment %}
   <div class="search">
     {% icon 'search' size=14 %}
+    {# con JS apre la palette (ricerca istantanea); senza, cerca nella pagina di ricerca #}
     <form action="{% url 'search:cerca' %}" method="get" style="margin: 0;">
-      <input type="search" name="q" placeholder="Cerca clienti, opportunità, contatti, attività…" />
+      <input type="search" name="q" placeholder="Cerca clienti, fatture, fornitori… o vai a una pagina" data-apri-palette aria-label="Cerca" />
     </form>
-    <kbd>⌘K</kbd>
+    <kbd data-tasto-mod-k>⌘K</kbd>
   </div>
 
-  <div style="display: flex; align-items: center; gap: 8px; margin-left: auto;" x-data="{ menuOpen: false, themeOpen: false }">
+  <div class="topbar-azioni" x-data="{ menuOpen: false, themeOpen: false }" @keydown.escape.window="menuOpen = false; themeOpen = false">
+    {% menu_sidebar as menu %}
+    {% if menu.impostazioni %}
+      <a href="{{ menu.impostazioni.url }}" class="pillola-impostazioni{% if menu.impostazioni.attiva %} attiva{% endif %}" title="Impostazioni">
+        {% icon 'settings' size=15 %}<span>Impostazioni</span>
+      </a>
+    {% endif %}
     <div style="position: relative;">
-      <button class="btn-icon" type="button" @click="themeOpen = !themeOpen; menuOpen = false" title="Aspetto">{% icon 'sun' size=16 %}</button>
+      <button class="btn-icon" type="button" @click="themeOpen = !themeOpen; menuOpen = false" title="Aspetto" aria-label="Aspetto" :aria-expanded="themeOpen">{% icon 'sun' size=16 %}</button>
       <div class="menu" x-show="themeOpen" @click.outside="themeOpen = false" x-cloak style="min-width: 220px;">
         <div style="padding: 8px 10px; font: 500 11px var(--font-body); text-transform: uppercase; letter-spacing: 0.05em; color: var(--ink-3);">Tema</div>
         <div style="padding: 0 10px 8px;">
@@ -32,10 +39,20 @@
       </div>
     </div>
 
-    <button class="btn-icon" type="button" title="Notifiche">{% icon 'bell' size=16 %}</button>
+    {# «Da fare»: scadenze e documenti che aspettano, caricati dopo la pagina #}
+    <div class="campanella" x-data="{ open: false }" @keydown.escape.window="open = false">
+      <div hx-get="{% url 'dashboard:da_fare' %}?formato=badge" hx-trigger="load delay:200ms, crm:changed from:body" hx-swap="innerHTML"></div>
+      <button class="btn-icon" type="button" title="Da fare" aria-label="Da fare" :aria-expanded="open"
+              @click="open = !open; menuOpen = false; themeOpen = false"
+              hx-get="{% url 'dashboard:da_fare' %}" hx-target="#pannello-dafare" hx-trigger="click">{% icon 'bell' size=16 %}</button>
+      <div class="menu pannello-dafare" id="pannello-dafare" x-show="open" @click.outside="open = false" x-cloak>
+        <div class="dafare-vuoto">Caricamento…</div>
+      </div>
+    </div>
 
     <div style="position: relative;">
-      <button class="btn-icon" type="button" @click="menuOpen = !menuOpen; themeOpen = false" style="padding: 0;" aria-label="Menu utente">
+      <button class="btn-icon topbar-utente" type="button" @click="menuOpen = !menuOpen; themeOpen = false" aria-label="Menu utente" :aria-expanded="menuOpen"
+              title="{{ user.get_full_name|default:user.username }}">
         {% if user.is_authenticated %}
           {% avatar user.profile.iniziali|default:user.username|slice:':2' 'sm' 'brand' %}
         {% else %}
@@ -47,8 +64,9 @@
           <div style="padding: 8px 10px; font: 500 13px var(--font-body); color: var(--ink);">{{ user.get_full_name|default:user.username }}</div>
           <div style="padding: 0 10px 8px; font: 11px var(--font-body); color: var(--ink-3);">{{ user.email }}</div>
           <div class="sep"></div>
-          <a href="{% url 'settings:utenti' %}">{% icon 'settings' size=14 %} Impostazioni</a>
-          <a href="{% url 'admin:index' %}">{% icon 'lock' size=14 %} Admin</a>
+          {% if menu.impostazioni %}<a href="{{ menu.impostazioni.url }}">{% icon 'settings' size=14 %} Impostazioni</a>{% endif %}
+          <button type="button" onclick="document.getElementById('dialogo-tasti').showModal()">{% icon 'zap' size=14 %} Scorciatoie da tastiera</button>
+          {% if user.is_staff %}<a href="{% url 'admin:index' %}">{% icon 'lock' size=14 %} Admin</a>{% endif %}
           <div class="sep"></div>
           <form action="{% url 'accounts:logout' %}" method="post">
             {% csrf_token %}

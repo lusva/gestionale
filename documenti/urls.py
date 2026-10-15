@@ -1,6 +1,9 @@
 from django.urls import path
 
-from . import analytics, dashboard, doc_views, export_csv, views, workflow
+from . import (
+    analytics, anteprima, commercialista, dashboard, doc_views, export_csv, views, views_acquisti,
+    views_note_credito, views_ricorrenti, workflow,
+)
 
 
 app_name = 'documenti'
@@ -27,6 +30,7 @@ urlpatterns = [
     path('scadenziario-attivo/export/', export_csv.scadenziario_attivo_export, name='scadenziario_attivo_export'),
     path('scadenziario-passivo/export/', export_csv.scadenziario_passivo_export, name='scadenziario_passivo_export'),
     path('costi-categoria/export/', export_csv.costi_per_categoria_export, name='costi_per_categoria_export'),
+    path('export-commercialista/', commercialista.export_commercialista, name='export_commercialista'),
 
     # Analytics
     path('scadenziario-attivo/', analytics.scadenziario_attivo, name='scadenziario_attivo'),
@@ -50,11 +54,29 @@ urlpatterns = [
     path('fatture/<int:pk>/xml/', views.fattura_xml_elettronica, name='fattura_xml'),
     path('fatture/<int:pk>/invia-email/', views.fattura_invia_email, name='fattura_invia_email'),
     path('fatture/<int:pk>/invia-sdi/', views.fattura_invia_sdi, name='fattura_invia_sdi'),
+    path('scadenze/<int:scadenza_id>/incassi/nuovo/', views.incasso_create, name='incasso_create'),
+    path('incassi/<int:pk>/elimina/', views.incasso_elimina, name='incasso_elimina'),
+
+    # Fatture ricorrenti (canoni)
+    path('fatture-ricorrenti/', views_ricorrenti.ricorrente_list, name='ricorrente_list'),
+    path('fatture-ricorrenti/nuova/', views_ricorrenti.ricorrente_nuova, name='ricorrente_create'),
+    path('fatture-ricorrenti/anteprima/', views_ricorrenti.ricorrente_anteprima, name='ricorrente_anteprima'),
+    path('fatture-ricorrenti/<int:pk>/', views_ricorrenti.ricorrente_detail, name='ricorrente_detail'),
+    path('fatture-ricorrenti/<int:pk>/modifica/', views_ricorrenti.ricorrente_modifica, name='ricorrente_update'),
+    path('fatture-ricorrenti/<int:pk>/elimina/', views_ricorrenti.ricorrente_elimina, name='ricorrente_delete'),
+    path('fatture-ricorrenti/<int:pk>/emetti/', views_ricorrenti.ricorrente_emetti, name='ricorrente_emetti'),
+    path('fatture-ricorrenti/<int:pk>/sospendi/', views_ricorrenti.ricorrente_sospendi, name='ricorrente_sospendi'),
 
     # Fatture acquisto (ciclo passivo)
     path('fatture-acquisto/', views.FatturaAcquistoListView.as_view(), name='fattura_acquisto_list'),
+    path('fatture-acquisto/nuova/', views_acquisti.fattura_acquisto_nuova, name='fattura_acquisto_create'),
+    path('fatture-acquisto/anteprima/', views_acquisti.fattura_acquisto_anteprima, name='fattura_acquisto_anteprima'),
     path('fatture-acquisto/<int:pk>/', views.FatturaAcquistoDetailView.as_view(), name='fattura_acquisto_detail'),
+    path('fatture-acquisto/<int:pk>/modifica/', views_acquisti.fattura_acquisto_modifica, name='fattura_acquisto_update'),
+    path('fatture-acquisto/<int:pk>/elimina/', views_acquisti.fattura_acquisto_elimina, name='fattura_acquisto_delete'),
     path('fatture-acquisto/<int:pk>/cambia-stato/', views.fattura_acquisto_cambia_stato, name='fattura_acquisto_cambia_stato'),
+    path('fatture-acquisto/conferma/', views.fattura_acquisto_conferma, name='fattura_acquisto_conferma'),
+    path('fatture-acquisto/<int:pk>/toggle-pagata/', views.fattura_acquisto_toggle_pagata, name='fattura_acquisto_toggle_pagata'),
     path('fatture-acquisto/import-xml/', views.fattura_acquisto_import_xml, name='fattura_acquisto_import_xml'),
     path('scadenze-acquisto/<int:scadenza_id>/pagamenti/nuovo/', views.pagamento_scadenza_acquisto_create, name='pagamento_acquisto_create'),
 
@@ -69,9 +91,16 @@ urlpatterns = [
     path('ordini/<int:pk>/pdf/', views.ordine_pdf, name='ordine_pdf'),
     path('ddt/<int:pk>/pdf/', views.ddt_pdf, name='ddt_pdf'),
     path('note-credito/<int:pk>/pdf/', views.nota_credito_pdf, name='nota_credito_pdf'),
+    path('note-credito/<int:pk>/xml/', views_note_credito.nota_credito_xml, name='nota_credito_xml'),
+    path('note-credito/<int:pk>/invia-sdi/', views_note_credito.nota_credito_invia_sdi,
+         name='nota_credito_invia_sdi'),
 
     # HTMX: form-row vuoto per aggiungere riga
     path('fatture/riga/empty/', views.fattura_riga_form_empty, name='fattura_riga_empty'),
+
+    # Aiuti ai form dei documenti: totali live, dati dell'articolo scelto
+    path('anteprima/<slug:tipo>/', anteprima.documento_anteprima, name='documento_anteprima'),
+    path('articoli/<int:pk>/predefiniti/', anteprima.articolo_predefiniti, name='articolo_predefiniti'),
 ]
 
 

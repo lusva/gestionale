@@ -1,0 +1,37 @@
+{% load humanize %}
+<article class="team-card" style="--i: {{ forloop.counter0|default:0 }};"
+         data-gruppo="{{ m.gruppo }}"
+         data-cerca="{{ m.nome|lower }} {{ m.email|lower }} {{ m.profile.qualifica|lower }} {{ m.gruppo|lower }} {{ m.profile.sede|lower }}">
+  <button type="button" class="team-card-testa" data-scheda="{% url 'team:scheda' m.pk %}" data-membro="{{ m.pk }}"
+          aria-label="Apri la scheda di {{ m.nome }}">
+    {% include 'team/_avatar.html' %}
+    <span class="team-nome">{{ m.nome }}</span>
+  </button>
+  <div class="team-ruolo">{{ m.sottotitolo }}</div>
+  <div class="team-tag-riga">
+    <span class="team-tag">{{ m.gruppo }}</span>
+    {% if m.profile.stato == 'invitato' %}<span class="team-tag team-tag-invito">Invitato</span>{% endif %}
+  </div>
+
+  <div class="team-numeri">
+    <div{% if m.n_ritardo %} class="ritardo" title="{{ m.n_ritardo }} in ritardo"{% endif %}>
+      <b>{{ m.n_aperte }}</b><span>Da fare</span>
+    </div>
+    <div><b>{{ m.n_completate|intcomma }}</b><span>Completate</span></div>
+  </div>
+
+  <div class="team-carico {{ m.livello_carico }}"
+       title="{{ m.ore_7gg }} h di attività aperte nei prossimi 7 giorni (ritardi compresi) su {{ ore_settimanali }} h settimanali">
+    <div class="riga"><span>Carico 7 gg</span><span>{{ m.carico }}%</span></div>
+    <div class="barra"><span style="width: {{ m.carico_barra }}%;"></span></div>
+  </div>
+
+  <div class="team-azioni">
+    {% if m.email %}
+      <a class="team-btn team-btn-linea" href="mailto:{{ m.email }}">Messaggio</a>
+    {% else %}
+      <span class="team-btn team-btn-linea" aria-disabled="true" title="Nessuna email">Messaggio</span>
+    {% endif %}
+    <button type="button" class="team-btn team-btn-pieno" data-scheda="{% url 'team:scheda' m.pk %}" data-membro="{{ m.pk }}">Profilo</button>
+  </div>
+</article>

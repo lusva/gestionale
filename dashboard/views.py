@@ -1,12 +1,17 @@
-from datetime import timedelta
+from datetime import date, timedelta
 from decimal import Decimal
 
 from django.contrib.auth.mixins import LoginRequiredMixin
-from django.db.models import Sum
+from django.db.models import Count, Q, Sum
+from django.db.models.functions import TruncMonth
 from django.http import HttpResponse
 from django.utils import timezone
 from django.views.decorators.http import require_POST
 from django.views.generic import TemplateView
+
+from accounts.permissions import has_perm
+
+from .da_fare import voci_da_fare
 
 
 class DashboardView(LoginRequiredMixin, TemplateView):
@@ -15,143 +20,142 @@ class DashboardView(LoginRequiredMixin, TemplateView):
     def get_context_data(self, **kwargs):
         from attivita.models import Attivita
         from clienti.models import Cliente, StatoCliente
-        from opportunita.models import Opportunita, PIPELINE_COLUMNS, Stadio
+        from opportunita.models import Opportunita, Stadio
 
         ctx = super().get_context_data(**kwargs)
 
-        now = timezone.now()
+        now = timezone.localtime()
         start_of_month = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
         start_of_prev_month = (start_of_month - timedelta(days=1)).replace(day=1)
 
-        clienti_attivi = Cliente.objects.filter(stato=StatoCliente.ATTIVO).count()
-        clienti_new_month = Cliente.objects.filter(created_at__gte=start_of_month).count()
-
-        opp_aperte = Opportunita.objects.exclude(
-            stadio__in=[Stadio.CHIUSA_WIN, Stadio.CHIUSA_LOST],
+        clienti = Cliente.objects.aggregate(
+            attivi=Count('pk', filter=Q(stato=StatoCliente.ATTIVO)),
+            nuovi=Count('pk', filter=Q(created_at__gte=start_of_month)),
         )
-        opp_aperte_count = opp_aperte.count()
-
-        fatturato_mtd = Opportunita.objects.filter(
-            stadio=Stadio.CHIUSA_WIN, data_chiusura__gte=start_of_month.date(),
-        ).aggregate(s=Sum('valore'))['s'] or Decimal('0')
-
-        fatturato_prev = Opportunita.objects.filter(
-            stadio=Stadio.CHIUSA_WIN,
-            data_chiusura__gte=start_of_prev_month.date(),
-            data_chiusura__lt=start_of_month.date(),
-        ).aggregate(s=Sum('valore'))['s'] or Decimal('0')
+        chiuse = [Stadio.CHIUSA_WIN, Stadio.CHIUSA_LOST]
+        opp = Opportunita.objects.aggregate(
+            aperte=Count('pk', filter=~Q(stadio__in=chiuse)),
+            vinte=Count('pk', filter=Q(stadio=Stadio.CHIUSA_WIN)),
+            perse=Count('pk', filter=Q(stadio=Stadio.CHIUSA_LOST)),
+            mtd=Sum('valore', filter=Q(stadio=Stadio.CHIUSA_WIN,
+                                       data_chiusura__gte=start_of_month.date())),
+            prev=Sum('valore', filter=Q(stadio=Stadio.CHIUSA_WIN,
+                                        data_chiusura__gte=start_of_prev_month.date(),
+                                        data_chiusura__lt=start_of_month.date())),
+        )
+        fatturato_mtd = opp['mtd'] or Decimal('0')
+        fatturato_prev = opp['prev'] or Decimal('0')
 
         if fatturato_prev:
             delta_pct = int(round((fatturato_mtd - fatturato_prev) / fatturato_prev * 100))
         else:
-            delta_pct = 0 if fatturato_mtd == 0 else 100
+            delta_pct = None
 
-        vinte = Opportunita.objects.filter(stadio=Stadio.CHIUSA_WIN).count()
-        perse = Opportunita.objects.filter(stadio=Stadio.CHIUSA_LOST).count()
+        vinte, perse = opp['vinte'], opp['perse']
         total_chiuse = vinte + perse
         tasso_chiusura = int(round((vinte / total_chiuse) * 100)) if total_chiuse else 0
 
-        # Bar chart: fatturato per month of current year
+        # Bar chart: fatturato per mese dell'anno corrente; sparkline: ultimi
+        # 10 mesi. Tutti i mesi in poche query raggruppate per mese.
         year = now.year
-        monthly = []
-        for m in range(1, 13):
-            s = Opportunita.objects.filter(
-                stadio=Stadio.CHIUSA_WIN,
-                data_chiusura__year=year,
-                data_chiusura__month=m,
-            ).aggregate(s=Sum('valore'))['s'] or 0
-            monthly.append(float(s))
+        ultimi_10 = _last_10_months(now.date())
+        dal = min(date(year, 1, 1), ultimi_10[0][2])
+        fatturato = _fatturato_per_mese(dal, now.date()) if has_perm(self.request.user, 'documenti.vedi') else {}
+        vendite = _per_mese(Opportunita.objects.filter(
+            stadio=Stadio.CHIUSA_WIN, data_chiusura__range=(dal, now.date())),
+            'data_chiusura', Sum('valore'))
+        monthly = [fatturato.get((year, m), 0.0) for m in range(1, 13)]
         month_labels = ['Gen', 'Feb', 'Mar', 'Apr', 'Mag', 'Giu', 'Lug', 'Ago', 'Set', 'Ott', 'Nov', 'Dic']
-        max_month = max(monthly) if monthly else 0
-        if max_month == 0:
-            bars = [0] * 12
-        else:
-            bars = [round(v / max_month * 95, 1) for v in monthly]
 
         fatturato_anno = sum(monthly)
 
-        # Pipeline columns
+        # Riepilogo delle sole trattative aperte, in una query. Le card e il
+        # riordino sono nella pipeline completa: qui nessun elenco troncato.
         pipeline_cols = []
         col_labels = {
             Stadio.NUOVA: ('Nuova', 'var(--ink-3)'),
             Stadio.QUALIFICATA: ('Qualificata', 'var(--info)'),
             Stadio.PROPOSTA: ('Proposta', 'var(--warn)'),
             Stadio.NEGOZIAZIONE: ('Negoziazione', 'var(--brand-violet)'),
-            Stadio.CHIUSA_WIN: ('Chiusa', 'var(--success)'),
         }
-        for stadio in PIPELINE_COLUMNS:
-            opps = Opportunita.objects.filter(stadio=stadio).select_related('cliente', 'owner__profile')
+        per_stadio = {r['stadio']: r for r in Opportunita.objects.filter(
+            stadio__in=col_labels).values('stadio').annotate(
+            n=Count('pk'), tot=Sum('valore')).order_by()}
+        for stadio in col_labels:
             label, color = col_labels[stadio]
-            total_val = sum(o.valore for o in opps)
+            riga = per_stadio.get(stadio, {})
             pipeline_cols.append({
                 'id': stadio,
                 'label': label,
                 'color': color,
-                'items': list(opps)[:8],
-                'count': opps.count(),
-                'total': total_val,
+                'count': riga.get('n', 0),
+                'total': riga.get('tot') or Decimal('0'),
             })
 
         pipeline_total = sum(c['total'] for c in pipeline_cols)
         pipeline_count = sum(c['count'] for c in pipeline_cols)
 
-        # Recent activity
-        recent_activity = Attivita.objects.select_related(
-            'cliente', 'owner__profile',
-        ).order_by('-created_at')[:6]
+        # Le prossime azioni personali, con gli arretrati in testa.
+        agenda = Attivita.objects.filter(owner=self.request.user, completata=False)
+        agenda_counts = agenda.aggregate(
+            scadute=Count('pk', filter=Q(data__lt=now)),
+            oggi=Count('pk', filter=Q(data__date=now.date())),
+        )
+        prossime_attivita = agenda.select_related('cliente', 'opportunita').order_by('data', 'pk')[:6]
 
-        # KPI documenti (ciclo attivo + AR/AP) — solo se la app è installata
+        # KPI documenti (ciclo attivo + AR/AP), visibili con il relativo permesso.
         doc_kpi = None
-        try:
+        if has_perm(self.request.user, 'documenti.vedi'):
             from documenti.models import (
-                ScadenzaFattura, ScadenzaFatturaAcquisto, TestataFattura,
+                ScadenzaFattura, ScadenzaFatturaAcquisto, TestataFattura, crediti_aperti,
+                scadenze_acquisto_con_residuo,
             )
             today = now.date()
-            fatt_doc_mese = TestataFattura.objects.filter(
-                data_documento__gte=start_of_month.date(),
-                data_documento__lte=today,
-            ).aggregate(s=Sum('imponibile'))['s'] or Decimal('0')
-            ar_scaduto = Decimal('0')
-            for s in ScadenzaFattura.objects.select_related('fattura').filter(
-                fattura__pagata=False, data__lt=today,
-            ):
-                ar_scaduto += s.importo
-            ap_scaduto = Decimal('0')
-            for s in ScadenzaFatturaAcquisto.objects.filter(data_scadenza__lt=today):
-                if s.importo_residuo > 0:
-                    ap_scaduto += s.importo_residuo
-            fatture_da_pagare = TestataFattura.objects.filter(pagata=False).count()
+            fatture = TestataFattura.objects.aggregate(
+                mese=Sum('imponibile', filter=Q(data_documento__gte=start_of_month.date(),
+                                                data_documento__lte=today)),
+                da_pagare=Count('pk', filter=Q(pagata=False)),
+            )
+            ar_scaduto = crediti_aperti(ScadenzaFattura.objects.filter(
+                data__lt=today,
+            )).aggregate(s=Sum('residuo_db'))['s'] or Decimal('0')
+            ap_scaduto = scadenze_acquisto_con_residuo(
+                ScadenzaFatturaAcquisto.objects.filter(data_scadenza__lt=today),
+            ).filter(residuo_db__gt=0).aggregate(s=Sum('residuo_db'))['s'] or Decimal('0')
+            centesimi = Decimal('0.01')
             doc_kpi = {
-                'fatt_mese': fatt_doc_mese,
-                'ar_scaduto': ar_scaduto,
-                'ap_scaduto': ap_scaduto,
-                'fatture_da_pagare': fatture_da_pagare,
+                'fatt_mese': fatture['mese'] or Decimal('0'),
+                'ar_scaduto': Decimal(ar_scaduto).quantize(centesimi),
+                'ap_scaduto': Decimal(ap_scaduto).quantize(centesimi),
+                'fatture_da_pagare': fatture['da_pagare'],
             }
-        except Exception:
-            doc_kpi = None
 
         ctx.update({
             'user_name': self.request.user.get_short_name() or self.request.user.username,
             'today': now,
-            'kpi_clienti_attivi': clienti_attivi,
-            'kpi_clienti_new_month': clienti_new_month,
-            'kpi_opp_aperte': opp_aperte_count,
+            'kpi_clienti_attivi': clienti['attivi'],
+            'kpi_clienti_new_month': clienti['nuovi'],
+            'kpi_opp_aperte': opp['aperte'],
             'kpi_fatturato_mtd': fatturato_mtd,
             'kpi_fatturato_delta_pct': delta_pct,
             'kpi_tasso_chiusura': tasso_chiusura,
-            'bar_data': bars,
+            'kpi_opportunita_chiuse': total_chiuse,
+            'kpi_opportunita_vinte': vinte,
+            'bar_values': monthly,
             'bar_labels': month_labels,
             'fatturato_anno': fatturato_anno,
             'pipeline_cols': pipeline_cols,
             'pipeline_total': pipeline_total,
             'pipeline_count': pipeline_count,
-            'recent_activity': recent_activity,
+            'prossime_attivita': prossime_attivita,
+            'agenda_counts': agenda_counts,
             'active_nav': 'dashboard',
-            'spark_clienti': _spark_clienti(),
-            'spark_opp': _spark_opp(),
-            'spark_fatturato': _spark_fatturato(),
-            'spark_chiusura': _spark_tasso_chiusura(),
+            'spark_clienti': _spark_creati(Cliente, ultimi_10),
+            'spark_opp': _spark_creati(Opportunita, ultimi_10),
+            'spark_vendite': [float(vendite.get((y, m)) or 0) for y, m, _, _ in ultimi_10],
+            'spark_chiusura': _spark_tasso_chiusura(ultimi_10),
             'doc_kpi': doc_kpi,
+            'da_fare': voci_da_fare(self.request.user),
         })
         return ctx
 
@@ -159,14 +163,13 @@ class DashboardView(LoginRequiredMixin, TemplateView):
 def _last_10_months(today=None):
     """Ritorna lista di ``(year, month, first_day, last_day)`` per gli ultimi 10 mesi."""
     from calendar import monthrange
-    from datetime import date as _date
 
-    today = today or timezone.now().date()
+    today = today or timezone.localdate()
     out = []
     y, m = today.year, today.month
     for _ in range(10):
         last_day = monthrange(y, m)[1]
-        out.append((y, m, _date(y, m, 1), _date(y, m, last_day)))
+        out.append((y, m, date(y, m, 1), date(y, m, last_day)))
         # mese precedente
         if m == 1:
             y -= 1
@@ -176,72 +179,43 @@ def _last_10_months(today=None):
     return list(reversed(out))
 
 
-def _spark_clienti():
-    """Clienti creati per ciascuno degli ultimi 10 mesi (pre-attivi inclusi)."""
-    from clienti.models import Cliente
-    points = []
-    for y, m, first, last in _last_10_months():
-        n = Cliente.objects.filter(
-            created_at__year=y, created_at__month=m,
-        ).count()
-        points.append(n)
-    return points
+def _per_mese(qs, campo, valore) -> dict:
+    """``{(anno, mese): valore}`` raggruppando ``qs`` per mese di ``campo``
+    (una query)."""
+    righe = (qs.annotate(mese=TruncMonth(campo)).values('mese')
+             .annotate(v=valore).order_by())
+    return {(r['mese'].year, r['mese'].month): r['v'] for r in righe if r['mese']}
 
 
-def _spark_opp():
-    """Opportunità create per mese (ultimi 10 mesi)."""
-    from opportunita.models import Opportunita
-    points = []
-    for y, m, first, last in _last_10_months():
-        n = Opportunita.objects.filter(
-            created_at__year=y, created_at__month=m,
-        ).count()
-        points.append(n)
-    return points
+def _spark_creati(model, mesi):
+    """Oggetti creati per ciascuno dei ``mesi`` (``_last_10_months``)."""
+    conteggi = _per_mese(model.objects.filter(created_at__date__gte=mesi[0][2]),
+                         'created_at', Count('pk'))
+    return [conteggi.get((y, m), 0) for y, m, _, _ in mesi]
 
 
-def _spark_fatturato():
-    """Fatturato per mese (ultimi 10).
+def _fatturato_per_mese(dal, al) -> dict:
+    """Fatturato per mese tra ``dal`` e ``al`` (inclusi): ``{(anno, mese): float}``.
 
-    Combina (a) opportunità chiuse-WIN nel mese e (b) imponibile fatture
-    con ``data_documento`` nel mese — somma per dare un quadro unico.
+    Solo imponibile fatture: una trattativa vinta non è una fattura e
+    sommare i due importi conterebbe due volte la stessa vendita.
     """
-    from decimal import Decimal as _D
-    from opportunita.models import Opportunita, Stadio
-    points = []
-    try:
-        from documenti.models import TestataFattura
-    except Exception:
-        TestataFattura = None
-    for y, m, first, last in _last_10_months():
-        opp = Opportunita.objects.filter(
-            stadio=Stadio.CHIUSA_WIN,
-            data_chiusura__gte=first, data_chiusura__lte=last,
-        ).aggregate(s=Sum('valore'))['s'] or _D('0')
-        fatt = _D('0')
-        if TestataFattura is not None:
-            fatt = TestataFattura.objects.filter(
-                data_documento__gte=first, data_documento__lte=last,
-            ).aggregate(s=Sum('imponibile'))['s'] or _D('0')
-        points.append(float(opp + fatt))
-    return points
+    from documenti.models import TestataFattura
+    fatt = _per_mese(TestataFattura.objects.filter(data_documento__range=(dal, al)),
+                     'data_documento', Sum('imponibile'))
+    return {k: float(v or Decimal('0')) for k, v in fatt.items()}
 
 
-def _spark_tasso_chiusura():
+def _spark_tasso_chiusura(mesi):
     """Tasso di chiusura per mese (% vinte / (vinte + perse))."""
     from opportunita.models import Opportunita, Stadio
+    chiuse = Opportunita.objects.filter(data_chiusura__range=(mesi[0][2], mesi[-1][3]))
+    vinte = _per_mese(chiuse.filter(stadio=Stadio.CHIUSA_WIN), 'data_chiusura', Count('pk'))
+    perse = _per_mese(chiuse.filter(stadio=Stadio.CHIUSA_LOST), 'data_chiusura', Count('pk'))
     points = []
-    for y, m, first, last in _last_10_months():
-        v = Opportunita.objects.filter(
-            stadio=Stadio.CHIUSA_WIN,
-            data_chiusura__gte=first, data_chiusura__lte=last,
-        ).count()
-        p = Opportunita.objects.filter(
-            stadio=Stadio.CHIUSA_LOST,
-            data_chiusura__gte=first, data_chiusura__lte=last,
-        ).count()
-        total = v + p
-        points.append(int(round(v / total * 100)) if total else 0)
+    for y, m, _, _ in mesi:
+        v, p = vinte.get((y, m), 0), perse.get((y, m), 0)
+        points.append(int(round(v / (v + p) * 100)) if v + p else 0)
     return points
 
 

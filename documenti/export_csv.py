@@ -13,7 +13,6 @@ import re
 from decimal import Decimal
 
 from django.contrib.auth.decorators import login_required
-from django.db.models import Q
 from django.http import HttpResponse
 from django.utils.timezone import now
 
@@ -76,27 +75,11 @@ def _euro(v):
 @login_required
 @require_perm('documenti.vedi')
 def fatture_export(request):
-    qs = TestataFattura.objects.select_related('cliente').order_by(
-        '-anno', '-numero',
+    from .views import filtra_fatture
+    qs = filtra_fatture(
+        TestataFattura.objects.select_related('cliente').order_by('-anno', '-numero'),
+        request.GET,
     )
-    q = (request.GET.get('q') or '').strip()
-    if q:
-        qs = qs.filter(
-            Q(numero__icontains=q)
-            | Q(cliente__ragione_sociale__icontains=q)
-            | Q(cliente__partita_iva__icontains=q),
-        )
-    anno = (request.GET.get('anno') or '').strip()
-    if anno.isdigit():
-        qs = qs.filter(anno=int(anno))
-    pagata = request.GET.get('pagata')
-    if pagata == 'si':
-        qs = qs.filter(pagata=True)
-    elif pagata == 'no':
-        qs = qs.filter(pagata=False)
-    tipo = (request.GET.get('tipo') or '').strip()
-    if tipo:
-        qs = qs.filter(tipo_documento=tipo)
 
     response, w = _csv_response(f'fatture_{now().date().isoformat()}.csv')
     w.writerow([
@@ -123,10 +106,9 @@ def fatture_export(request):
 @login_required
 @require_perm('documenti.vedi')
 def scadenziario_attivo_export(request):
+    from .models import crediti_aperti
     today = now().date()
-    qs = ScadenzaFattura.objects.select_related('fattura__cliente').filter(
-        fattura__pagata=False,
-    ).order_by('data')
+    qs = crediti_aperti(ScadenzaFattura.objects.select_related('fattura__cliente')).order_by('data')
     cliente_id = request.GET.get('cliente')
     if cliente_id and cliente_id.isdigit():
         qs = qs.filter(fattura__cliente_id=int(cliente_id))
@@ -134,7 +116,7 @@ def scadenziario_attivo_export(request):
     response, w = _csv_response(f'scadenziario_attivo_{today.isoformat()}.csv')
     w.writerow([
         'Cliente', 'P.IVA', 'Fattura', 'Anno', 'Data scadenza',
-        'Importo', 'Giorni', 'Stato',
+        'Importo', 'Incassato', 'Residuo', 'Giorni', 'Stato',
     ])
     for s in qs:
         f = s.fattura
@@ -146,7 +128,7 @@ def scadenziario_attivo_export(request):
             cli.partita_iva if cli else '',
             f.numero, f.anno,
             s.data.strftime('%d/%m/%Y'),
-            _euro(s.importo),
+            _euro(s.importo), _euro(s.incassato_db), _euro(s.residuo_db),
             giorni, bucket,
         ])
     return response

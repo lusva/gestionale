@@ -58,7 +58,7 @@
           <span style="display: inline-flex; align-items: center; gap: 5px; color: var(--ink-3);"><span style="width: 10px; height: 2px; border-top: 2px dashed var(--ink-3);"></span>Target</span>
         </div>
       </div>
-      {% include 'components/_barchart.html' with bars=bar_data labels=bar_labels %}
+      {% barchart bar_values bar_labels %}
     </div>
 
     <div class="card" style="padding: 20px;">

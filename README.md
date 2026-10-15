@@ -11,14 +11,14 @@ CRM server-rendered in Django 5, tradotto dal design handoff "gestionale-4.zip" 
 5. **Nuovo / Modifica cliente** — `/clienti/nuovo/` · `/clienti/<id>/modifica/` (3 sezioni + sidebar assegnazione + validazione P.IVA async)
 6. **Contatti** — `/clienti/contatti/` (tabella cross-cliente)
 7. **Aziende** — `/clienti/aziende/` (grid card, subset clienti tipo=azienda)
-8. **Pipeline opportunità** — `/opportunita/` (5 colonne Kanban con drag & drop HTMX)
+8. **Pipeline opportunità** — `/opportunita/` (6 colonne Kanban, filtri, valore ponderato, follow-up e drag & drop)
 9. **Opportunità detail / form** — `/opportunita/<id>/`
-10. **Attività** — `/attivita/` (lista, filtri tipo/stato, toggle completata via HTMX)
+10. **Agenda attività** — `/attivita/` (ricerca, scadute/oggi/settimana, mie attività, KPI, completamento via HTMX)
 11. **Report** — `/report/` (KPI Q2, bar chart vs obiettivo, donut SVG settori, top 5 clienti)
 12. **Impostazioni → Utenti** — `/impostazioni/` (tabella utenti con select ruolo inline HTMX, matrice permessi)
 13. **Impostazioni → Organizzazione, Ruoli, Integrazioni, Fatturazione, API, Audit log, Backup**
 14. **Ricerca globale** — `/cerca/?q=…` cross-model con highlight `<mark>` e paginazione per gruppo (`?group=clienti&page=2`)
-15. **Import CSV wizard (2 step)** — `/clienti/import-csv/` upload → preview + mapping colonne auto-guessato → conferma e import
+15. **Import CSV guidato (3 passi)** — `/clienti/import-csv/` caricamento → collegamento colonne → anteprima delle modifiche ed errori → conferma e riepilogo
 16. **Export CSV clienti** — `/clienti/export-csv/` (rispetta i filtri di lista)
 17. **Export PDF report** — `/report/pdf/?periodo=…` (via xhtml2pdf)
 18. **Audit log** — eventi tracciati automaticamente (create/update/delete + login/logout/import/export), UI in `/impostazioni/audit/`
@@ -143,11 +143,51 @@ chiavi della matrice UI (visualizza clienti, elimina clienti, …) ai tre ruoli 
 
 ## Import / Export CSV clienti
 
-- `/clienti/import-csv/` — upsert per `partita_iva`. Header attesi:
-  `ragione_sociale,tipo,settore,partita_iva,codice_fiscale,codice_sdi,pec,indirizzo,cap,citta,provincia,nazione,stato,note`.
-  Supporta separatori `,` / `;` e encoding UTF-8 / Latin-1.
-- `/clienti/export-csv/` — rispetta i filtri (`q`, `stato`, `settore`) presenti in querystring,
-  scrive il BOM UTF-8 per compatibilità Excel.
+L'importazione in `/clienti/import-csv/` richiede il permesso `clienti.importa`
+e procede in tre passi:
+
+1. **Carica il file**: massimo **2 MB**, **2.000 righe di dati** e 100 colonne,
+   con intestazioni non vuote e non duplicate. Sono riconosciuti i separatori
+   virgola, punto e virgola e tabulazione, con codifica UTF-8 o Latin-1.
+   Il CSV di esempio è scaricabile dalla pagina (`?esempio=1`);
+   i dati dimostrativi vanno sostituiti prima di importare.
+2. **Collega le colonne**: gli abbinamenti riconosciuti vengono proposti
+   automaticamente. Ogni campo cliente può essere collegato a una sola colonna;
+   **Ragione sociale** e **Partita IVA** sono obbligatori. Le altre colonne possono
+   essere ignorate. La nazione usata per verificare la partita IVA è **IT** se
+   non specificata: per i clienti esteri occorre collegare la colonna **Nazione**
+   e valorizzarla con la sigla di due lettere.
+3. **Controlla e importa**: l'anteprima confronta realmente il file con i dati
+   del CRM, senza salvare clienti, settori o eventi di importazione. Mostra le
+   righe da creare, da aggiornare, invariate e con errori, con differenze
+   **Prima/Dopo**, filtri per esito e pagine da 50 righe. La conferma applica tutte
+   le righe valide del file, anche quelle nascoste dal filtro o in altre pagine.
+   Il riepilogo finale distingue clienti creati, aggiornati, righe invariate e
+   scartate.
+
+La **partita IVA** identifica i clienti già presenti. I campi vuoti nel file
+conservano i valori esistenti; le righe invariate non vengono risalvate. Gli
+errori sono associati al numero di riga del CSV: una partita IVA ripetuta nel
+file esclude **tutte le sue occorrenze**; una corrispondenza con più clienti
+esistenti richiede prima la correzione del duplicato in anagrafica. Le righe con
+errori vengono scartate, mentre quelle valide possono essere confermate.
+
+Il caricamento e l'anteprima restano disponibili per **un'ora dal caricamento**;
+alla scadenza occorre selezionare di nuovo il file. Se i dati del CRM cambiano
+dopo il controllo, l'anteprima va aggiornata e confermata nuovamente. Il
+salvataggio delle righe valide e della ricevuta è **atomico**: un conflitto
+annulla l'intero salvataggio. La ricevuta rende la conferma **idempotente**:
+un doppio invio dello stesso caricamento restituisce lo stesso riepilogo senza
+applicare di nuovo le modifiche, anche dopo la scadenza della sessione.
+
+Campi disponibili:
+`ragione_sociale,tipo,settore,partita_iva,codice_fiscale,codice_sdi,pec,indirizzo,cap,citta,provincia,nazione,stato,note`.
+La preparazione e l'applicazione del piano sono in `clienti/importazione.py`;
+il flusso e le ricevute sono gestiti da `clienti/views.py` e
+`EsitoImportazioneClienti`.
+
+L'export `/clienti/export-csv/` rispetta i filtri della lista presenti in
+querystring e scrive il BOM UTF-8 per compatibilità Excel.
 
 ## Export PDF report
 
@@ -210,7 +250,13 @@ Le fatture partono dalla PEC aziendale verso il SDI; ricevute (RC/MC/NS/NE)
 e fatture passive (`.xml` e `.xml.p7m` firmate) arrivano sulla stessa casella
 e le legge `sdi_pull`. Il codice è in `documenti/sdi.py`.
 
-**Configurazione** — `/admin/` → Anagrafica azienda (esempio Aruba PEC):
+**Configurazione** — Impostazioni › Integrazioni (solo amministratori): form
+con le password che non tornano mai nella pagina (vuote = si tengono quelle
+salvate), pulsante «Aruba PEC» che riempie server e porte, «Verifica
+connessione» (login SMTP e IMAP, nessun invio), stato della ricezione, ultimi
+messaggi del SDI, fatture scartate o rifiutate e «Controlla ora la PEC» (`sdi_pull`
+su 30 email). Ogni modifica finisce nell'audit log, con i nomi dei campi e mai
+le password. Esempio Aruba PEC:
 
 | Campo | Valore |
 |---|---|
@@ -238,7 +284,10 @@ usare per gli invii successivi: `sdi_pull` la salva da sola su
 
 `sdi_pull` non tocca i flag letto/non letto della casella: tiene traccia
 delle email elaborate nel database (`MessaggioPecElaborato`) e considera solo
-quelle spedite dal SDI.
+quelle spedite dal SDI. Ogni run si registra in `EsecuzioneComando`
+(`core_settings/esecuzioni.py`): la pagina Integrazioni avvisa se la PEC non
+viene controllata da più di un'ora (timer fermo) e due run non partono mai
+insieme (timer e «Controlla ora»).
 
 **Esecuzione automatica** (ogni 15 minuti, una volta sul server):
 
@@ -261,13 +310,107 @@ reinviate entro 5 giorni. Consigliato registrare la PEC aziendale come
 indirizzo telematico in «Fatture e Corrispettivi», così tutte le fatture
 passive arrivano lì.
 
+## Velocità e uso quotidiano
+
+- **Menu laterale** — Dashboard in alto, poi Vendite, Acquisti, Incassi e pagamenti, Clienti e CRM, Analisi, Anagrafiche; Impostazioni in fondo accanto all'utente. Vendite e Incassi e pagamenti sono aperti finché non li chiudi, gli altri gruppi restano come li lasci; il gruppo della pagina aperta è sempre aperto. Ognuno vede solo le voci che può aprire. Il menu e le azioni della palette sono definiti una volta sola in `core_settings/menu.py`.
+- **Palette comandi** — <kbd>⌘K</kbd> / <kbd>Ctrl K</kbd> o <kbd>/</kbd> (anche cliccando la ricerca in alto): cerca mentre scrivi fatture (anche «12/2026»), fatture di acquisto, clienti, contatti, fornitori, articoli e porta a pagine e azioni («Nuova fattura»…). Endpoint `/cerca/rapida/`.
+- **Scorciatoie** — <kbd>⌘S</kbd> salva il documento aperto, <kbd>N</kbd> «Nuovo» nella lista, <kbd>Invio</kbd> sull'ultima riga di un documento ne aggiunge una, <kbd>?</kbd> mostra l'elenco.
+- **Da fare** — campanella in alto e card in dashboard: fatture scadute da incassare, pagamenti a fornitori scaduti o entro 7 giorni, scadenze fiscali, fatture scartate dal SDI o da inviare, fatture di acquisto da confermare (`dashboard/da_fare.py`).
+- **Form dei documenti** (fattura, offerta, ordine, DDT, nota di credito) — riepilogo di imponibile, IVA, totale e scadenze calcolato dal server mentre si scrive (`documenti/anteprima.py`, gli stessi conti di PDF e XML); cliente → forma di pagamento e IVA abituali (si impostano nella scheda cliente); articolo → descrizione, prezzo, UM e IVA; clienti e liste lunghe con ricerca; righe che si tolgono col cestino; avviso se si esce senza salvare.
+- **Duplica** — «Duplica» su fatture e documenti apre un documento nuovo uguale, datato oggi, da rivedere e salvare (`?da=<id>`); «Nuova fattura» dalla scheda cliente (`?cliente=<id>`).
+- **Lista fatture** — filtri e ricerca istantanei (HTMX, l'indirizzo resta condivisibile), totale con IVA, colonna scadenza con i giorni di ritardo, filtro «Scadute»; export CSV e ZIP con gli stessi filtri della lista.
+- **Incassi parziali** — nel dettaglio fattura, «Scadenze e incassi»: per ogni rata incassato, residuo e stato (aperta, parziale, incassata, scaduta), «+» per registrare un incasso anche parziale (data, importo, modalità, note) ed elenco degli incassi con il cestino per eliminarli. La fattura risulta pagata quando tutte le rate hanno residuo zero, alla data dell'ultimo incasso; «Segna incassata» / «Incassa il resto» salda il residuo. Scadenziario clienti, cashflow, «Da fare», dashboard, estratto conto, solleciti, promemoria, export e pacchetto per il commercialista contano il residuo; in lista il badge «Parziale · resta …». Con incassi registrati le scadenze non si ricalcolano e non si cambiano dal form. Per la chat c'è il tool `registra_incasso`. Le fatture già segnate incassate prima di questa funzione hanno un incasso per rata creato dalla migrazione `documenti/0010` (nota «Registrato dalla migrazione 0010…»).
+- **Note di credito al SDI** — dal dettaglio della nota: «XML FatturaPA» (TD04, importi positivi, `DatiFattureCollegate` con numero e data delle fatture stornate) e «Invia al SDI» / «Reinvia» come per le fatture, con stato SDI e messaggi; trasmessa al SDI, non si modifica né si elimina più. Le note nuove propongono il sezionale **NC** (`<Numero>NC/1/2026</Numero>`: il SDI distingue comunque le TD04 dalle fatture nel controllo doppioni 00404). Il progressivo del file è `N` + 4 caratteri per le note e numerico per le fatture: i nomi non si sovrappongono mai. `sdi_pull` riconduce RC/NS/MC alla nota giusta. Nel form si scelgono le «Fatture stornate»; la nota ne compensa le rate aperte con un incasso «compensata dalla nota di credito» (sparisce eliminando la nota), così la fattura stornata esce da scadenziario, solleciti e cashflow. Filtro per stato SDI in lista e voci nel «Da fare». Il pacchetto per il commercialista include gli XML delle note. Le TD08 (semplificate) non si generano. Lo schema XSD ufficiale v1.2.2 è in `documenti/xsd/` per validare l'XML senza rete (`fatt_el.schema_fatturapa()`).
+- **Dettaglio fattura** — email e **sollecito di pagamento** con destinatario e testo modificabili prima dell'invio; «Reinvia al SDI» dopo uno scarto; una fattura già emessa al SDI non si modifica più (si corregge con nota di credito); un doppio clic su «Invia al SDI» non spedisce due volte.
+- **Fatture ricorrenti** — Vendite › Fatture ricorrenti: canoni mensili, trimestrali, annuali… con righe, forma di pagamento e note. Ogni periodo nasce una fattura vera, datata il giorno dell'emissione (mai nel passato: i periodi saltati escono con la data di oggi, numerati in sequenza); nelle descrizioni e nelle note `{mese}`, `{anno}`, `{periodo}` («ottobre 2026», «1° trimestre 2026»), `{dal}`, `{al}`. Il giorno 31 vuol dire «ultimo del mese». Si fattura il periodo in corso o quello appena finito. Facoltativi l'invio automatico al SDI (solo se attivo) e per email. Storico delle emissioni con gli errori, «Emetti ora», «Sospendi» / «Riattiva» (i periodi della sospensione si saltano, salvo chiedere di recuperarli). Dal dettaglio di una fattura: «Altro» › «Crea una ricorrenza da questa fattura». Le emissioni previste entrano nel cashflow come incassi attesi e nel «Da fare» (non riuscite, emesse oggi, entro 7 giorni). Codice in `documenti/ricorrenti.py`; l'invio al SDI e per email sta in `documenti/invio.py` (lo usano anche i pulsanti del dettaglio).
+- **Fatture di acquisto inserite a mano** — Acquisti › Fatture di acquisto › «Nuova fattura di acquisto» (o <kbd>N</kbd>): per le fatture cartacee e dei fornitori esteri. Righe con sconto, IVA e categoria di costo (proposta dalla riga sopra), riepilogo live, scadenze dalla forma di pagamento (quella abituale si imposta nella scheda del fornitore) e PDF o scansione allegati (`media/fatture_acquisto_allegati/`, solo con il permesso di vedere i documenti). Un numero già registrato per lo stesso fornitore e data viene rifiutato. Le fatture importate dall'XML si aprono in versione ridotta: categorie di costo, stato, data di registrazione, note e allegato; importi e righe restano quelli dell'XML. Si eliminano solo quelle inserite a mano e senza pagamenti.
+- **Scheda cliente** — estratto conto: fatturato, incassato, da incassare, scaduto e l'elenco delle fatture.
+- **Pacchetto per il commercialista** — `/documenti/export-commercialista/`: zip del periodo con gli XML emessi e ricevuti, registro vendite e acquisti in CSV, PDF a richiesta.
+- **Backup** — Impostazioni › Backup (solo superuser) o `python manage.py backup`: database (copia consistente anche in WAL) e file caricati in `backups/`, si tengono gli ultimi 14. Ogni notte: `deploy/gestionale-backup.timer`.
+
+### Note tecniche e di deploy
+
+- **Fatture ricorrenti**: le emette ogni mattina alle 6:00 il comando `genera_fatture_ricorrenti` (idempotente: un periodo non si emette mai due volte). Una volta sul server:
+
+  ```bash
+  cp deploy/gestionale-ricorrenti.service deploy/gestionale-ricorrenti.timer /etc/systemd/system/
+  systemctl daemon-reload
+  systemctl enable --now gestionale-ricorrenti.timer
+  python manage.py genera_fatture_ricorrenti --dry-run     # cosa emetterebbe oggi
+  ```
+
+- Font, htmx e Alpine sono serviti dal sito (`static/fonts`, `static/vendor`): nessuna richiesta a Google Fonts/unpkg. I link interni si precaricano al passaggio del mouse (Speculation Rules, browser Chromium).
+- File statici con l'hash nel nome (`gestionale.storage.StaticConHash`): dopo un deploy i browser scaricano subito CSS e JS nuovi. Serve `collectstatic` (lo fa già il workflow di deploy).
+- `deploy/nginx-gestionale.conf` protegge anche `/media/fatture_acquisto_allegati/` (passa da Django come gli XML): va ricopiato sul server dopo l'aggiornamento.
+- `deploy/nginx-gestionale.conf` ora comprime CSS/JS/JSON (gzip) e mette in cache per un anno i file con l'hash: va ricopiato sul server (`nginx -t && systemctl reload nginx`).
+- Il logo caricato si mostra (sidebar) e si stampa (PDF) da copie ridotte generate al primo uso in `media/anagrafica/ridotti/`; i PDF leggono CSS e immagini dal disco invece che via HTTP.
+- SQLite è in modalità WAL con transazioni `IMMEDIATE`: per copiare il database usa `manage.py backup`, non il solo file `db.sqlite3`.
+
+## CRM operativo — ottobre 2026
+
+La gestione delle attività collegate alle trattative e la visibilità delle
+opportunità ferme sono le priorità adottate anche nella
+[gestione pipeline di Pipedrive](https://www.pipedrive.com/en/features/pipeline-management)
+e nella sua [vista delle opportunità](https://support.pipedrive.com/en/article/pipeline-view).
+Nel gestionale sono disponibili:
+
+- **Pipeline filtrabile** per testo, responsabile (anche «le mie» e «da assegnare»),
+  stato, stadio e priorità. L'indirizzo conserva i filtri e può essere salvato nei
+  preferiti. Le sei colonne comprendono vinte e perse; i KPI aperti escludono entrambe.
+  Il valore ponderato è la somma di `valore × probabilità / 100` delle sole aperte.
+- **Prossimo passo** su ogni trattativa: prima attività ancora aperta, indicazione
+  del ritardo e collegamento «Pianifica follow-up» con cliente e opportunità già
+  selezionati. Le priorità evidenziano chiusure previste superate, permanenza nello
+  stesso stadio da almeno 14 giorni e assenza di attività aperte. «Ferma» si riferisce
+  allo stadio, non al tempo dall'ultimo contatto.
+- **Agenda** con ricerca, tipo, stato, «Solo le mie», scadute, oggi e prossimi sette
+  giorni (oggi incluso, nel fuso Europe/Rome). Per default mostra le aperte, dalle
+  più urgenti. Il completamento aggiorna elenco, contatori e campanella, conserva i
+  filtri e registra l'utente nell'audit. Funziona anche tramite normale form POST.
+- **Dashboard** con agenda personale, promemoria commerciali e riepilogo delle sole
+  opportunità aperte. Vendite vinte e imponibile delle fatture hanno indicatori
+  distinti: non vengono sommati. Il grafico fatture considera i documenti registrati
+  fino a oggi, prima di IVA e note di credito; il tasso di chiusura è storico.
+- **Ricerca** multi-parola tra nomi, contatti e aziende, riferimenti documento come
+  `12/2026`, attività nella palette e ricerca del numero documento anche a una cifra.
+  L'export clienti applica gli stessi filtri dell'elenco.
+- **Affidabilità e accessibilità**: salvataggio atomico cliente/referente e contatto
+  principale, validazione dei collegamenti cliente-opportunità, probabilità e date
+  coerenti al cambio stadio, riordino compatibile con filtri, gestione degli errori
+  del server, pulsanti coerenti con i permessi, focus visibile, salto al contenuto
+  e menu chiudibile da tastiera. I pulsanti di salvataggio vengono ripristinati
+  correttamente anche tornando indietro nel browser.
+
+Le precedenti migliorie di agenda e pipeline non richiedono nuove migrazioni.
+Il nuovo import CSV richiede invece
+`clienti/0005_esito_importazione_clienti`, che crea le ricevute necessarie a
+evitare conferme duplicate. Al deploy, nell'ambiente configurato del server,
+applicare le migrazioni e raccogliere gli statici, compreso `import-clienti.css`
+oltre a `pipeline.css` e `attivita.css`:
+
+```bash
+python manage.py migrate --noinput
+python manage.py collectstatic --noinput
+```
+
+Le verifiche usano un database di test separato:
+
+```bash
+DJANGO_DEBUG=True venv/bin/python manage.py test --noinput
+DJANGO_DEBUG=True venv/bin/python manage.py makemigrations --check --dry-run
+node --test tests/app.test.cjs
+node --check static/js/app.js
+```
+
 ## Da fare
 
-_Tutte le feature pianificate (prima + seconda pass) sono state completate. Idee future:_
+Stato degli interventi e prossime evoluzioni da valutare:
 
 - [ ] Webhook delivery asincrono con retry (oggi sincrono, no queue)
-- [ ] API write endpoints (oggi read-only)
 - [ ] Ricerca full-text (Postgres `SearchVector` / Meilisearch) invece di `icontains`
-- [ ] Import CSV: dry-run che mostra preview upsert prima di scrivere
+- [x] Import CSV: anteprima effettiva prima del salvataggio, differenze per campo,
+  errori e duplicati, conferma atomica e idempotente
 - [ ] Audit log: diff campo-per-campo sugli update (oggi salva solo il fatto)
-- [ ] Fatturazione / integrazioni / backup: le sezioni settings sono ancora placeholder
+- [ ] Sincronizzazione calendario con gestione esplicita di conflitti e fusi orari
+- [ ] Regole configurabili per creare follow-up al cambio stadio
+- [ ] Rilevamento duplicati con anteprima dell'unione di clienti e contatti

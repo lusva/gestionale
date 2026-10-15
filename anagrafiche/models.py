@@ -10,10 +10,12 @@ Il Cliente è definito in ``clienti.models``: qui lo estendiamo via
 ForeignKey verso FormePagamento, PosizioneIva, Referente, ProfiloFiscale
 e OneToOne verso FatturazioneElettronica (vedi ``clienti.models.Cliente``).
 """
+from django.core.validators import RegexValidator
 from django.db import models
 from django.db.models import Case, Value, When
 
 from .choices import CodiceNazione, ProvinciaItaliana
+from .stile_documenti import COLORE_DOCUMENTI_PREDEFINITO
 
 
 # ---------------------------------------------------------------------------
@@ -303,8 +305,29 @@ class AnagraficaAzienda(models.Model):
         null=True,
     )
     logo = models.ImageField(upload_to='anagrafica/', blank=True, null=True)
-    intestazione_documenti = models.CharField(
-        max_length=255, blank=True, null=True,
+    # Intestazione e piè di pagina dei documenti stampati (fatture, offerte,
+    # ordini, DDT, note di credito): si modificano in Impostazioni › Documenti,
+    # solo dagli amministratori.
+    intestazione_documenti = models.TextField(
+        'Righe dell\'intestazione', blank=True, null=True,
+        help_text=(
+            "Le righe sotto la ragione sociale in alto nei documenti. Vuoto = "
+            "composte in automatico da sede legale, P.IVA, codice fiscale e contatti."
+        ),
+    )
+    sito_web = models.CharField('Sito web', max_length=200, blank=True, default='')
+    rea = models.CharField(
+        'Numero REA', max_length=30, blank=True, default='',
+        help_text="Es. RE-123456. Va indicato nei documenti delle società (art. 2250 c.c.).",
+    )
+    capitale_sociale = models.CharField(
+        'Capitale sociale', max_length=60, blank=True, default='',
+        help_text="Es. € 10.000,00 i.v.",
+    )
+    colore_documenti = models.CharField(
+        'Colore dei documenti', max_length=7, default=COLORE_DOCUMENTI_PREDEFINITO,
+        validators=[RegexValidator(r'^#[0-9a-fA-F]{6}$', 'Colore non valido: usa il formato #RRGGBB.')],
+        help_text="Colore d'accento di titolo, filetti e totale.",
     )
     profilo_fiscale = models.OneToOneField(
         ProfiloFiscale,
@@ -312,7 +335,10 @@ class AnagraficaAzienda(models.Model):
         blank=True,
         null=True,
     )
-    contenuto_footer = models.TextField(blank=True, null=True)
+    contenuto_footer = models.TextField(
+        'Piè di pagina', blank=True, null=True,
+        help_text="Testo in fondo a ogni pagina dei documenti, sotto i dati legali.",
+    )
 
     class LiquidazioneIva(models.TextChoices):
         NESSUNA = '', 'Non calcolare'
@@ -325,7 +351,8 @@ class AnagraficaAzienda(models.Model):
         help_text=(
             "Il gestionale stima l'IVA da versare per ogni periodo dalle fatture "
             "emesse e ricevute e la mette fra le scadenze fiscali (Cashflow › "
-            "Liquidazione IVA). Vuoto = nessuna stima."
+            "Liquidazione IVA). Vuoto = nessuna stima. Si sceglie in Impostazioni › "
+            "Fatturazione."
         ),
     )
     modulo_magazzino_attivo = models.BooleanField(
@@ -409,6 +436,42 @@ class AnagraficaAzienda(models.Model):
     def __str__(self):
         return self.ragione_sociale or 'Azienda non configurata'
 
+    def _sede_legale(self) -> str:
+        comune = ' '.join(filter(None, [self.cap_legale, self.comune_legale]))
+        if comune and self.prov_legale:
+            comune += f' ({self.prov_legale})'
+        return ', '.join(filter(None, [self.indirizzo_legale, comune]))
+
+    def _partita_iva_cf(self) -> str:
+        piva, cf = self.partita_iva or '', self.codice_fiscale or ''
+        if piva and piva == cf:
+            return f'P.IVA e C.F. {piva}'
+        return ' · '.join(filter(None, [piva and f'P.IVA {piva}', cf and f'C.F. {cf}']))
+
+    def righe_intestazione(self) -> list[str]:
+        """Le righe sotto la ragione sociale in testa ai documenti: quelle
+        scritte in Impostazioni › Documenti o, se vuote, composte dai dati
+        dell'azienda."""
+        if (self.intestazione_documenti or '').strip():
+            return [r.strip() for r in self.intestazione_documenti.splitlines() if r.strip()]
+        return self.righe_intestazione_automatiche()
+
+    def righe_intestazione_automatiche(self) -> list[str]:
+        contatti = ' · '.join(filter(None, [
+            self.email, self.telefono and f'Tel. {self.telefono}', self.sito_web,
+        ]))
+        return [r for r in (self._sede_legale(), self._partita_iva_cf(), contatti) if r]
+
+    def riga_legale(self) -> str:
+        """I dati legali in fondo a ogni pagina dei documenti."""
+        return ' · '.join(filter(None, [
+            self.ragione_sociale,
+            self._sede_legale(),
+            self._partita_iva_cf(),
+            self.rea and f'REA {self.rea}',
+            self.capitale_sociale and f'Capitale sociale {self.capitale_sociale}',
+        ]))
+
     @classmethod
     def current(cls):
         """Singleton helper: restituisce la prima anagrafica o ne crea una vuota."""
@@ -449,6 +512,11 @@ class AbstractAnagrafica(models.Model):
 
 
 class Fornitore(AbstractAnagrafica):
+    # proposta nelle fatture di acquisto inserite a mano (scadenze)
+    forme_pagamento = models.ForeignKey(
+        FormePagamento, on_delete=models.SET_NULL, blank=True, null=True,
+        related_name='+', verbose_name='forma di pagamento abituale',
+    )
 
     def __str__(self):
         if self.ragione_sociale:

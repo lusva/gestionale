@@ -1,0 +1,29 @@
+{# Modalità di pagamento. Parametri: forma (FormePagamento), conto (ContoCorrente), scadenze. #}
+{% if forma or conto.iban or scadenze %}
+  <div class="blocco">
+    <div class="etichetta">Modalità di pagamento</div>
+    <div class="riquadro">
+      <table class="elenco">
+        {% if forma %}<tr><th>Modalità</th><td>{{ forma }}</td></tr>{% endif %}
+        {% if conto.iban %}
+          <tr>
+            <th>IBAN</th>
+            <td><span class="iban">{{ conto.iban|iban }}</span>{% if conto.bic_swift %}<span class="bic">BIC / SWIFT <span class="iban">{{ conto.bic_swift }}</span></span>{% endif %}</td>
+          </tr>
+          {% if conto.banca %}<tr><th>Banca</th><td>{{ conto.banca }}</td></tr>{% endif %}
+          {% if conto.intestatario %}<tr><th>Intestatario</th><td>{{ conto.intestatario }}</td></tr>{% endif %}
+        {% endif %}
+        {% if scadenze %}
+          <tr>
+            <th>{% if scadenze|length > 1 %}Rate{% else %}Scadenza{% endif %}</th>
+            <td>
+              {% for s in scadenze %}
+                <div>{% if scadenze|length > 1 %}{{ forloop.counter }}ª · {% endif %}{{ s.data|date:'d/m/Y' }} <span class="trattino">—</span> € {{ s.importo|floatformat:"2g" }}</div>
+              {% endfor %}
+            </td>
+          </tr>
+        {% endif %}
+      </table>
+    </div>
+  </div>
+{% endif %}

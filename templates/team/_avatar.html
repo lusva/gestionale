@@ -1,0 +1,3 @@
+<span class="team-avatar tinta-{{ m.tinta }}{% if grande %} team-avatar-grande{% endif %}">
+  {{ m.profile.iniziali|default:m.username|slice:':2'|upper }}
+</span>

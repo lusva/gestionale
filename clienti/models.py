@@ -1,5 +1,7 @@
+import uuid
+
 from django.conf import settings
-from django.db import models
+from django.db import models, router, transaction
 from django.db.models import Sum
 from django.urls import reverse
 
@@ -168,10 +170,21 @@ class Cliente(models.Model):
 
     @property
     def fatturato_totale(self):
-        total = self.opportunita.filter(stadio='chiusa_win').aggregate(
-            s=Sum('valore'),
-        )['s']
-        return total or 0
+        """Imponibile delle fatture emesse meno quello delle note di credito.
+
+        Nell'elenco arriva già calcolato da ``con_fatturato`` (una query per
+        tutta la pagina); altrove si calcola qui.
+        """
+        if 'fatturato' in self.__dict__:
+            return self.__dict__['fatturato']
+        from documenti.models import TestataFattura, TestataNotaCredito
+        fatture = TestataFattura.objects.filter(cliente=self).aggregate(
+            s=Sum('imponibile'),
+        )['s'] or 0
+        note = TestataNotaCredito.objects.filter(cliente=self).aggregate(
+            s=Sum('imponibile'),
+        )['s'] or 0
+        return fatture - note
 
     @property
     def opportunita_aperte(self):
@@ -222,8 +235,29 @@ class Contatto(models.Model):
         return iniziali.upper() or '?'
 
     def save(self, *args, **kwargs):
-        if self.primary:
-            Contatto.objects.filter(
-                cliente=self.cliente, primary=True,
+        update_fields = kwargs.get('update_fields')
+        cambia_principale = update_fields is None or bool(
+            {'primary', 'cliente', 'cliente_id'} & set(update_fields)
+        )
+        if not self.primary or not cambia_principale:
+            return super().save(*args, **kwargs)
+        using = kwargs.get('using') or router.db_for_write(type(self), instance=self)
+        with transaction.atomic(using=using):
+            # Il lock sul cliente serializza anche l'inserimento di due nuovi
+            # contatti principali, che non hanno ancora una riga da bloccare.
+            Cliente.objects.using(using).select_for_update().get(pk=self.cliente_id)
+            Contatto.objects.using(using).filter(
+                cliente_id=self.cliente_id, primary=True,
             ).exclude(pk=self.pk).update(primary=False)
-        super().save(*args, **kwargs)
+            # Se il salvataggio fallisce, il precedente principale resta tale.
+            return super().save(*args, **kwargs)
+
+
+class EsitoImportazioneClienti(models.Model):
+    """Ricevuta atomica: lo stesso caricamento viene applicato una sola volta."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    autore = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
+    fingerprint = models.CharField(max_length=64)
+    riepilogo = models.JSONField(default=dict)
+    created_at = models.DateTimeField(auto_now_add=True)

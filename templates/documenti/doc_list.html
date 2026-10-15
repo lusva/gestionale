@@ -33,6 +33,14 @@
       {% endfor %}
     </select>
 
+    {% if has_sdi %}
+      <select name="sdi" class="select" onchange="this.form.requestSubmit()" style="width: 190px;">
+        <option value="">Tutti gli stati SDI</option>
+        {% for val, label in sdi_choices %}
+          <option value="{{ val }}" {% if sdi == val %}selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+      </select>
+    {% endif %}
     {% if has_stato %}
       <select name="stato" class="select" onchange="this.form.requestSubmit()" style="width: 160px;">
         <option value="">Tutti gli stati</option>
@@ -51,6 +59,7 @@
           <th style="width: 110px;">Data</th>
           <th>{{ counterparty|capfirst }}</th>
           {% if has_stato %}<th style="width: 110px;">Stato</th>{% endif %}
+          {% if has_sdi %}<th style="width: 130px;">SDI</th>{% endif %}
           <th style="text-align: right; width: 130px;">Imponibile</th>
           <th style="width: 40px;"></th>
         </tr>
@@ -60,7 +69,7 @@
           <tr class="clickable" onclick="if (!event.target.closest('a,button,input')) window.location='{% url urls.detail d.pk %}'">
             <td class="mono" style="font-weight: 500;">
               <a href="{% url urls.detail d.pk %}" style="color: inherit; text-decoration: none;">
-                {{ d.numero }}/{{ d.anno }}
+                {% if d.sezionale %}{{ d.sezionale }}/{% endif %}{{ d.numero }}/{{ d.anno }}
               </a>
             </td>
             <td>{{ d.data_documento|date:'d/m/Y' }}</td>
@@ -77,6 +86,9 @@
               <td>
                 <span class="badge badge-neutral">{{ d.get_stato_display }}</span>
               </td>
+            {% endif %}
+            {% if has_sdi %}
+              <td><span class="badge {% if d.sdi_stato == 'accettata' %}badge-success{% elif d.sdi_stato == 'scartata' or d.sdi_stato == 'rifiutata' %}badge-danger{% elif d.sdi_stato == 'non_inviata' %}badge-neutral{% else %}badge-info{% endif %}">{{ d.get_sdi_stato_display|truncatechars:22 }}</span></td>
             {% endif %}
             <td class="mono" style="text-align: right; font-weight: 500;">{{ d.imponibile|euro:2 }}</td>
             <td>
@@ -97,7 +109,7 @@
           </tr>
         {% empty %}
           <tr>
-            <td colspan="{% if has_stato %}6{% else %}5{% endif %}">
+            <td colspan="{% if has_stato and has_sdi %}7{% elif has_stato or has_sdi %}6{% else %}5{% endif %}">
               <div class="empty">
                 <div class="ico">{% icon 'doc' size=20 %}</div>
                 <div style="font: 500 14px var(--font-body); margin-bottom: 4px;">Nessun documento</div>
@@ -119,9 +131,9 @@
           {{ page_obj.start_index }}–{{ page_obj.end_index }} di {{ paginator.count|intcomma }}
         </div>
         <div class="pager">
-          {% if page_obj.has_previous %}<a href="?page={{ page_obj.previous_page_number }}">«</a>{% else %}<span>«</span>{% endif %}
+          {% if page_obj.has_previous %}<a href="{% querystring page=page_obj.previous_page_number %}">«</a>{% else %}<span>«</span>{% endif %}
           <span class="current">{{ page_obj.number }} / {{ paginator.num_pages }}</span>
-          {% if page_obj.has_next %}<a href="?page={{ page_obj.next_page_number }}">»</a>{% else %}<span>»</span>{% endif %}
+          {% if page_obj.has_next %}<a href="{% querystring page=page_obj.next_page_number %}">»</a>{% else %}<span>»</span>{% endif %}
         </div>
       </div>
     {% endif %}

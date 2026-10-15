@@ -20,51 +20,92 @@
         · {{ fattura.tipo_documento }}
       </p>
     </div>
-    <div style="display: flex; gap: 8px;">
-      <a href="{% url 'documenti:fattura_pdf' fattura.pk %}" target="_blank" class="btn btn-ghost">
-        {% icon 'download' size=14 %} PDF
-      </a>
-      <a href="{% url 'documenti:fattura_pdf_firmato' fattura.pk %}" target="_blank" class="btn btn-ghost"
-         title="Richiede certificato P12 caricato sull'anagrafica azienda">
-        {% icon 'lock' size=14 %} PDF firmato
-      </a>
-      <a href="{% url 'documenti:fattura_xml' fattura.pk %}" class="btn btn-ghost">
-        {% icon 'download' size=14 %} XML FatturaPA
-      </a>
-      {% if user_perms_map|get_item:'documenti.modifica' and fattura.sdi_stato == 'non_inviata' %}
-        <form method="post" action="{% url 'documenti:fattura_invia_sdi' fattura.pk %}" style="margin: 0;"
-              onsubmit="return confirm('Inviare la fattura al Sistema di Interscambio?');">
+    {% with puo=user_perms_map|get_item:'documenti.modifica' %}
+    <div class="azioni">
+      {% if puo and not fattura.emessa_sdi %}
+        <a href="{% url 'documenti:fattura_update' fattura.pk %}" class="btn btn-ghost">{% icon 'edit' size=14 %} Modifica</a>
+      {% endif %}
+      <a href="{% url 'documenti:fattura_pdf' fattura.pk %}" target="_blank" class="btn btn-ghost">{% icon 'download' size=14 %} PDF</a>
+      {% if puo and sdi_attivo and fattura.sdi_stato == 'non_inviata' %}
+        <form method="post" action="{% url 'documenti:fattura_invia_sdi' fattura.pk %}"
+              onsubmit="return confirm('Inviare la fattura al Sistema di Interscambio? Una volta inviata non si può più modificare.');">
           {% csrf_token %}
-          <button type="submit" class="btn btn-brand">{% icon 'upload' size=14 %} Invia a SDI</button>
+          <button type="submit" class="btn btn-brand">{% icon 'upload' size=14 %} Invia al SDI</button>
+        </form>
+      {% elif puo and sdi_attivo and fattura.sdi_stato == 'scartata' or puo and sdi_attivo and fattura.sdi_stato == 'rifiutata' %}
+        <form method="post" action="{% url 'documenti:fattura_invia_sdi' fattura.pk %}"
+              onsubmit="return confirm('Reinviare al SDI la fattura corretta?');">
+          {% csrf_token %}
+          <button type="submit" class="btn btn-brand">{% icon 'upload' size=14 %} Reinvia al SDI</button>
         </form>
       {% endif %}
-      {% if user_perms_map|get_item:'documenti.modifica' %}
-        <form method="post" action="{% url 'documenti:fattura_invia_email' fattura.pk %}" style="margin: 0;"
-              onsubmit="return confirm('Inviare la fattura per email al cliente?');">
+      {% if puo and not fattura.pagata %}
+        <form method="post" action="{% url 'documenti:fattura_toggle_pagata' fattura.pk %}">
           {% csrf_token %}
-          <button type="submit" class="btn btn-ghost">{% icon 'mail' size=14 %} Invia email</button>
+          <input type="hidden" name="azione" value="pagata">
+          <button type="submit" class="btn {% if sdi_attivo and fattura.sdi_stato == 'non_inviata' %}btn-ghost{% else %}btn-brand{% endif %}">{% icon 'check' size=14 %} {% if incassato %}Incassa il resto{% else %}Segna incassata{% endif %}</button>
         </form>
       {% endif %}
-      {% if user_perms_map|get_item:'documenti.modifica' %}
-        <form method="post" action="{% url 'documenti:fattura_toggle_pagata' fattura.pk %}" style="margin: 0;">
-          {% csrf_token %}
-          <button type="submit" class="btn btn-ghost">
-            {% if fattura.pagata %}{% icon 'x' size=14 %} Segna non pagata{% else %}{% icon 'check' size=14 %} Segna pagata{% endif %}
-          </button>
-        </form>
-        <form method="post" action="{% url 'documenti:fattura_to_nota_credito' fattura.pk %}" style="margin: 0;"
-              onsubmit="return confirm('Genero la nota di credito (TD04) con copia delle righe?');">
-          {% csrf_token %}
-          <button type="submit" class="btn btn-ghost">{% icon 'arrowRight' size=14 %} Nota di credito</button>
-        </form>
-        <a href="{% url 'documenti:fattura_update' fattura.pk %}" class="btn btn-brand">
-          {% icon 'edit' size=14 %} Modifica
-        </a>
-      {% endif %}
+      <div class="altro" x-data="{ open: false }" @keydown.escape.window="open = false">
+        <button type="button" class="btn btn-ghost" @click="open = !open" :aria-expanded="open">Altro {% icon 'chevronDown' size=13 %}</button>
+        <div class="menu" x-show="open" @click.outside="open = false" x-cloak style="min-width: 230px;">
+          <a href="{% url 'documenti:fattura_pdf_firmato' fattura.pk %}" target="_blank" title="Richiede il certificato P12 nell'anagrafica azienda">{% icon 'lock' size=13 %} PDF firmato</a>
+          <a href="{% url 'documenti:fattura_xml' fattura.pk %}">{% icon 'download' size=13 %} XML FatturaPA</a>
+          {% if puo %}
+            <button type="button" data-apri-dialogo="dialogo-email" @click="open = false">{% icon 'mail' size=13 %} Invia per email…</button>
+            {% if scaduta %}
+              <button type="button" data-apri-dialogo="dialogo-sollecito" @click="open = false">{% icon 'alert' size=13 %} Invia un sollecito…</button>
+            {% endif %}
+            <div class="sep"></div>
+            <a href="{% url 'documenti:fattura_create' %}?da={{ fattura.pk }}">{% icon 'plus' size=13 %} Duplica (nuova fattura uguale)</a>
+            <a href="{% url 'documenti:ricorrente_create' %}?da_fattura={{ fattura.pk }}">{% icon 'clock' size=13 %} Crea una ricorrenza da questa fattura</a>
+            {% if not fattura.nota_credito_collegata.exists %}
+              <form method="post" action="{% url 'documenti:fattura_to_nota_credito' fattura.pk %}"
+                    onsubmit="return confirm('Genero la nota di credito (TD04) con copia delle righe?');">
+                {% csrf_token %}
+                <button type="submit">{% icon 'arrowRight' size=13 %} Genera nota di credito</button>
+              </form>
+            {% endif %}
+            {% if incassi_manuali or fattura.pagata and not incassi %}
+              <form method="post" action="{% url 'documenti:fattura_toggle_pagata' fattura.pk %}"
+                    {% if incassi_manuali %}onsubmit="return confirm('Annullare gli incassi? Vengono eliminati i {{ incassi_manuali|length }} incassi registrati.');"{% endif %}>
+                {% csrf_token %}
+                <input type="hidden" name="azione" value="annulla_incassi">
+                <button type="submit">{% icon 'x' size=13 %} Annulla {% if incassi_manuali|length > 1 %}gli incassi{% else %}l'incasso{% endif %}</button>
+              </form>
+            {% endif %}
+          {% endif %}
+          {% if user_perms_map|get_item:'documenti.elimina' and not fattura.trasmessa_sdi %}
+            <div class="sep"></div>
+            <a href="{% url 'documenti:fattura_delete' fattura.pk %}" class="danger">{% icon 'trash' size=13 %} Elimina</a>
+          {% endif %}
+        </div>
+      </div>
     </div>
+    {% endwith %}
   </div>
 
-  <div class="grid" style="grid-template-columns: 1fr 320px; gap: 24px;">
+  {% if fattura.emessa_sdi %}
+    <div class="callout mb-16">
+      <div class="ico">{% icon 'lock' size=15 %}</div>
+      <div style="font: 13px var(--font-body); color: var(--ink-2);">
+        Fattura trasmessa al SDI: non si modifica più. Per correggerla genera una nota di credito dal menu «Altro».
+      </div>
+    </div>
+  {% endif %}
+  {% if scaduta %}
+    <div class="callout warn mb-16">
+      <div class="ico">{% icon 'alert' size=15 %}</div>
+      <div style="font: 13px var(--font-body); color: var(--ink-2);">
+        Scaduta da {{ giorni_ritardo }} giorn{{ giorni_ritardo|pluralize:"o,i" }}: da incassare {{ importo_scaduto|euro:2 }}.
+        {% if user_perms_map|get_item:'documenti.modifica' %}
+          <a href="#" data-apri-dialogo="dialogo-sollecito">Invia un sollecito al cliente</a>.
+        {% endif %}
+      </div>
+    </div>
+  {% endif %}
+
+  <div class="grid layout-documento">
     <div class="flex-col gap-16">
       <div class="card" style="padding: 24px;">
         <div class="section-title">Righe documento</div>
@@ -110,27 +151,99 @@
         </table>
       </div>
 
-      {% if scadenze %}
+      {% if scadenze %}{% with puo=user_perms_map|get_item:'documenti.modifica' %}
         <div class="card" style="padding: 24px;">
-          <div class="section-title">Scadenze</div>
-          <table class="tbl" style="margin-top: 8px;">
-            <thead>
-              <tr>
-                <th>Data</th>
-                <th style="text-align: right;">Importo</th>
-              </tr>
-            </thead>
-            <tbody>
-              {% for s in scadenze %}
+          <div class="flex-between" style="gap: 12px; flex-wrap: wrap;">
+            <div class="section-title" style="margin: 0; flex: 1;">Scadenze e incassi</div>
+            {% if incassato %}<span class="text-sm text-muted">Incassati {{ incassato|euro:2 }} · da incassare {{ residuo|euro:2 }}</span>{% endif %}
+          </div>
+          <div class="tbl-scroll">
+            <table class="tbl" style="margin-top: 8px; min-width: 520px;">
+              <thead>
                 <tr>
-                  <td>{{ s.data|date:'d/m/Y' }}</td>
-                  <td class="mono" style="text-align: right;">{{ s.importo|euro:2 }}</td>
+                  <th>Scadenza</th>
+                  <th style="text-align: right;">Importo</th>
+                  <th style="text-align: right;">Incassato</th>
+                  <th style="text-align: right;">Residuo</th>
+                  <th>Stato</th>
+                  <th style="width: 44px;"></th>
                 </tr>
-              {% endfor %}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {% for s in scadenze %}
+                  <tr>
+                    <td>{{ s.data|date:'d/m/Y' }}</td>
+                    <td class="mono" style="text-align: right;">{{ s.importo|euro:2 }}</td>
+                    <td class="mono" style="text-align: right; color: var(--success);">{{ s.importo_incassato|euro:2 }}</td>
+                    <td class="mono" style="text-align: right; font-weight: 500;{% if s.importo_residuo > 0 and s.data < oggi %} color: var(--danger);{% endif %}">{{ s.importo_residuo|euro:2 }}</td>
+                    <td>
+                      {% if s.stato == 'incassata' %}<span class="badge badge-success">Incassata</span>
+                      {% elif s.stato == 'parziale' %}<span class="badge badge-warn">Parziale</span>
+                      {% elif s.data < oggi %}<span class="badge badge-danger">Scaduta</span>
+                      {% else %}<span class="badge badge-neutral">Aperta</span>{% endif %}
+                    </td>
+                    <td>
+                      {% if puo and s.importo_residuo > 0 %}
+                        <button type="button" class="btn-icon" data-apri-dialogo="dialogo-incasso-{{ s.pk }}" title="Registra incasso" aria-label="Registra incasso">{% icon 'plus' size=14 %}</button>
+                      {% endif %}
+                    </td>
+                  </tr>
+                  {% for i in s.incassi.all %}
+                    <tr class="riga-incasso">
+                      {% if i.nota_credito_id %}
+                        <td colspan="2">{% icon 'arrowRight' size=12 %} compensata dalla <a href="{% url 'documenti:nota_credito_detail' i.nota_credito_id %}">nota di credito</a> del {{ i.data|date:'d/m/Y' }}</td>
+                      {% else %}
+                        <td colspan="2">{% icon 'check' size=12 %} incasso del {{ i.data|date:'d/m/Y' }}{% if i.modalita %} · {{ i.get_modalita_display }}{% endif %}{% if i.note %} · <span title="{{ i.note }}">{{ i.note|truncatechars:40 }}</span>{% endif %}</td>
+                      {% endif %}
+                      <td class="mono" style="text-align: right;">{{ i.importo|euro:2 }}</td>
+                      <td colspan="2"></td>
+                      <td>
+                        {% if puo and not i.nota_credito_id %}
+                          <form method="post" action="{% url 'documenti:incasso_elimina' i.pk %}" style="margin: 0;"
+                                onsubmit="return confirm('Eliminare l\'incasso di {{ i.importo|euro:2 }} del {{ i.data|date:'d/m/Y' }}?');">
+                            {% csrf_token %}
+                            <button type="submit" class="btn-icon" title="Elimina l'incasso" aria-label="Elimina l'incasso">{% icon 'trash' size=13 %}</button>
+                          </form>
+                        {% endif %}
+                      </td>
+                    </tr>
+                  {% endfor %}
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
         </div>
-      {% endif %}
+        {% if puo %}
+          {% for s in scadenze %}{% if s.importo_residuo > 0 %}
+            <dialog class="dialogo" id="dialogo-incasso-{{ s.pk }}" aria-labelledby="dialogo-incasso-{{ s.pk }}-titolo">
+              <form method="post" action="{% url 'documenti:incasso_create' s.pk %}">
+                {% csrf_token %}
+                <div class="dialogo-testa">
+                  <h2 id="dialogo-incasso-{{ s.pk }}-titolo">Registra incasso</h2>
+                  <p>Scadenza del {{ s.data|date:'d/m/Y' }}: da incassare {{ s.importo_residuo|euro:2 }}{% if s.importo_incassato %} su {{ s.importo|euro:2 }}{% endif %}.</p>
+                </div>
+                <div class="dialogo-corpo">
+                  <div class="grid grid-2" style="gap: 12px;">
+                    <div class="field"><label for="inc-data-{{ s.pk }}">Data</label><input class="input" id="inc-data-{{ s.pk }}" type="date" name="data" value="{{ oggi|date:'Y-m-d' }}" required></div>
+                    <div class="field"><label for="inc-imp-{{ s.pk }}">Importo</label><input class="input mono" id="inc-imp-{{ s.pk }}" type="number" step="0.01" min="0.01" max="{{ s.importo_residuo|stringformat:'.2f' }}" name="importo" value="{{ s.importo_residuo|stringformat:'.2f' }}" required></div>
+                    <div class="field"><label for="inc-mod-{{ s.pk }}">Modalità</label>
+                      <select class="select" id="inc-mod-{{ s.pk }}" name="modalita" data-no-cerca>
+                        {% for v, l in modalita_choices %}<option value="{{ v }}"{% if v == 'MP05' %} selected{% endif %}>{{ l }}</option>{% endfor %}
+                      </select>
+                    </div>
+                    <div class="field"><label for="inc-note-{{ s.pk }}">Note</label><input class="input" id="inc-note-{{ s.pk }}" type="text" name="note" maxlength="1000"></div>
+                  </div>
+                  <div class="text-sm text-muted" style="margin-top: 8px;">Un importo minore del residuo registra un incasso parziale.</div>
+                </div>
+                <div class="dialogo-piede">
+                  <button type="button" class="btn btn-ghost" data-chiudi-dialogo>Annulla</button>
+                  <button type="submit" class="btn btn-brand">{% icon 'check' size=14 %} Registra</button>
+                </div>
+              </form>
+            </dialog>
+          {% endif %}{% endfor %}
+        {% endif %}
+      {% endwith %}{% endif %}
 
       {% if messaggi_sdi %}
         <div class="card" style="padding: 24px;">
@@ -223,6 +336,9 @@
         <div style="margin-bottom: 8px;">
           {% if fattura.pagata %}
             <span class="badge badge-success">Pagata{% if fattura.data_pagamento %} il {{ fattura.data_pagamento|date:'d/m/Y' }}{% endif %}</span>
+          {% elif incassato %}
+            <span class="badge badge-warn">Incassata in parte</span>
+            <div style="font: 12px var(--font-body); color: var(--ink-3); margin-top: 6px;">Incassati {{ incassato|euro:2 }} · restano <strong style="color: var(--ink);">{{ residuo|euro:2 }}</strong></div>
           {% else %}
             <span class="badge badge-warn">Da pagare</span>
           {% endif %}
@@ -278,20 +394,20 @@
                 {% if c.verso == 'indietro' %}← origine{% else %}→ derivato{% endif %}
               </span>
               <span style="font: 500 12px var(--font-display); flex: 1;">
-                {{ c.tipo }} {{ c.doc.numero }}/{{ c.doc.anno }}
+                {{ c.tipo }} {% if c.doc.sezionale %}{{ c.doc.sezionale }}/{% endif %}{{ c.doc.numero }}/{{ c.doc.anno }}
               </span>
             </a>
           {% endfor %}
         </div>
       {% endif %}
 
-      {% if user_perms_map|get_item:'documenti.elimina' %}
-        <a href="{% url 'documenti:fattura_delete' fattura.pk %}" class="btn btn-ghost"
-           style="justify-content: center; color: var(--danger); border-color: color-mix(in oklab, var(--danger) 30%, var(--border));">
-          {% icon 'trash' size=14 %} Elimina fattura
-        </a>
-      {% endif %}
     </div>
   </div>
 </div>
+{% if user_perms_map|get_item:'documenti.modifica' %}
+  {% include 'documenti/_dialogo_email.html' with id='dialogo-email' titolo='Invia la fattura per email' sottotitolo="Con il PDF allegato (e l'XML, se il cliente ha codice SDI o PEC)." oggetto=email.oggetto testo=email.testo tipo='fattura' %}
+  {% if scaduta %}
+    {% include 'documenti/_dialogo_email.html' with id='dialogo-sollecito' titolo='Sollecito di pagamento' sottotitolo='Un promemoria cortese, con la fattura in allegato.' oggetto=sollecito.oggetto testo=sollecito.testo tipo='sollecito' %}
+  {% endif %}
+{% endif %}
 {% endblock %}

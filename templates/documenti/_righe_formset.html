@@ -1,0 +1,41 @@
+{% comment %}
+  Le righe di un documento (formset con prefisso «righe»), condivise da
+  fattura_form.html e doc_form.html. Comportamento in static/js/app.js
+  (inizializzaFormset): aggiungi/togli, numerazione, importo di riga,
+  articolo → descrizione, prezzo, UM e IVA.
+{% endcomment %}
+<div class="card" style="padding: 24px;" data-formset="righe"
+     data-articolo-url="{% url 'documenti:articolo_predefiniti' 0 %}">
+  <div style="display: flex; justify-content: space-between; align-items: baseline; gap: 12px; margin-bottom: 12px;">
+    <div class="section-title" style="margin: 0;">Righe</div>
+    <span class="text-sm text-muted">Invio sull'ultima riga ne aggiunge un'altra</span>
+  </div>
+
+  {{ righe_formset.management_form }}
+
+  <div class="tbl-scroll">
+    <table class="tbl righe-tbl">
+      <thead>
+        <tr>
+          <th class="col-n">#</th>
+          <th class="col-articolo">Articolo / descrizione</th>
+          <th class="col-qta">Q.tà</th>
+          <th class="col-um">UM</th>
+          <th class="col-prezzo">Prezzo</th>
+          <th class="col-iva">IVA</th>
+          <th class="col-importo">Importo</th>
+          <th class="col-azioni"></th>
+        </tr>
+      </thead>
+      <tbody data-formset-righe>
+        {% for rf in righe_formset %}
+          {% include 'documenti/_riga_row.html' with form=rf %}
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <template data-formset-modello>{% include 'documenti/_riga_row.html' with form=righe_formset.empty_form %}</template>
+
+  <button type="button" class="btn btn-ghost aggiungi-riga" data-formset-aggiungi>{% icon 'plus' size=14 %} Aggiungi riga</button>
+</div>

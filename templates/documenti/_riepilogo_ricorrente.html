@@ -1,0 +1,28 @@
+{% comment %}
+  Riepilogo live del form di una fattura ricorrente
+  (views_ricorrenti.ricorrente_anteprima): i totali di una fattura del
+  periodo, le prossime emissioni e un esempio di descrizione.
+{% endcomment %}
+{% include 'documenti/_riepilogo_documento.html' %}
+
+{% if senza_iva %}
+  <div class="riepilogo-avviso">{% icon 'alert' size=13 %} Una riga non ha l'IVA e il cliente non ne ha una predefinita: l'emissione non riuscirebbe.</div>
+{% endif %}
+
+<div class="riepilogo-scadenze">
+  <div class="riepilogo-titolo">Prossime emissioni</div>
+  {% if arretrati %}
+    <div class="riepilogo-avviso">
+      {% icon 'alert' size=13 %}
+      {{ arretrati }} period{{ arretrati|pluralize:"o,i" }} già scadut{{ arretrati|pluralize:"o,i" }}: si emettono alla prossima esecuzione, con la data di quel giorno.
+    </div>
+  {% endif %}
+  {% for p in prossime %}
+    <div class="riepilogo-voce"><span>{{ p.previsto|date:'d/m/Y' }}</span><span>{{ p.etichetta }}</span></div>
+  {% empty %}
+    <div class="riepilogo-nota">Imposta periodicità, giorno e data della prima emissione.</div>
+  {% endfor %}
+  {% if esempio %}
+    <div class="riepilogo-nota" style="padding-top: 8px;">Esempio: «{{ esempio|truncatechars:90 }}»</div>
+  {% endif %}
+</div>

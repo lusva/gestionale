@@ -1,326 +1,58 @@
-{% load static humanize %}<!DOCTYPE html>
-<html lang="it">
-<head>
-  <meta charset="utf-8" />
-  <title>Fattura {{ fattura.numero }}/{{ fattura.anno }}</title>
-  <link rel="stylesheet" href="{% static 'css/tokens.css' %}">
-  <link rel="stylesheet" href="{% static 'css/variants.css' %}">
-  <style>
-    @page { size: A4; margin: 0; }
-    body { margin: 0; background: var(--paper); }
-    .page { box-shadow: none; }
-    table { border-collapse: collapse; }
-    .va-iva-recap, .va-scadenze {
-      width: 100%;
-      margin: 0 0 8mm;
-      font-size: var(--fs-sm);
-    }
-    .va-iva-recap th, .va-iva-recap td,
-    .va-scadenze th, .va-scadenze td {
-      padding: 5px 8px;
-      border-bottom: 1px solid var(--ink-100);
-      text-align: left;
-    }
-    .va-iva-recap th, .va-scadenze th {
-      font-size: var(--fs-xs);
-      text-transform: uppercase;
-      letter-spacing: 0.08em;
-      color: var(--ink-500);
-      font-weight: 600;
-      border-bottom: 1px solid var(--ink-200);
-    }
-    .va-iva-recap .num, .va-scadenze .num {
-      text-align: right;
-      font-variant-numeric: tabular-nums;
-    }
-    .va-iva-recap caption, .va-scadenze caption {
-      caption-side: top;
-      text-align: left;
-      font-size: var(--fs-xs);
-      text-transform: uppercase;
-      letter-spacing: 0.1em;
-      color: var(--ink-500);
-      font-weight: 600;
-      margin-bottom: 4px;
-    }
-    .va-bank {
-      background: var(--aigis-cyan-50);
-      border-left: 3px solid var(--aigis-cyan-400);
-      padding: 4mm;
-      border-radius: 0 var(--r-md) var(--r-md) 0;
-      margin-bottom: 8mm;
-      font-size: var(--fs-sm);
-      display: grid;
-      grid-template-columns: repeat(2, 1fr);
-      gap: 3mm 8mm;
-    }
-    .va-bank .va-meta-label { color: var(--aigis-cyan-700); margin-bottom: 2px; }
-    .va-bank .va-iban { font-size: var(--fs-md); font-weight: 600; }
-    .va-sdi-pill {
-      display: inline-block;
-      padding: 2px 8px;
-      border-radius: var(--r-sm);
-      background: var(--aigis-violet-50);
-      color: var(--aigis-violet-700);
-      font-size: var(--fs-xs);
-      font-weight: 600;
-      text-transform: uppercase;
-      letter-spacing: 0.08em;
-    }
-  </style>
-</head>
-<body>
-<div class="page variant-a">
-  <div class="page-inner">
+{% extends 'documenti/pdf/_base.html' %}
 
-    <header class="va-header">
-      <div class="va-logo-wrap">
-        {% if azienda.logo %}
-          <img src="{{ azienda.logo.url }}" alt="{{ azienda.ragione_sociale|default:'Logo' }}" class="va-logo">
-        {% else %}
-          <img src="{% static 'img/logo-aigis.png' %}" alt="AIGIS Lab" class="va-logo">
-        {% endif %}
-      </div>
-      <div class="va-doc-title">
-        <div class="va-doc-type">Fattura</div>
-        <div class="va-doc-number">N° <span class="mono">{% if fattura.sezionale %}{{ fattura.sezionale }}/{% endif %}{{ fattura.numero }}/{{ fattura.anno }}</span></div>
-        <div class="va-doc-date muted">{{ fattura.data_documento|date:'d/m/Y' }}</div>
-      </div>
-    </header>
+{% block titolo %}{{ fattura.titolo_stampa }} {% if fattura.sezionale %}{{ fattura.sezionale }}/{% endif %}{{ fattura.numero }}/{{ fattura.anno }}{% endblock %}
 
-    <div class="va-divider"></div>
+{% block seguito %}
+  <strong>{{ fattura.titolo_stampa }} n. {% if fattura.sezionale %}{{ fattura.sezionale }}/{% endif %}{{ fattura.numero }}/{{ fattura.anno }}</strong>
+  del {{ fattura.data_documento|date:'d/m/Y' }}{% if fattura.cliente %} · {{ fattura.cliente.ragione_sociale|default:fattura.cliente }}{% endif %}
+{% endblock %}
 
-    <section class="va-parties">
-      <div class="va-party">
-        <div class="va-party-label">Cedente / prestatore</div>
-        <div class="va-party-name">{{ azienda.ragione_sociale|default:'—' }}</div>
-        <div class="muted">{{ azienda.indirizzo_legale }}</div>
-        <div class="muted">{{ azienda.cap_legale }} {{ azienda.comune_legale }}{% if azienda.prov_legale %} ({{ azienda.prov_legale }}){% endif %}</div>
-        <div class="muted">P.IVA {{ azienda.partita_iva|default:'—' }}{% if azienda.codice_fiscale %} · C.F. {{ azienda.codice_fiscale }}{% endif %}</div>
-        {% if azienda.email %}<div class="muted">{{ azienda.email }}</div>{% endif %}
-        {% if azienda.telefono %}<div class="muted">{{ azienda.telefono }}</div>{% endif %}
-        {% if azienda.profilo_fiscale %}<div class="muted">Regime: {{ azienda.profilo_fiscale.get_regime_fiscale_display }}</div>{% endif %}
-      </div>
-      <div class="va-party va-party-right">
-        <div class="va-party-label">Cessionario / committente</div>
-        {% if fattura.cliente %}
-          <div class="va-party-name">{{ fattura.cliente.ragione_sociale }}</div>
-          {% if fattura.cliente.indirizzo %}<div class="muted">{{ fattura.cliente.indirizzo }}</div>{% endif %}
-          <div class="muted">{{ fattura.cliente.cap }} {{ fattura.cliente.citta }}{% if fattura.cliente.provincia %} ({{ fattura.cliente.provincia }}){% endif %}</div>
-          <div class="muted">P.IVA {{ fattura.cliente.partita_iva|default:'—' }}{% if fattura.cliente.codice_fiscale %} · C.F. {{ fattura.cliente.codice_fiscale }}{% endif %}</div>
-          {% if fattura.cliente.codice_sdi %}<div class="muted">Codice SDI: <span class="mono">{{ fattura.cliente.codice_sdi }}</span></div>{% endif %}
-          {% if fattura.cliente.pec %}<div class="muted">PEC: {{ fattura.cliente.pec }}</div>{% endif %}
-        {% else %}
-          <div class="muted">—</div>
-        {% endif %}
-      </div>
-    </section>
+{% block tipo %}{{ fattura.titolo_stampa }}{% endblock %}
 
-    <section class="va-meta">
-      <div class="va-meta-cell">
-        <div class="va-meta-label">Tipo documento</div>
-        <div class="mono">{{ fattura.tipo_documento }}</div>
-      </div>
-      {% if scadenze %}
-        <div class="va-meta-cell">
-          <div class="va-meta-label">{% if scadenze|length > 1 %}Prima scadenza{% else %}Scadenza{% endif %}</div>
-          <div>{{ scadenze.0.data|date:'d/m/Y' }}</div>
-        </div>
-      {% endif %}
-      {% if fattura.forme_pagamento %}
-        <div class="va-meta-cell">
-          <div class="va-meta-label">Pagamento</div>
-          <div>{{ fattura.forme_pagamento }}</div>
-        </div>
-      {% endif %}
-      {% if conto_corrente.iban %}
-        <div class="va-meta-cell">
-          <div class="va-meta-label">IBAN</div>
-          <div class="mono va-iban">{{ conto_corrente.iban }}</div>
-        </div>
-      {% endif %}
-    </section>
+{% block estremi %}
+  <tr><th>Numero</th><td>{% if fattura.sezionale %}{{ fattura.sezionale }}/{% endif %}{{ fattura.numero }}/{{ fattura.anno }}</td></tr>
+  <tr><th>Data</th><td>{{ fattura.data_documento|date:'d/m/Y' }}</td></tr>
+{% endblock %}
 
-    <table class="line-table va-table">
-      <thead>
-        <tr>
-          <th style="width: 8mm;">#</th>
-          <th>Descrizione</th>
-          <th class="qty" style="width: 18mm;">Qtà</th>
-          <th class="num" style="width: 24mm;">Prezzo</th>
-          <th class="num" style="width: 16mm;">IVA</th>
-          <th class="num" style="width: 26mm;">Totale</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for r in righe %}
-          <tr>
-            <td class="muted">{{ r.numero_riga|default:forloop.counter }}</td>
-            <td>
-              {% if r.articolo %}
-                <div class="va-item-name">{{ r.articolo.descrizione }}</div>
-                <div class="muted va-item-desc">
-                  <span class="mono">{{ r.articolo.codice }}</span>{% if r.descrizione_libera %} · {{ r.descrizione_libera }}{% endif %}
-                </div>
-              {% elif r.descrizione_libera %}
-                <div class="va-item-name">{{ r.descrizione_libera|truncatechars:80 }}</div>
-                {% if r.descrizione_libera|length > 80 %}
-                  <div class="muted va-item-desc">{{ r.descrizione_libera }}</div>
-                {% endif %}
-              {% else %}
-                <div class="muted">—</div>
-              {% endif %}
-            </td>
-            <td class="qty tabular">{{ r.quantita|floatformat:2 }}{% if r.um %}<span class="muted"> {{ r.um }}</span>{% endif %}</td>
-            <td class="num tabular">{{ r.importo_unitario|floatformat:2 }} €</td>
-            <td class="num tabular muted">{% if r.iva %}{{ r.iva.aliquota }}%{% else %}—{% endif %}</td>
-            <td class="num tabular"><strong>{{ r.imponibile|floatformat:2 }} €</strong></td>
-          </tr>
-        {% endfor %}
-      </tbody>
-    </table>
-
-    <section class="va-totals-wrap">
-      <div class="totals va-totals">
-        <div class="row">
-          <span class="muted">Imponibile lordo</span>
-          <span class="tabular">{{ totals.imponibile_lordo|floatformat:2 }} €</span>
-        </div>
-        {% if totals.sconto %}
-          <div class="row">
-            <span class="muted">Sconto</span>
-            <span class="tabular">− {{ totals.sconto|floatformat:2 }} €</span>
-          </div>
-          <div class="row">
-            <span class="muted">Imponibile netto</span>
-            <span class="tabular">{{ totals.imponibile|floatformat:2 }} €</span>
-          </div>
-        {% endif %}
-        <div class="row">
-          <span class="muted">IVA</span>
-          <span class="tabular">{{ totals.imposta_totale|floatformat:2 }} €</span>
-        </div>
-        {% if totals.spese %}
-          <div class="row">
-            <span class="muted">Spese</span>
-            <span class="tabular">{{ totals.spese|floatformat:2 }} €</span>
-          </div>
-        {% endif %}
-        {% if totals.cassa_prev %}
-          <div class="row">
-            <span class="muted">Cassa previdenziale</span>
-            <span class="tabular">{{ totals.cassa_prev|floatformat:2 }} €</span>
-          </div>
-        {% endif %}
-        {% if totals.bollo %}
-          <div class="row">
-            <span class="muted">Imposta di bollo</span>
-            <span class="tabular">{{ totals.bollo|floatformat:2 }} €</span>
-          </div>
-        {% endif %}
-        <div class="row grand">
-          <span>Totale</span>
-          <span class="tabular">{{ totals.totale|floatformat:2 }} €</span>
-        </div>
-      </div>
-    </section>
-
-    {% if totals.iva_dettaglio|length > 1 %}
-      <table class="va-iva-recap">
-        <caption>Riepilogo IVA</caption>
-        <thead>
-          <tr>
-            <th>Aliquota</th>
-            <th>Natura</th>
-            <th class="num">Imponibile</th>
-            <th class="num">Imposta</th>
-          </tr>
-        </thead>
-        <tbody>
-          {% for iva in totals.iva_dettaglio %}
+{% block contenuto %}
+  <table class="parti">
+    <tr>
+      <td class="controparte">
+        {% include 'documenti/pdf/_controparte.html' with soggetto=fattura.cliente etichetta='Cessionario / committente' %}
+      </td>
+      <td class="intervallo"></td>
+      <td class="condizioni">
+        <div class="etichetta">Condizioni</div>
+        <table class="dati">
+          <tr><th>Tipo documento</th><td><span class="codice">{{ fattura.tipo_documento }}</span></td></tr>
+          {% if scadenze %}
             <tr>
-              <td>{{ iva.aliquota }}%</td>
-              <td class="muted">{{ iva.natura|default:'—' }}</td>
-              <td class="num tabular">{{ iva.imponibile|floatformat:2 }} €</td>
-              <td class="num tabular">{{ iva.imposta|floatformat:2 }} €</td>
+              <th>Scadenza</th>
+              <td>{% if scadenze|length > 1 %}{{ scadenze|length }} rate, dal {{ scadenze.0.data|date:'d/m/Y' }}{% else %}{{ scadenze.0.data|date:'d/m/Y' }}{% endif %}</td>
             </tr>
-          {% endfor %}
-        </tbody>
-      </table>
-    {% endif %}
+          {% endif %}
+          <tr><th>Valuta</th><td>Euro</td></tr>
+        </table>
+      </td>
+    </tr>
+  </table>
 
-    {% if scadenze|length > 1 %}
-      <table class="va-scadenze">
-        <caption>Scadenze</caption>
-        <thead>
-          <tr>
-            <th>Data</th>
-            <th>Modalità</th>
-            <th class="num">Importo</th>
-          </tr>
-        </thead>
-        <tbody>
-          {% for s in scadenze %}
-            <tr>
-              <td class="tabular">{{ s.data|date:'d/m/Y' }}</td>
-              <td class="muted">{% if fattura.forme_pagamento %}{{ fattura.forme_pagamento.get_modalita_pagamento_display }}{% else %}—{% endif %}</td>
-              <td class="num tabular">{{ s.importo|floatformat:2 }} €</td>
-            </tr>
-          {% endfor %}
-        </tbody>
-      </table>
-    {% endif %}
+  {% include 'documenti/pdf/_righe.html' with prezzi=True con_iva=True %}
 
-    {% if conto_corrente %}
-      <section class="va-bank">
-        {% if conto_corrente.banca %}
-          <div>
-            <div class="va-meta-label">Banca</div>
-            <div>{{ conto_corrente.banca }}</div>
-          </div>
-        {% endif %}
-        {% if conto_corrente.intestatario %}
-          <div>
-            <div class="va-meta-label">Intestatario</div>
-            <div>{{ conto_corrente.intestatario }}</div>
-          </div>
-        {% endif %}
-        <div>
-          <div class="va-meta-label">IBAN</div>
-          <div class="mono va-iban">{{ conto_corrente.iban }}</div>
-        </div>
-        {% if conto_corrente.bic_swift %}
-          <div>
-            <div class="va-meta-label">BIC / SWIFT</div>
-            <div class="mono">{{ conto_corrente.bic_swift }}</div>
-          </div>
-        {% endif %}
-      </section>
-    {% endif %}
+  {% include 'documenti/pdf/_chiusura.html' with con_iva=True etichetta_totale='Totale documento' %}
 
-    {% if fattura.note %}
-      <section class="va-notes">
-        <div class="va-meta-label">Note</div>
-        <div>{{ fattura.note|linebreaksbr }}</div>
-      </section>
-    {% endif %}
+  {% include 'documenti/pdf/_pagamento.html' with forma=fattura.forme_pagamento conto=conto_corrente %}
 
-    <footer class="va-footer">
-      <div class="va-footer-bar"></div>
-      <div class="va-footer-top">
-        <div class="va-footer-content">
-          <span>{{ azienda.ragione_sociale|default:'' }}</span>
-          {% if azienda.partita_iva %}<span class="muted">·</span><span class="muted">P.IVA {{ azienda.partita_iva }}</span>{% endif %}
-          {% if azienda.email %}<span class="muted">·</span><span class="muted">{{ azienda.email }}</span>{% endif %}
-          {% if azienda.telefono %}<span class="muted">·</span><span class="muted">{{ azienda.telefono }}</span>{% endif %}
-        </div>
-        <div class="va-page-num">Pag. <span class="tabular">1</span></div>
-      </div>
-      {% if azienda.contenuto_footer %}
-        <div class="va-footer-content muted" style="margin-top: 4px;">{{ azienda.contenuto_footer }}</div>
-      {% endif %}
-    </footer>
-  </div>
-</div>
-</body>
-</html>
+  {% if fattura.note %}
+    <div class="blocco">
+      <div class="etichetta">Note</div>
+      <div class="note">{{ fattura.note|linebreaksbr }}</div>
+    </div>
+  {% endif %}
+{% endblock %}
+
+{% block piede %}
+  {% if fattura.sdi_stato and fattura.sdi_stato != 'non_inviata' %}
+    <div class="piede-avvertenza">Copia di cortesia: il documento fiscalmente valido è la fattura elettronica trasmessa al Sistema di Interscambio.</div>
+  {% endif %}
+{% endblock %}

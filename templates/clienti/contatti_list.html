@@ -61,9 +61,9 @@
       <div style="display: flex; justify-content: space-between; align-items: center; padding: 12px 16px; border-top: 1px solid var(--border); background: var(--surface-2);">
         <div style="font: 12px var(--font-body); color: var(--ink-3);">{{ page_obj.start_index }}–{{ page_obj.end_index }} di {{ paginator.count|intcomma }}</div>
         <div class="pager">
-          {% if page_obj.has_previous %}<a href="?{% if q %}q={{ q }}&{% endif %}page={{ page_obj.previous_page_number }}">«</a>{% else %}<span>«</span>{% endif %}
+          {% if page_obj.has_previous %}<a href="{% querystring page=page_obj.previous_page_number %}">«</a>{% else %}<span>«</span>{% endif %}
           <span class="current">{{ page_obj.number }}</span>
-          {% if page_obj.has_next %}<a href="?{% if q %}q={{ q }}&{% endif %}page={{ page_obj.next_page_number }}">»</a>{% else %}<span>»</span>{% endif %}
+          {% if page_obj.has_next %}<a href="{% querystring page=page_obj.next_page_number %}">»</a>{% else %}<span>»</span>{% endif %}
         </div>
       </div>
     {% endif %}

@@ -13,8 +13,14 @@
     </div>
     <div style="display: flex; gap: 8px;">
       {% if user_perms_map|get_item:'documenti.modifica' %}
-        <a href="{% url 'documenti:fattura_acquisto_import_xml' %}" class="btn btn-brand">
+        <button type="submit" form="conferma-form" class="btn btn-ghost" id="conferma-sel" disabled>
+          {% icon 'check' size=14 %} Conferma selezionate
+        </button>
+        <a href="{% url 'documenti:fattura_acquisto_import_xml' %}" class="btn btn-ghost">
           {% icon 'upload' size=14 %} Importa XML
+        </a>
+        <a href="{% url 'documenti:fattura_acquisto_create' %}" class="btn btn-brand" data-scorciatoia="n" title="Nuova fattura di acquisto (N)">
+          {% icon 'plus' size=14 %} Nuova fattura di acquisto
         </a>
       {% endif %}
     </div>
@@ -44,22 +50,43 @@
     </select>
   </form>
 
+  {% with puo=user_perms_map|get_item:'documenti.modifica' %}
+  {% if puo %}
+    {# form vuoto: checkbox e pulsanti delle righe lo usano con form="…", la tabella contiene già altri form #}
+    <form method="post" action="{% url 'documenti:fattura_acquisto_conferma' %}" id="conferma-form" style="display: none;">
+      {% csrf_token %}
+      <input type="hidden" name="next" value="{{ request.get_full_path }}" />
+    </form>
+  {% endif %}
   <div class="card" style="border-top-left-radius: 0; border-top-right-radius: 0; overflow: hidden;">
     <table class="tbl">
       <thead>
         <tr>
+          {% if puo %}
+            <th style="width: 36px;">
+              <input type="checkbox" class="checkbox" id="sel-tutte" title="Seleziona tutte le bozze" aria-label="Seleziona tutte le bozze" />
+            </th>
+          {% endif %}
           <th style="width: 110px;">Numero</th>
           <th style="width: 120px;">Data</th>
           <th>Fornitore</th>
           <th style="width: 130px;">Rif. fornitore</th>
           <th style="width: 90px;">Stato</th>
           <th style="text-align: right; width: 130px;">Totale</th>
-          <th style="width: 90px;">Pagamento</th>
+          <th style="width: 150px;">Pagamento</th>
         </tr>
       </thead>
       <tbody>
         {% for f in fatture %}
           <tr class="clickable" onclick="if (!event.target.closest('a,button,input')) window.location='{% url 'documenti:fattura_acquisto_detail' f.pk %}'">
+            {% if puo %}
+              <td>
+                {% if f.stato == 'bozza' %}
+                  <input type="checkbox" class="checkbox sel-bozza" name="ids" value="{{ f.pk }}" form="conferma-form"
+                         aria-label="Seleziona fattura {{ f.numero }}/{{ f.anno }}" />
+                {% endif %}
+              </td>
+            {% endif %}
             <td class="mono" style="font-weight: 500;">
               <a href="{% url 'documenti:fattura_acquisto_detail' f.pk %}" style="color: inherit; text-decoration: none;">
                 {{ f.numero }}/{{ f.anno }}
@@ -79,6 +106,13 @@
             <td>
               {% if f.stato == 'bozza' %}
                 <span class="badge badge-warn">Bozza</span>
+                {% if puo %}
+                  <button type="submit" form="conferma-form" name="ids" value="{{ f.pk }}"
+                          class="btn btn-ghost btn-sm" style="margin-top: 4px; padding: 2px 8px;"
+                          onclick="document.querySelectorAll('.sel-bozza').forEach(c => c.checked = false)">
+                    {% icon 'check' size=12 %} Conferma
+                  </button>
+                {% endif %}
               {% elif f.stato == 'confermata' %}
                 <span class="badge badge-success">Confermata</span>
               {% else %}
@@ -86,17 +120,11 @@
               {% endif %}
             </td>
             <td class="mono" style="text-align: right; font-weight: 500;">{{ f.totale_documento|euro:2 }}</td>
-            <td>
-              {% if f.pagata %}
-                <span class="badge badge-success">Pagata</span>
-              {% else %}
-                <span class="badge badge-warn">Da pagare</span>
-              {% endif %}
-            </td>
+            <td>{% include 'documenti/_fattura_pagamento.html' with passiva=True %}</td>
           </tr>
         {% empty %}
           <tr>
-            <td colspan="7">
+            <td colspan="{% if puo %}8{% else %}7{% endif %}">
               <div class="empty">
                 <div class="ico">{% icon 'doc' size=20 %}</div>
                 <div style="font: 500 14px var(--font-body); margin-bottom: 4px;">Nessuna fattura acquisto</div>
@@ -119,12 +147,27 @@
           {{ page_obj.start_index }}–{{ page_obj.end_index }} di {{ paginator.count|intcomma }}
         </div>
         <div class="pager">
-          {% if page_obj.has_previous %}<a href="?page={{ page_obj.previous_page_number }}">«</a>{% else %}<span>«</span>{% endif %}
+          {% if page_obj.has_previous %}<a href="{% querystring page=page_obj.previous_page_number %}">«</a>{% else %}<span>«</span>{% endif %}
           <span class="current">{{ page_obj.number }} / {{ paginator.num_pages }}</span>
-          {% if page_obj.has_next %}<a href="?page={{ page_obj.next_page_number }}">»</a>{% else %}<span>»</span>{% endif %}
+          {% if page_obj.has_next %}<a href="{% querystring page=page_obj.next_page_number %}">»</a>{% else %}<span>»</span>{% endif %}
         </div>
       </div>
     {% endif %}
   </div>
 </div>
+  {% endwith %}
+<script>
+(() => {
+  const tutte = document.getElementById('sel-tutte');
+  const btn = document.getElementById('conferma-sel');
+  const box = () => [...document.querySelectorAll('.sel-bozza')];
+  const aggiorna = () => {
+    const n = box().filter(c => c.checked).length;
+    if (btn) { btn.disabled = !n; btn.lastChild.textContent = n ? ` Conferma selezionate (${n})` : ' Conferma selezionate'; }
+    if (tutte) tutte.checked = n > 0 && n === box().length;
+  };
+  tutte?.addEventListener('change', () => { box().forEach(c => c.checked = tutte.checked); aggiorna(); });
+  box().forEach(c => c.addEventListener('change', aggiorna));
+})();
+</script>
 {% endblock %}

@@ -1,0 +1,56 @@
+{% extends 'settings/_settings_base.html' %}
+{% block title %}Impostazioni · Backup{% endblock %}
+
+{% block settings_content %}
+<div class="card" style="padding: 24px;">
+  <div class="flex-between" style="gap: 16px; flex-wrap: wrap; margin-bottom: 8px;">
+    <div>
+      <div style="font: 600 16px var(--font-display);">Backup</div>
+      <div style="font: 13px var(--font-body); color: var(--ink-3); margin-top: 4px; max-width: 560px;">
+        Una copia completa del gestionale: database e file caricati (logo, XML delle fatture di
+        acquisto, allegati, certificato di firma). Si tengono gli ultimi {{ conserva }}.
+      </div>
+    </div>
+    {% if puo %}
+      <form method="post">
+        {% csrf_token %}
+        <button type="submit" class="btn btn-brand">{% icon 'download' size=14 %} Crea un backup adesso</button>
+      </form>
+    {% endif %}
+  </div>
+
+  {% if not puo %}
+    <div class="callout" style="margin-top: 16px;">
+      <div class="ico">{% icon 'lock' size=15 %}</div>
+      <div style="font: 13px var(--font-body); color: var(--ink-2);">
+        I backup contengono anche le password della PEC e il certificato di firma: li crea e li scarica solo un superuser.
+      </div>
+    </div>
+  {% else %}
+    <table class="tbl" style="margin-top: 16px;">
+      <thead><tr><th>Backup</th><th>Creato</th><th class="num">Dimensione</th><th style="width: 120px;"></th></tr></thead>
+      <tbody>
+        {% for b in backups %}
+          <tr>
+            <td class="mono">{{ b.nome }}</td>
+            <td>{{ b.data|date:'d/m/Y H:i' }}</td>
+            <td class="num">{{ b.dimensione|filesizeformat }}</td>
+            <td><a class="btn btn-ghost btn-sm" href="{% url 'settings:backup_scarica' b.nome %}" download>{% icon 'download' size=12 %} Scarica</a></td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="4"><div class="empty">Nessun backup ancora: creane uno con il pulsante qui sopra.</div></td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+
+    <div class="callout" style="margin-top: 16px;">
+      <div class="ico">{% icon 'clock' size=15 %}</div>
+      <div style="font: 13px var(--font-body); color: var(--ink-2);">
+        <strong>Backup automatico ogni notte</strong> — sul server:
+        <span class="mono">cp deploy/gestionale-backup.* /etc/systemd/system/ &amp;&amp; systemctl enable --now gestionale-backup.timer</span>.
+        Scarica ogni tanto un backup e tienilo fuori dal server: se il disco si guasta, i backup sul server si perdono con lui.
+      </div>
+    </div>
+  {% endif %}
+</div>
+{% endblock %}

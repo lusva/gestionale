@@ -47,8 +47,16 @@ def make_riga_formset(parent_model, fk_name, form_class):
 
 
 def make_doc_views(*, model, form_class, riga_formset_class, label, label_plural,
-                    active_nav, url_prefix, counterparty='cliente', has_stato=False):
-    """Crea 5 classi CBV (List/Detail/Create/Update/Delete) per un modello testata."""
+                    active_nav, url_prefix, counterparty='cliente', has_stato=False,
+                    has_sdi=False, dopo_salvataggio=None, non_modificabile=None,
+                    non_eliminabile=None):
+    """Crea 5 classi CBV (List/Detail/Create/Update/Delete) per un modello testata.
+
+    Per i documenti che vanno al SDI (note di credito): ``has_sdi`` aggiunge
+    filtro e stato SDI; ``non_modificabile`` / ``non_eliminabile`` (doc →
+    motivo, '' se si può) bloccano modifica ed eliminazione dopo l'emissione;
+    ``dopo_salvataggio`` (doc) gira dopo ogni salvataggio di testata e righe.
+    """
 
     # Alias locali: i nomi `model`/`form_class` verrebbero ombrati nella
     # class body delle CBV se usassi gli stessi identificatori.
@@ -69,8 +77,15 @@ def make_doc_views(*, model, form_class, riga_formset_class, label, label_plural
         'active_nav': active_nav,
         'counterparty': counterparty,
         'has_stato': has_stato,
+        'has_sdi': has_sdi,
         'urls': urls,
     }
+
+    def _bloccato(request, doc, controllo):
+        motivo = controllo(doc) if controllo else ''
+        if motivo:
+            messages.error(request, motivo)
+        return motivo
 
     class _BaseList(LoginRequiredMixin, PermRequiredMixin, ListView):
         required_perm = 'documenti.vedi'
@@ -103,6 +118,12 @@ def make_doc_views(*, model, form_class, riga_formset_class, label, label_plural
                 stato = self.request.GET.get('stato')
                 if stato:
                     qs = qs.filter(stato=stato)
+            if has_sdi:
+                sdi = (self.request.GET.get('sdi') or '').strip()
+                if sdi == 'scartata':             # anche le rifiutate: vanno corrette
+                    qs = qs.filter(sdi_stato__in=_model.SDI_STATI_REINVIO)
+                elif sdi:
+                    qs = qs.filter(sdi_stato=sdi)
             return qs
 
         def get_context_data(self, **kwargs):
@@ -116,6 +137,9 @@ def make_doc_views(*, model, form_class, riga_formset_class, label, label_plural
             if has_stato:
                 ctx['stato'] = self.request.GET.get('stato', '')
                 ctx['stato_choices'] = _model._meta.get_field('stato').choices
+            if has_sdi:
+                ctx['sdi'] = self.request.GET.get('sdi', '')
+                ctx['sdi_choices'] = _model.SdiStato.choices
             return ctx
 
     class _BaseDetail(LoginRequiredMixin, PermRequiredMixin, DetailView):
@@ -180,6 +204,13 @@ def make_doc_views(*, model, form_class, riga_formset_class, label, label_plural
                                   'url_name': 'documenti:fattura_detail',
                                   'verso': 'indietro'})
             ctx['chain'] = chain
+            if has_sdi:
+                from .invio import sdi_attivo
+                ctx['sdi_attivo'] = sdi_attivo()
+                ctx['messaggi_sdi'] = doc.messaggi_sdi.all()
+                ctx['compensazioni'] = list(doc.compensazioni.select_related('scadenza__fattura'))
+                ctx['non_modificabile'] = non_modificabile(doc) if non_modificabile else ''
+                ctx['non_eliminabile'] = non_eliminabile(doc) if non_eliminabile else ''
             return ctx
 
     class _SaveMixin:
@@ -199,6 +230,7 @@ def make_doc_views(*, model, form_class, riga_formset_class, label, label_plural
                 'object': instance,
                 'documento': instance,
                 'is_create': is_create,
+                'tipo_documento_form': url_prefix,
                 **formsets,
             })
             return render(request, self.template_name, ctx)
@@ -207,8 +239,26 @@ def make_doc_views(*, model, form_class, riga_formset_class, label, label_plural
         required_perm = 'documenti.modifica'
 
         def get(self, request, *args, **kwargs):
+            from .anteprima import formset_con_iniziali, iniziali_da_copia
+            # ?da=<pk>: «Duplica», il form parte dalla copia di un altro documento
+            copia = iniziali_da_copia(url_prefix, request.GET.get('da', ''), _form_class)
+            if copia:
+                testata, righe = copia
+                return self._render(
+                    request, _form_class(initial=testata),
+                    {'righe_formset': formset_con_iniziali(riga_formset_class, _model(), righe)},
+                    is_create=True,
+                )
+            iniziali = {}
+            # ?cliente=<pk>: «Nuova offerta» dalla scheda del cliente
+            cliente_pk = request.GET.get('cliente', '')
+            if counterparty == 'cliente' and cliente_pk.isdigit():
+                from clienti.models import Cliente
+                cliente = Cliente.objects.filter(pk=cliente_pk).first()
+                if cliente is not None:
+                    iniziali = {'cliente': cliente.pk, 'forme_pagamento': cliente.forme_pagamento_id}
             return self._render(
-                request, _form_class(), self._formsets(_model()), is_create=True,
+                request, _form_class(initial=iniziali), self._formsets(_model()), is_create=True,
             )
 
         def post(self, request, *args, **kwargs):
@@ -225,6 +275,8 @@ def make_doc_views(*, model, form_class, riga_formset_class, label, label_plural
                     doc.delete()
                     return self._render(request, form, fs, is_create=True)
                 fs['righe_formset'].save()
+                if dopo_salvataggio:
+                    dopo_salvataggio(doc)
             messages.success(
                 request,
                 f'{label} {doc.numero}/{doc.anno} creata con successo.',
@@ -236,6 +288,8 @@ def make_doc_views(*, model, form_class, riga_formset_class, label, label_plural
 
         def get(self, request, pk, *args, **kwargs):
             doc = get_object_or_404(_model, pk=pk)
+            if _bloccato(request, doc, non_modificabile):
+                return redirect(urls['detail'], pk=doc.pk)
             return self._render(
                 request, _form_class(instance=doc), self._formsets(doc),
                 instance=doc, is_create=False,
@@ -243,6 +297,8 @@ def make_doc_views(*, model, form_class, riga_formset_class, label, label_plural
 
         def post(self, request, pk, *args, **kwargs):
             doc = get_object_or_404(_model, pk=pk)
+            if _bloccato(request, doc, non_modificabile):
+                return redirect(urls['detail'], pk=doc.pk)
             form = _form_class(request.POST, instance=doc)
             fs = self._formsets(doc, request.POST)
             if not (form.is_valid() and fs['righe_formset'].is_valid()):
@@ -250,6 +306,8 @@ def make_doc_views(*, model, form_class, riga_formset_class, label, label_plural
             with transaction.atomic():
                 form.save()
                 fs['righe_formset'].save()
+                if dopo_salvataggio:
+                    dopo_salvataggio(doc)
             messages.success(request, f'{label} aggiornata.')
             return redirect(urls['detail'], pk=doc.pk)
 
@@ -258,6 +316,16 @@ def make_doc_views(*, model, form_class, riga_formset_class, label, label_plural
         model = _BaseDetail.model
         template_name = 'documenti/confirm_delete.html'
         success_url = reverse_lazy(urls['list'])
+
+        def get(self, request, *args, **kwargs):
+            if _bloccato(request, self.get_object(), non_eliminabile):
+                return redirect(urls['detail'], pk=kwargs['pk'])
+            return super().get(request, *args, **kwargs)
+
+        def post(self, request, *args, **kwargs):
+            if _bloccato(request, self.get_object(), non_eliminabile):
+                return redirect(urls['detail'], pk=kwargs['pk'])
+            return super().post(request, *args, **kwargs)
 
         def get_context_data(self, **kwargs):
             ctx = super().get_context_data(**kwargs)

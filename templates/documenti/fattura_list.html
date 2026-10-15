@@ -9,48 +9,52 @@
   <div class="page-header">
     <div>
       <h1 class="page-title">Fatture</h1>
-      <p class="page-subtitle">
-        {{ kpi_count|intcomma }} fatture totali
-        · imponibile complessivo {{ kpi_totale|euro }}
-        · {{ kpi_da_pagare }} da pagare
-      </p>
+      {% include 'documenti/_fattura_kpi.html' %}
     </div>
     <div style="display: flex; gap: 8px;">
-      <a href="{% url 'documenti:fatture_export' %}?{{ request.GET.urlencode }}" class="btn btn-ghost">
-        {% icon 'download' size=14 %} Esporta CSV
-      </a>
-      <a href="{% url 'documenti:fatture_zip' %}?{{ request.GET.urlencode }}" class="btn btn-ghost"
-         title="Scarica un ZIP con i PDF delle fatture filtrate (max 200)">
-        {% icon 'download' size=14 %} ZIP PDF
-      </a>
+      <div style="position: relative;" x-data="{ open: false }" @keydown.escape.window="open = false">
+        <button type="button" class="btn btn-ghost" @click="open = !open" :aria-expanded="open">{% icon 'download' size=14 %} Esporta {% icon 'chevronDown' size=13 %}</button>
+        <div class="menu" x-show="open" @click.outside="open = false" x-cloak style="min-width: 250px;">
+          <a href="{% url 'documenti:fatture_export' %}?{{ request.GET.urlencode }}" data-export-filtri>{% icon 'download' size=13 %} CSV delle fatture filtrate</a>
+          <a href="{% url 'documenti:fatture_zip' %}?{{ request.GET.urlencode }}" data-export-filtri title="Max 200 fatture">{% icon 'download' size=13 %} ZIP dei PDF filtrati</a>
+          <div class="sep"></div>
+          <a href="{% url 'documenti:export_commercialista' %}">{% icon 'briefcase' size=13 %} Pacchetto per il commercialista…</a>
+        </div>
+      </div>
       {% if user_perms_map|get_item:'documenti.modifica' %}
-        <a href="{% url 'documenti:fattura_create' %}" class="btn btn-brand">
+        <a href="{% url 'documenti:fattura_create' %}" class="btn btn-brand" data-scorciatoia="n" title="Scorciatoia: N">
           {% icon 'plus' size=14 %} Nuova fattura
         </a>
       {% endif %}
     </div>
   </div>
 
-  <form method="get" class="filters" id="fatture-filters">
+  {# I filtri aggiornano solo la tabella (HTMX) e l'indirizzo della pagina #}
+  <form method="get" class="filters" id="fatture-filters"
+        hx-get="{% url 'documenti:fattura_list' %}" hx-target="#fatture-risultati" hx-swap="outerHTML"
+        hx-push-url="true">
     <div class="search" style="flex: 0 0 280px; max-width: none;">
       {% icon 'search' size=14 %}
-      <input type="search" name="q" value="{{ q }}" placeholder="Numero, cliente, P.IVA…" />
+      <input type="search" name="q" value="{{ q }}" placeholder="Numero (es. 12/2026), cliente, P.IVA…" autocomplete="off"
+             hx-get="{% url 'documenti:fattura_list' %}" hx-include="closest form"
+             hx-trigger="input changed delay:300ms, search" hx-target="#fatture-risultati" hx-swap="outerHTML" hx-push-url="true" />
     </div>
 
-    <select name="anno" class="select" onchange="this.form.requestSubmit()" style="width: 110px;">
+    <select name="anno" class="select" onchange="this.form.requestSubmit()" style="width: 136px;" aria-label="Anno">
       <option value="">Tutti gli anni</option>
       {% for a in anni_choices %}
         <option value="{{ a }}" {% if anno == a|stringformat:'s' %}selected{% endif %}>{{ a }}</option>
       {% endfor %}
     </select>
 
-    <select name="pagata" class="select" onchange="this.form.requestSubmit()" style="width: 130px;">
+    <select name="pagata" class="select" onchange="this.form.requestSubmit()" style="width: 150px;" aria-label="Incasso">
       <option value="">Tutte</option>
-      <option value="si" {% if pagata == 'si' %}selected{% endif %}>Pagate</option>
-      <option value="no" {% if pagata == 'no' %}selected{% endif %}>Da pagare</option>
+      <option value="no" {% if pagata == 'no' %}selected{% endif %}>Da incassare</option>
+      <option value="scadute" {% if pagata == 'scadute' %}selected{% endif %}>Scadute</option>
+      <option value="si" {% if pagata == 'si' %}selected{% endif %}>Incassate</option>
     </select>
 
-    <select name="tipo" class="select" onchange="this.form.requestSubmit()" style="width: 240px;">
+    <select name="tipo" class="select" onchange="this.form.requestSubmit()" style="width: 220px;" aria-label="Tipo documento">
       <option value="">Tutti i tipi documento</option>
       {% for val, label in tipi_choices %}
         <option value="{{ val }}" {% if tipo == val %}selected{% endif %}>{{ label }}</option>
@@ -58,7 +62,7 @@
     </select>
 
     {% if sezionali_choices %}
-      <select name="sezionale" class="select" onchange="this.form.requestSubmit()" style="width: 130px;">
+      <select name="sezionale" class="select" onchange="this.form.requestSubmit()" style="width: 130px;" aria-label="Sezionale">
         <option value="">Tutti i sezionali</option>
         {% for s in sezionali_choices %}
           <option value="{{ s }}" {% if sezionale == s %}selected{% endif %}>Sez. {{ s }}</option>
@@ -66,18 +70,16 @@
       </select>
     {% endif %}
 
-    <select name="sdi" class="select" onchange="this.form.requestSubmit()" style="width: 170px;">
+    <select name="sdi" class="select" onchange="this.form.requestSubmit()" style="width: 170px;" aria-label="Stato SDI">
       <option value="">Tutti gli stati SDI</option>
       {% for val, label in sdi_choices %}
         <option value="{{ val }}" {% if sdi == val %}selected{% endif %}>{{ label }}</option>
       {% endfor %}
     </select>
 
-    <div style="margin-left: auto; font: 12px var(--font-body); color: var(--ink-3);">
-      {{ page_obj.start_index|default:0 }}–{{ page_obj.end_index|default:0 }} di {{ paginator.count|intcomma }}
-    </div>
+    {% if request.GET.cliente %}<input type="hidden" name="cliente" value="{{ request.GET.cliente }}">{% endif %}
   </form>
 
-  {% include 'documenti/_fattura_table.html' %}
+  {% include 'documenti/_fattura_risultati.html' %}
 </div>
 {% endblock %}

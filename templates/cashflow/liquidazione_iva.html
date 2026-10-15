@@ -29,7 +29,7 @@
       <p style="margin: 0 0 8px; font: 500 14px var(--font-body);">La stima della liquidazione IVA è spenta.</p>
       <p style="margin: 0; font: 13px var(--font-body); color: var(--ink-3);">
         Scegli la periodicità (mensile o trimestrale) in
-        <a href="{% url 'anagrafiche:anagrafica_azienda' %}">Anagrafica azienda</a>.
+        <a href="{% url 'settings:fatturazione' %}">Impostazioni › Fatturazione</a>.
         Con un regime forfettario o dei minimi l'IVA non si liquida.
       </p>
     </div>
@@ -40,7 +40,7 @@
         {% for a in liq.avvisi %}<div>{{ a }}</div>{% endfor %}
         <div>Le stime finiscono fra le <a href="{% url 'cashflow:scadenza_fiscale_list' %}?tipo=iva">scadenze fiscali</a>
           e nel cashflow; se correggi l'importo a mano, il gestionale non lo aggiorna più.
-          Periodicità: <a href="{% url 'anagrafiche:anagrafica_azienda' %}">Anagrafica azienda</a>.</div>
+          Periodicità: <a href="{% url 'settings:fatturazione' %}">Impostazioni › Fatturazione</a>.</div>
       </div>
     </div>
 

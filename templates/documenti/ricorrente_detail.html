@@ -1,0 +1,158 @@
+{% extends 'base.html' %}
+
+{% block title %}{{ r.nome }}{% endblock %}
+{% block breadcrumb %}
+  <span class="sep">{% icon 'chevronRight' size=14 %}</span>
+  <a href="{% url 'documenti:ricorrente_list' %}" style="color: inherit; text-decoration: none;">Fatture ricorrenti</a>
+  <span class="sep">{% icon 'chevronRight' size=14 %}</span>
+  <span class="current">{{ r.nome }}</span>
+{% endblock %}
+
+{% block content %}
+<div class="page">
+  <div class="page-header">
+    <div>
+      <h1 class="page-title">{{ r.nome }}</h1>
+      <p class="page-subtitle">
+        <a href="{% url 'clienti:detail' r.cliente_id %}">{{ r.cliente }}</a>
+        · {{ r.get_periodicita_display|lower }}, il giorno {{ r.giorno_emissione }}
+        · {% if stato == 'attiva' %}<span class="badge badge-success">Attiva</span>{% elif stato == 'sospesa' %}<span class="badge badge-warn">Sospesa</span>{% else %}<span class="badge badge-neutral">Terminata</span>{% endif %}
+      </p>
+    </div>
+    {% if user_perms_map|get_item:'documenti.modifica' %}
+      <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+        {% if da_emettere %}
+          <form method="post" action="{% url 'documenti:ricorrente_emetti' r.pk %}" style="margin: 0;"
+                onsubmit="return confirm('Emetto {{ da_emettere|length }} fattur{{ da_emettere|length|pluralize:'a,e' }} con la data di oggi?');">
+            {% csrf_token %}
+            <button type="submit" class="btn btn-brand">{% icon 'zap' size=14 %} Emetti ora {% if da_emettere|length == 1 %}il periodo scaduto{% else %}i {{ da_emettere|length }} periodi scaduti{% endif %}</button>
+          </form>
+        {% endif %}
+        <a href="{% url 'documenti:ricorrente_update' r.pk %}" class="btn btn-ghost">{% icon 'edit' size=14 %} Modifica</a>
+        {% if r.attiva %}
+          <form method="post" action="{% url 'documenti:ricorrente_sospendi' r.pk %}" style="margin: 0;">
+            {% csrf_token %}
+            <button type="submit" class="btn btn-ghost">{% icon 'clock' size=14 %} Sospendi</button>
+          </form>
+        {% else %}
+          <button type="button" class="btn btn-ghost" data-apri-dialogo="dialogo-riattiva">{% icon 'check' size=14 %} Riattiva</button>
+        {% endif %}
+        {% if user_perms_map|get_item:'documenti.elimina' %}
+          <a href="{% url 'documenti:ricorrente_delete' r.pk %}" class="btn btn-ghost" style="color: var(--danger);">{% icon 'trash' size=14 %}</a>
+        {% endif %}
+      </div>
+    {% endif %}
+  </div>
+
+  <div class="layout-documento">
+    <div class="flex-col gap-16">
+      <div class="card" style="padding: 24px;">
+        <div class="section-title">Righe</div>
+        <div class="tbl-scroll">
+          <table class="tbl" style="min-width: 560px;">
+            <thead>
+              <tr>
+                <th>Descrizione <span class="text-muted" style="text-transform: none; letter-spacing: 0;">(prossima fattura)</span></th>
+                <th style="text-align: right;">Q.tà</th>
+                <th style="text-align: right;">Prezzo</th>
+                <th>IVA</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for x in righe %}
+                <tr>
+                  <td>
+                    {% if x.articolo %}<strong>{{ x.articolo.codice }}</strong> {% endif %}{{ x.descrizione_esempio|linebreaksbr }}
+                    {% if x.descrizione_esempio != x.descrizione_libera %}<div class="text-sm text-muted mono">{{ x.descrizione_libera }}</div>{% endif %}
+                  </td>
+                  <td class="mono" style="text-align: right;">{{ x.quantita|floatformat:'-2' }}{% if x.um %} {{ x.um }}{% endif %}</td>
+                  <td class="mono" style="text-align: right; white-space: nowrap;">{{ x.importo_unitario|euro:2 }}</td>
+                  <td>{% if x.iva %}{{ x.iva.descrizione }}{% else %}<span class="text-muted">del cliente</span>{% endif %}</td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        {% if r.note %}
+          <div class="text-sm text-muted" style="margin-top: 12px; white-space: pre-line;">Note: {{ r.note }}</div>
+        {% endif %}
+      </div>
+
+      <div class="card" style="padding: 0;">
+        <div style="padding: 18px 24px 8px; font: 600 14px var(--font-display);">Emissioni</div>
+        {% if emissioni %}
+          <div class="tbl-scroll">
+            <table class="tbl" style="min-width: 560px;">
+              <thead><tr><th>Periodo</th><th>Previsto</th><th>Fattura</th><th>Esito</th></tr></thead>
+              <tbody>
+                {% for e in emissioni %}
+                  <tr>
+                    <td>{{ e.etichetta }}</td>
+                    <td style="white-space: nowrap;">{{ e.periodo|date:'d/m/Y' }}</td>
+                    <td style="white-space: nowrap;">
+                      {% if e.fattura %}<a href="{% url 'documenti:fattura_detail' e.fattura_id %}" class="mono">{{ e.fattura.numero }}/{{ e.fattura.anno }}</a>
+                        <span class="text-sm text-muted">del {{ e.fattura.data_documento|date:'d/m/Y' }}</span>
+                      {% elif e.esito == 'emessa' %}<span class="text-muted">eliminata</span>{% else %}—{% endif %}
+                    </td>
+                    <td>
+                      {% if e.esito == 'emessa' %}<span class="badge badge-success">Emessa</span>
+                      {% elif e.esito == 'saltata' %}<span class="badge badge-neutral">Saltata</span>
+                      {% else %}<span class="badge badge-danger">Non riuscita</span>{% endif %}
+                      {% if e.errore %}<div class="text-sm" style="color: {% if e.esito == 'errore' %}var(--danger){% else %}var(--ink-3){% endif %}; margin-top: 4px;">{{ e.errore }}</div>{% endif %}
+                      {% if e.invio %}<div class="text-sm text-muted" style="margin-top: 4px; white-space: pre-line;">{{ e.invio }}</div>{% endif %}
+                    </td>
+                  </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        {% else %}
+          <div class="empty" style="padding: 24px;">Nessuna fattura emessa finora.</div>
+        {% endif %}
+      </div>
+    </div>
+
+    <div class="flex-col gap-16">
+      <div class="card" style="padding: 18px;">
+        <div style="font: 600 14px var(--font-display); margin-bottom: 8px;">Una fattura del periodo</div>
+        {% include 'documenti/_riepilogo_documento.html' with tipo='ricorrente' n_righe=righe|length %}
+        <div class="riepilogo-scadenze">
+          <div class="riepilogo-titolo">Prossime emissioni</div>
+          {% if da_emettere %}
+            <div class="riepilogo-avviso">{% icon 'alert' size=13 %} {{ da_emettere|length }} period{{ da_emettere|length|pluralize:"o,i" }} da emettere: {% for p in da_emettere %}{{ p.etichetta }}{% if not forloop.last %}, {% endif %}{% endfor %}.</div>
+          {% endif %}
+          {% for p in prossime %}
+            <div class="riepilogo-voce"><span>{{ p.previsto|date:'d/m/Y' }}</span><span>{{ p.etichetta }}</span></div>
+          {% empty %}
+            <div class="riepilogo-nota">{% if stato == 'sospesa' %}Sospesa: nessuna emissione.{% else %}Nessuna: la ricorrenza è finita.{% endif %}</div>
+          {% endfor %}
+        </div>
+        <div class="text-sm text-muted" style="margin-top: 12px; line-height: 1.6;">
+          {% if r.forme_pagamento %}Pagamento: {{ r.forme_pagamento }}<br>{% endif %}
+          Dal {{ r.data_inizio|date:'d/m/Y' }}{% if r.data_fine %} al {{ r.data_fine|date:'d/m/Y' }}{% endif %}<br>
+          {% if r.invia_sdi or r.invia_email %}Dopo l'emissione: {% if r.invia_sdi %}invio al SDI{% endif %}{% if r.invia_sdi and r.invia_email %} e {% endif %}{% if r.invia_email %}email al cliente{% endif %}{% else %}Le fatture restano da inviare a mano.{% endif %}
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+{% if not r.attiva and user_perms_map|get_item:'documenti.modifica' %}
+<dialog class="dialogo" id="dialogo-riattiva" aria-labelledby="dialogo-riattiva-titolo">
+  <form method="post" action="{% url 'documenti:ricorrente_sospendi' r.pk %}">
+    {% csrf_token %}
+    <div class="dialogo-testa">
+      <h2 id="dialogo-riattiva-titolo">Riattivare «{{ r.nome }}»?</h2>
+      <p>I periodi passati mentre era sospesa di norma non si fatturano.</p>
+    </div>
+    <div class="dialogo-corpo">
+      <label class="checkbox-inline"><input type="checkbox" name="recupera" value="1"> Emetti anche i periodi passati durante la sospensione</label>
+    </div>
+    <div class="dialogo-piede">
+      <button type="button" class="btn btn-ghost" data-chiudi-dialogo>Annulla</button>
+      <button type="submit" class="btn btn-brand">{% icon 'check' size=14 %} Riattiva</button>
+    </div>
+  </form>
+</dialog>
+{% endif %}
+{% endblock %}

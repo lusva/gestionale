@@ -1,0 +1,61 @@
+{% load static %}<!DOCTYPE html>
+{% comment %}
+  Telaio comune dei documenti stampati (fattura.html, documento.html).
+  Logo, righe dell'intestazione, piè di pagina e colore vengono da
+  Impostazioni › Documenti (AnagraficaAzienda). Stili: css/documenti-pdf.css.
+{% endcomment %}
+<html lang="it">
+<head>
+  <meta charset="utf-8">
+  <title>{% block titolo %}{% endblock %}</title>
+  <link rel="stylesheet" href="{% static 'css/documenti-pdf.css' %}">
+  {% stile_documenti azienda as stile %}
+  <style>
+    :root {
+      --accento: {{ stile.accento }};
+      --accento-scuro: {{ stile.scuro }};
+      --accento-medio: {{ stile.medio }};
+      --accento-tenue: {{ stile.tenue }};
+      --su-accento: {{ stile.su_accento }};
+    }
+  </style>
+</head>
+<body>
+
+  {# ripetuti su ogni pagina (vedi @page nel CSS): vanno prima del contenuto #}
+  <div class="piede">
+    {% if azienda %}
+      <div class="piede-legale">{{ azienda.riga_legale }}</div>
+      {% if azienda.contenuto_footer %}<div>{{ azienda.contenuto_footer|linebreaksbr }}</div>{% endif %}
+    {% endif %}
+    {% block piede %}{% endblock %}
+  </div>
+  <div class="seguito">{% block seguito %}{% endblock %}</div>
+
+  <table class="testata">
+    <tr>
+      <td class="testata-mittente">
+        {% if azienda.logo %}
+          <img class="logo" src="{{ azienda.logo|logo_ridotto }}" alt="{{ azienda.ragione_sociale }}">
+          <div class="mittente-nome">{{ azienda.ragione_sociale }}</div>
+        {% else %}
+          <div class="logo-testo">{{ azienda.ragione_sociale|default:'—' }}</div>
+        {% endif %}
+        <div class="mittente-righe">
+          {% for riga in azienda.righe_intestazione %}<div>{{ riga }}</div>{% endfor %}
+        </div>
+      </td>
+      <td class="testata-documento">
+        <div class="tipo-documento{% block tipo_classe %}{% endblock %}">{% block tipo %}{% endblock %}</div>
+        <table class="estremi">{% block estremi %}{% endblock %}</table>
+        {% block bollino %}{% endblock %}
+      </td>
+    </tr>
+  </table>
+
+  <div class="filetto"></div>
+
+  {% block contenuto %}{% endblock %}
+
+</body>
+</html>

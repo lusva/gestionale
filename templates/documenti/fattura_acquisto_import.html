@@ -78,11 +78,12 @@
       {% csrf_token %}
       <div class="field" style="margin-bottom: 20px;">
         <label for="xml_file">File delle fatture (.xml, .p7m o .zip)</label>
-        <input type="file" name="xml_file" id="xml_file" accept=".xml,.p7m,.zip" multiple required
+        {# niente accept: su macOS i .p7m risultano non selezionabili; i file non validi li scarta il server #}
+        <input type="file" name="xml_file" id="xml_file" multiple required
                style="display: block; width: 100%; padding: 10px; border: 1px dashed var(--border); border-radius: 6px; background: var(--surface-2);" />
         <div class="help-inline" style="margin-top: 6px;">
           Puoi selezionare più file insieme (fino a 100) o caricare uno zip, max 50 MB in totale.
-          Le fatture già presenti vengono saltate, i file che non sono fatture (metadati, PDF) ignorati.
+          Vanno bene anche gli allegati delle PEC del SDI (<code>IT…_xxxxx.xml.p7m</code>). Le fatture già presenti vengono saltate, i file che non sono fatture (metadati, PDF) ignorati.
         </div>
       </div>
 

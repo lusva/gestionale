@@ -1,5 +1,7 @@
 from django.contrib import admin
 
+from accounts.permissions import has_perm
+
 from .models import (
     Agente,
     AnagraficaAzienda,
@@ -85,6 +87,19 @@ class AnagraficaAziendaAdmin(admin.ModelAdmin):
     )
     search_fields = ('ragione_sociale', 'partita_iva', 'codice_fiscale')
     list_filter = ('modulo_magazzino_attivo',)
+
+    # Dati fiscali, logo e intestazione dei documenti: come nel gestionale,
+    # li cambia solo un amministratore, non qualunque utente staff.
+    def has_add_permission(self, request):
+        return has_perm(request.user, 'impostazioni.modifica') and super().has_add_permission(request)
+
+    def has_change_permission(self, request, obj=None):
+        return (has_perm(request.user, 'impostazioni.modifica')
+                and super().has_change_permission(request, obj))
+
+    def has_delete_permission(self, request, obj=None):
+        return (has_perm(request.user, 'impostazioni.modifica')
+                and super().has_delete_permission(request, obj))
 
 
 class IndirizzoInline(admin.TabularInline):

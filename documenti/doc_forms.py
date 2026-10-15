@@ -8,10 +8,14 @@ scadenze.
 from django import forms
 
 from .doc_generic import make_riga_formset
-from .forms import DefaultDateMixin, RigaDocumentoForm, SezionaleBloccatoMixin
+from .forms import (
+    CLIENTE_CON_PREDEFINITI, ContiAziendaMixin, DefaultDateMixin, RigaDocumentoForm,
+    SelectConDati, SezionaleBloccatoMixin,
+)
 from .models import (
     TestataDdt,
     TestataDdtFornitore,
+    TestataFattura,
     TestataNotaCredito,
     TestataOfferta,
     TestataOrdine,
@@ -19,8 +23,10 @@ from .models import (
 
 
 # Widget riusabili per le date e i campi monetari
-DATE_INPUT = forms.DateInput(attrs={'class': 'input', 'type': 'date'})
+DATE_INPUT = forms.DateInput(attrs={'class': 'input', 'type': 'date'}, format='%Y-%m-%d')
 SELECT = forms.Select(attrs={'class': 'select'})
+CLIENTE = SelectConDati(attrs={'class': 'select', 'data-cerca': ''}, dati=CLIENTE_CON_PREDEFINITI)
+FORNITORE = forms.Select(attrs={'class': 'select', 'data-cerca': ''})
 TEXT = forms.TextInput(attrs={'class': 'input'})
 DEC = forms.NumberInput(attrs={'class': 'input mono', 'step': '0.01'})
 INT = forms.NumberInput(attrs={'class': 'input mono', 'step': '1'})
@@ -32,7 +38,7 @@ TEXTAREA = forms.Textarea(attrs={'class': 'textarea', 'rows': 3})
 # ---------------------------------------------------------------------------
 
 
-class TestataOffertaForm(DefaultDateMixin, forms.ModelForm):
+class TestataOffertaForm(ContiAziendaMixin, DefaultDateMixin, forms.ModelForm):
     class Meta:
         model = TestataOfferta
         fields = [
@@ -46,7 +52,7 @@ class TestataOffertaForm(DefaultDateMixin, forms.ModelForm):
             'data_documento': DATE_INPUT,
             'data_registrazione': DATE_INPUT,
             'scadenza': DATE_INPUT,
-            'cliente': SELECT, 'forme_pagamento': SELECT,
+            'cliente': CLIENTE, 'forme_pagamento': SELECT,
             'conto_corrente': SELECT, 'stato': SELECT,
             'spese_imballo': DEC, 'spese_trasporto': DEC,
             'sconto': DEC, 'sconto_incondizionato': DEC,
@@ -62,7 +68,7 @@ RigaOffertaFormSet = make_riga_formset(TestataOfferta, 'testata_offerta', RigaDo
 # ---------------------------------------------------------------------------
 
 
-class TestataOrdineForm(DefaultDateMixin, forms.ModelForm):
+class TestataOrdineForm(ContiAziendaMixin, DefaultDateMixin, forms.ModelForm):
     class Meta:
         model = TestataOrdine
         fields = [
@@ -75,7 +81,7 @@ class TestataOrdineForm(DefaultDateMixin, forms.ModelForm):
         widgets = {
             'data_documento': DATE_INPUT,
             'data_registrazione': DATE_INPUT,
-            'cliente': SELECT, 'forme_pagamento': SELECT,
+            'cliente': CLIENTE, 'forme_pagamento': SELECT,
             'conto_corrente': SELECT, 'stato': SELECT,
             'spese_imballo': DEC, 'spese_trasporto': DEC,
             'sconto': DEC, 'sconto_incondizionato': DEC,
@@ -91,7 +97,7 @@ RigaOrdineFormSet = make_riga_formset(TestataOrdine, 'testata_ordine', RigaDocum
 # ---------------------------------------------------------------------------
 
 
-class TestataDdtForm(DefaultDateMixin, forms.ModelForm):
+class TestataDdtForm(ContiAziendaMixin, DefaultDateMixin, forms.ModelForm):
     class Meta:
         model = TestataDdt
         fields = [
@@ -106,9 +112,9 @@ class TestataDdtForm(DefaultDateMixin, forms.ModelForm):
             'data_documento': DATE_INPUT,
             'data_registrazione': DATE_INPUT,
             'data_ora_ritiro': forms.DateTimeInput(
-                attrs={'class': 'input', 'type': 'datetime-local'},
+                attrs={'class': 'input', 'type': 'datetime-local'}, format='%Y-%m-%dT%H:%M',
             ),
-            'cliente': SELECT, 'forme_pagamento': SELECT,
+            'cliente': CLIENTE, 'forme_pagamento': SELECT,
             'conto_corrente': SELECT, 'stato': SELECT,
             'numero_palette': INT,
             'peso_netto': DEC, 'peso_lordo': DEC,
@@ -127,7 +133,7 @@ RigaDdtFormSet = make_riga_formset(TestataDdt, 'testata_ddt', RigaDocumentoForm)
 # ---------------------------------------------------------------------------
 
 
-class TestataNotaCreditoForm(SezionaleBloccatoMixin, DefaultDateMixin, forms.ModelForm):
+class TestataNotaCreditoForm(ContiAziendaMixin, SezionaleBloccatoMixin, DefaultDateMixin, forms.ModelForm):
     class Meta:
         model = TestataNotaCredito
         fields = [
@@ -140,7 +146,7 @@ class TestataNotaCreditoForm(SezionaleBloccatoMixin, DefaultDateMixin, forms.Mod
         widgets = {
             'data_documento': DATE_INPUT,
             'data_registrazione': DATE_INPUT,
-            'cliente': SELECT, 'forme_pagamento': SELECT,
+            'cliente': CLIENTE, 'forme_pagamento': SELECT,
             'conto_corrente': SELECT, 'tipo_documento': SELECT,
             'sezionale': forms.TextInput(
                 attrs={'class': 'input mono', 'maxlength': 10, 'placeholder': '(opzionale)'},
@@ -149,6 +155,45 @@ class TestataNotaCreditoForm(SezionaleBloccatoMixin, DefaultDateMixin, forms.Mod
             'sconto': DEC, 'sconto_incondizionato': DEC,
             'note': TEXTAREA,
         }
+
+    fatture = forms.ModelMultipleChoiceField(
+        queryset=TestataFattura.objects.none(), required=False, label='Fatture stornate',
+        widget=forms.SelectMultiple(attrs={'class': 'select', 'size': 4, 'data-no-cerca': ''}),
+        help_text='Vanno nell\'XML (DatiFattureCollegate) e la nota ne compensa le rate aperte. '
+                  'Cmd/Ctrl + clic per sceglierne più di una.',
+    )
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        from .fatt_el import numero_documento_sdi
+        if not self.instance.pk and not self.is_bound:
+            self.initial.setdefault('sezionale', TestataNotaCredito.SEZIONALE_PREDEFINITO)
+        fatture = TestataFattura.objects.select_related('cliente').order_by('-anno', '-numero')
+        if self.instance.cliente_id:
+            fatture = fatture.filter(cliente_id=self.instance.cliente_id)
+        else:
+            fatture = fatture.filter(pk__in=fatture.values('pk')[:500])
+        if self.instance.pk:
+            self.initial.setdefault('fatture', list(self.instance.fatture_origine.values_list('pk', flat=True)))
+            fatture = fatture | TestataFattura.objects.filter(pk__in=self.initial['fatture'])
+        self.fields['fatture'].queryset = fatture.distinct()
+        self.fields['fatture'].label_from_instance = lambda f: (
+            f'{numero_documento_sdi(f)} del {f.data_documento:%d/%m/%Y} — {f.cliente}'
+            if f.data_documento else f'{numero_documento_sdi(f)} — {f.cliente}')
+
+    def clean(self):
+        dati = super().clean()
+        cliente = dati.get('cliente')
+        altre = [f for f in dati.get('fatture') or [] if cliente and f.cliente_id != cliente.pk]
+        if altre:
+            self.add_error('fatture', 'Si possono stornare solo fatture dello stesso cliente.')
+        return dati
+
+    def save(self, commit=True):
+        nota = super().save(commit)
+        if commit:
+            nota.fatture_origine.set(self.cleaned_data.get('fatture') or [])
+        return nota
 
 
 RigaNotaCreditoFormSet = make_riga_formset(
@@ -173,7 +218,7 @@ class TestataDdtFornitoreForm(DefaultDateMixin, forms.ModelForm):
         widgets = {
             'data_documento': DATE_INPUT,
             'data_registrazione': DATE_INPUT,
-            'fornitore': SELECT, 'forme_pagamento': SELECT,
+            'fornitore': FORNITORE, 'forme_pagamento': SELECT,
             'conto_corrente': SELECT,
             'numero_palette': INT,
             'peso_netto': DEC, 'peso_lordo': DEC,

@@ -1,0 +1,9 @@
+[Unit]
+Description=Emette le fatture ricorrenti ogni mattina alle 6:00
+
+[Timer]
+OnCalendar=*-*-* 06:00:00
+Persistent=true
+
+[Install]
+WantedBy=timers.target

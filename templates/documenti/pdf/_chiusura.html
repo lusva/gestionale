@@ -1,0 +1,58 @@
+{# Riepilogo IVA e totali. Parametri: totals (calcola_valori), con_iva, etichetta_totale. #}
+<table class="chiusura">
+  <tr>
+    <td class="sinistra">
+      {% if con_iva and totals.iva_dettaglio %}
+        <div class="etichetta">Riepilogo IVA</div>
+        <table class="iva">
+          <thead>
+            <tr>
+              <th>Aliquota</th>
+              <th class="num">Imponibile</th>
+              <th class="num">Imposta</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for iva in totals.iva_dettaglio %}
+              <tr>
+                <td>
+                  {{ iva.aliquota|floatformat:"-2" }}%
+                  {% if iva.natura %}<div class="voce-dettaglio">{{ iva.natura }}{% if iva.descrizione %} · {{ iva.descrizione }}{% endif %}</div>{% endif %}
+                </td>
+                <td class="num">{{ iva.imponibile|floatformat:"2g" }}</td>
+                <td class="num">{{ iva.imposta|floatformat:"2g" }}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      {% endif %}
+    </td>
+    <td class="destra">
+      <table class="totali">
+        <tr><td class="voce-totale">Imponibile</td><td class="num">€ {{ totals.imponibile_lordo|floatformat:"2g" }}</td></tr>
+        {% if totals.sconto %}
+          <tr><td class="voce-totale">Sconto</td><td class="num">− € {{ totals.sconto|floatformat:"2g" }}</td></tr>
+          <tr><td class="voce-totale">Imponibile netto</td><td class="num">€ {{ totals.imponibile|floatformat:"2g" }}</td></tr>
+        {% endif %}
+        <tr><td class="voce-totale">IVA</td><td class="num">€ {{ totals.imposta_totale|floatformat:"2g" }}</td></tr>
+        {% if totals.spese %}
+          <tr><td class="voce-totale">Spese</td><td class="num">€ {{ totals.spese|floatformat:"2g" }}</td></tr>
+        {% endif %}
+        {% if totals.cassa_prev %}
+          <tr><td class="voce-totale">Cassa previdenziale</td><td class="num">€ {{ totals.cassa_prev|floatformat:"2g" }}</td></tr>
+        {% endif %}
+        {% if totals.bollo %}
+          <tr><td class="voce-totale">Imposta di bollo</td><td class="num">€ {{ totals.bollo|floatformat:"2g" }}</td></tr>
+        {% endif %}
+      </table>
+      <div class="totale-finale">
+        <table>
+          <tr>
+            <td class="etichetta-totale">{{ etichetta_totale|default:'Totale documento' }}</td>
+            <td class="num cifra">€ {{ totals.totale|floatformat:"2g" }}</td>
+          </tr>
+        </table>
+      </div>
+    </td>
+  </tr>
+</table>

@@ -2,16 +2,20 @@ from __future__ import annotations
 
 import csv
 import io
+import time
+import uuid
+from decimal import Decimal
 
 from django.contrib import messages
 from django.contrib.auth.mixins import LoginRequiredMixin
+from django.core.paginator import Paginator
 from django.db import IntegrityError, transaction
-from django.db.models import ProtectedError, Q
-from django.http import HttpResponse, HttpResponseRedirect, JsonResponse
+from django.db.models import DecimalField, OuterRef, ProtectedError, Q, Subquery, Sum, Value
+from django.db.models.functions import Coalesce
+from django.http import Http404, HttpResponse, HttpResponseRedirect, JsonResponse
 from django.shortcuts import get_object_or_404, render
-from django.urls import reverse_lazy
+from django.urls import reverse, reverse_lazy
 from django.utils.http import url_has_allowed_host_and_scheme
-from django.utils.text import slugify
 from django.views.generic import (
     CreateView, DeleteView, DetailView, ListView, UpdateView,
 )
@@ -20,11 +24,24 @@ from accounts.permissions import PermRequiredMixin, require_perm
 from audit.models import Azione
 from audit.utils import log as audit_log
 
-from .forms import (
-    SDI_RE, ClienteForm, ContattoForm, normalizza_partita_iva,
-    valida_codice_fiscale,
-)
-from .models import Cliente, Contatto, Settore, StatoCliente, TipoCliente
+from .forms import ClienteForm, ContattoForm
+from .models import Cliente, Contatto, EsitoImportazioneClienti, Settore, StatoCliente
+from .ricerca import CAMPI_CONTATTO, filtra_clienti, filtro_parole, normalizza_query
+
+
+def con_fatturato(qs):
+    """Annota ``fatturato`` (fatture − note di credito, imponibile) su ogni cliente."""
+    from documenti.models import TestataFattura, TestataNotaCredito
+
+    zero = Value(Decimal('0'), output_field=DecimalField(max_digits=14, decimal_places=2))
+
+    def somma(model):
+        return Coalesce(Subquery(
+            model.objects.filter(cliente=OuterRef('pk')).order_by()
+            .values('cliente').annotate(s=Sum('imponibile')).values('s')[:1],
+        ), zero)
+
+    return qs.annotate(fatturato=somma(TestataFattura) - somma(TestataNotaCredito))
 
 
 class ClienteListView(LoginRequiredMixin, ListView):
@@ -34,31 +51,20 @@ class ClienteListView(LoginRequiredMixin, ListView):
     paginate_by = 8
 
     def get_queryset(self):
-        qs = Cliente.objects.all().select_related('account_manager__profile', 'settore')
-        q = self.request.GET.get('q', '').strip()
-        if q:
-            qs = qs.filter(
-                Q(ragione_sociale__icontains=q)
-                | Q(partita_iva__icontains=q)
-                | Q(pec__icontains=q)
-                | Q(contatti__email__icontains=q),
-            ).distinct()
-        stati = self.request.GET.getlist('stato')
-        if stati:
-            qs = qs.filter(stato__in=stati)
-        settori = [s for s in self.request.GET.getlist('settore') if s]
-        if settori:
-            qs = qs.filter(settore__slug__in=settori)
-        return qs
+        qs = con_fatturato(
+            Cliente.objects.all().select_related('account_manager__profile', 'settore')
+            .prefetch_related('contatti'),
+        )
+        return filtra_clienti(qs, self.request.GET)
 
     def get_context_data(self, **kwargs):
         ctx = super().get_context_data(**kwargs)
         ctx['active_nav'] = 'clienti'
-        ctx['q'] = self.request.GET.get('q', '')
+        ctx['q'] = normalizza_query(self.request.GET.get('q'))
         ctx['stati_attivi'] = self.request.GET.getlist('stato')
         ctx['settori_attivi'] = self.request.GET.getlist('settore')
         from django.utils import timezone
-        now = timezone.now()
+        now = timezone.localdate()
         ctx['tot_clienti'] = Cliente.objects.count()
         ctx['tot_nuovi_mese'] = Cliente.objects.filter(
             created_at__year=now.year, created_at__month=now.month,
@@ -104,6 +110,12 @@ class ClienteDetailView(LoginRequiredMixin, DetailView):
         ctx['prossime_attivita'] = c.attivita.filter(completata=False).order_by('data')[:5]
         ctx['tasso_chiusura'] = c.tasso_chiusura
         ctx['fatturato_totale'] = c.fatturato_totale
+        ctx['valore_opportunita'] = sum((o.valore or 0 for o in ctx['opportunita_attive']), 0)
+        from accounts.permissions import has_perm
+        ctx['vede_documenti'] = has_perm(self.request.user, 'documenti.vedi')
+        if ctx['vede_documenti'] and ctx['active_tab'] in ('panoramica', 'documenti'):
+            from documenti.estratto_conto import estratto_conto
+            ctx['ec'] = estratto_conto(c)
         return ctx
 
 
@@ -203,19 +215,16 @@ class ContattoListView(LoginRequiredMixin, ListView):
     paginate_by = 20
 
     def get_queryset(self):
-        qs = Contatto.objects.select_related('cliente').order_by('-primary', 'cognome')
-        q = self.request.GET.get('q', '').strip()
+        qs = Contatto.objects.select_related('cliente').order_by('-primary', 'cognome', 'nome', 'pk')
+        q = normalizza_query(self.request.GET.get('q'))
         if q:
-            qs = qs.filter(
-                Q(nome__icontains=q) | Q(cognome__icontains=q) | Q(email__icontains=q)
-                | Q(cliente__ragione_sociale__icontains=q),
-            )
+            qs = qs.filter(filtro_parole(q, *CAMPI_CONTATTO))
         return qs
 
     def get_context_data(self, **kwargs):
         ctx = super().get_context_data(**kwargs)
         ctx['active_nav'] = 'contatti'
-        ctx['q'] = self.request.GET.get('q', '')
+        ctx['q'] = normalizza_query(self.request.GET.get('q'))
         return ctx
 
 
@@ -288,323 +297,256 @@ TARGET_FIELD_LABELS = {
 }
 
 
+MAX_CSV_BYTES = 2 * 1024 * 1024
+MAX_CSV_ROWS = 2000
+MAX_CSV_COLUMNS = 100
+IMPORT_TTL_SECONDS = 60 * 60
+SESSION_KEY = '_csv_import_payload'
+
+
 def _csv_decode_and_parse(raw_bytes: bytes):
-    """Decodifica con fallback e parsa il CSV restituendo (headers, rows, delimiter)."""
+    """Legge un file limitato senza cambiare i dati del CRM."""
+    if len(raw_bytes) > MAX_CSV_BYTES:
+        raise ValueError('Il file supera il limite di 2 MB.')
     try:
         decoded = raw_bytes.decode('utf-8-sig')
     except UnicodeDecodeError:
         decoded = raw_bytes.decode('latin-1')
-    sample = decoded[:2048]
+    if '\x00' in decoded:
+        raise ValueError('Il file contiene caratteri non validi. Esportalo in formato CSV.')
     try:
-        dialect = csv.Sniffer().sniff(sample, delimiters=',;\t')
-        delimiter = dialect.delimiter
+        dialect = csv.Sniffer().sniff(decoded[:8192], delimiters=',;\t')
     except csv.Error:
-        dialect = csv.excel
-        delimiter = ','
-    reader = csv.reader(io.StringIO(decoded), dialect=dialect)
-    rows = list(reader)
-    if not rows:
-        return [], [], delimiter
-    headers = [h.strip() for h in rows[0]]
-    data_rows = rows[1:]
-    return headers, data_rows, delimiter
+        # Una riga incompleta non deve impedire di riconoscere un CSV italiano
+        # o TSV: la validazione delle singole righe avviene nell'anteprima.
+        try:
+            dialect = csv.Sniffer().sniff(decoded.splitlines()[0] if decoded else '', delimiters=',;\t')
+        except csv.Error:
+            dialect = csv.excel
+    try:
+        reader = csv.reader(io.StringIO(decoded, newline=''), dialect=dialect, strict=True)
+        headers = [h.strip() for h in next(reader, [])]
+        if not headers or not any(headers):
+            raise ValueError('Il file è vuoto.')
+        if len(headers) > MAX_CSV_COLUMNS:
+            raise ValueError('Il file supera il limite di 100 colonne.')
+        if any(not h for h in headers):
+            raise ValueError('Ogni colonna deve avere un’intestazione.')
+        if len({h.casefold() for h in headers}) != len(headers):
+            raise ValueError('Le intestazioni delle colonne devono essere diverse.')
+        rows = []
+        for row in reader:
+            rows.append(row)
+            if len(rows) > MAX_CSV_ROWS:
+                raise ValueError('Il file supera il limite di 2.000 righe. Dividilo in più file.')
+        if not any(any(cell.strip() for cell in row) for row in rows):
+            raise ValueError('Il file contiene solo le intestazioni o righe vuote.')
+    except csv.Error as exc:
+        raise ValueError('CSV non leggibile: controlla separatori, virgolette e dimensioni dei campi.') from exc
+    return headers, rows, dialect.delimiter
 
 
 def _guess_mapping(source_headers):
-    """Prova a indovinare il mapping {source_header: target_field}.
-
-    Match esatto case-insensitive con i target field ufficiali, oppure con
-    alias comuni (es. 'p.iva' → 'partita_iva').
-    """
     aliases = {
         'p.iva': 'partita_iva', 'piva': 'partita_iva', 'p_iva': 'partita_iva',
         'vat': 'partita_iva', 'vat_number': 'partita_iva',
         'ragione sociale': 'ragione_sociale', 'nome': 'ragione_sociale',
         'azienda': 'ragione_sociale', 'denominazione': 'ragione_sociale',
         'cf': 'codice_fiscale', 'codice fiscale': 'codice_fiscale',
-        'city': 'citta', 'città': 'citta',
-        'address': 'indirizzo', 'via': 'indirizzo',
-        'country': 'nazione',
-        'zip': 'cap', 'postal': 'cap',
-        'sdi': 'codice_sdi',
-        'industry': 'settore', 'sector': 'settore',
-        'type': 'tipo',
+        'city': 'citta', 'città': 'citta', 'address': 'indirizzo', 'via': 'indirizzo',
+        'country': 'nazione', 'zip': 'cap', 'postal': 'cap', 'sdi': 'codice_sdi',
+        'industry': 'settore', 'sector': 'settore', 'type': 'tipo',
         'status': 'stato', 'state': 'stato',
     }
-    target_set = set(CSV_HEADERS)
-    mapping = {}
-    for h in source_headers:
-        key = h.strip().lower()
-        if key in target_set:
-            mapping[h] = key
-        elif key.replace(' ', '_') in target_set:
-            mapping[h] = key.replace(' ', '_')
-        elif key in aliases:
-            mapping[h] = aliases[key]
-        else:
-            mapping[h] = ''  # da ignorare di default
+    mapping, used = {}, set()
+    for header in source_headers:
+        key = header.strip().lower()
+        target = key if key in CSV_HEADERS else key.replace(' ', '_')
+        if target not in CSV_HEADERS:
+            target = aliases.get(key, '')
+        mapping[header] = target if target not in used else ''
+        if target:
+            used.add(target)
     return mapping
 
 
-SESSION_KEY = '_csv_import_payload'
-
-def _settore_da_nome(nome: str):
-    """Trova o crea un Settore per nome, con lookup per slug (evita
-    IntegrityError su slug già presenti con nome diverso). Nome senza slug
-    valido → None."""
-    slug = slugify(nome)[:120]
-    if not slug:
-        return None
-    settore = Settore.objects.filter(Q(slug=slug) | Q(nome__iexact=nome)).first()
-    if settore is not None:
-        return settore
-    try:
-        with transaction.atomic():
-            return Settore.objects.create(nome=nome[:100], slug=slug)
-    except IntegrityError:
-        return Settore.objects.filter(Q(slug=slug) | Q(nome__iexact=nome)).first()
+def _mapping_context(payload, mapping=None):
+    return {
+        'step': 2, 'filename': payload['filename'],
+        'source_headers': payload['headers'], 'row_count': len(payload['rows']),
+        'preview_rows': payload['rows'][:5],
+        'mapping': mapping if mapping is not None else payload.get('mapping', _guess_mapping(payload['headers'])),
+        'upload_token': payload['token'],
+    }
 
 
-def _esegui_import(headers, rows, mapping):
-    """Upsert dei clienti per partita IVA.
+def _preview_context(request, payload, plan):
+    action = request.GET.get('azione', '')
+    if action not in {'create', 'update', 'unchanged', 'error'}:
+        action = ''
+    rows = [row for row in plan['rows'] if not action or row['action'] == action]
+    page = Paginator(rows, 50).get_page(request.GET.get('page'))
+    stale = plan['fingerprint'] != payload.get('fingerprint')
+    return {
+        'step': 3, 'filename': payload['filename'], 'row_count': len(payload['rows']), 'plan': plan,
+        'preview_rows_plan': page.object_list, 'preview_page': page,
+        'preview_action': action, 'preview_stale': stale,
+        'upload_token': payload['token'], 'preview_token': payload.get('preview_token', ''),
+        'can_import': not stale and bool(plan['counts']['create'] + plan['counts']['update']),
+        'import_count': plan['counts']['create'] + plan['counts']['update'],
+    }
 
-    In aggiornamento vengono toccati solo i campi mappati e non vuoti nella
-    riga; in creazione i campi mancanti prendono i default del modello.
-    Tutto l'import gira in una transazione; ogni riga in un savepoint così
-    una riga invalida diventa una riga di errore senza annullare le altre.
-    Ritorna ``(created, updated, skipped, errors)``.
-    """
-    source_index = {h: i for i, h in enumerate(headers)}
-    target_to_idx = {}
-    for src, tgt in mapping.items():
-        if tgt and src in source_index and tgt not in target_to_idx:
-            target_to_idx[tgt] = source_index[src]
-    tipi = {v for v, _ in TipoCliente.choices}
-    stati = {v for v, _ in StatoCliente.choices}
-    created, updated, skipped = 0, 0, 0
-    errors: list[tuple[int, str]] = []
 
-    def get_mapped(row, target):
-        """Ritorna il valore grezzo per il `target` applicando il mapping."""
-        idx = target_to_idx.get(target)
-        if idx is None or idx >= len(row):
-            return ''
-        return (row[idx] or '').strip()
+def _store_preview(request, payload, mapping, plan):
+    payload = {**payload, 'mapping': mapping, 'fingerprint': plan['fingerprint'],
+               'preview_token': str(uuid.uuid4())}
+    request.session[SESSION_KEY] = payload
+    return payload
 
-    def scarta(lineno, msg):
-        nonlocal skipped
-        skipped += 1
-        errors.append((lineno, msg))
 
-    with transaction.atomic():
-        for lineno, row in enumerate(rows, start=2):
-            rs = get_mapped(row, 'ragione_sociale')
-            piva_raw = get_mapped(row, 'partita_iva')
-            nazione = get_mapped(row, 'nazione').upper()[:2]
-            if not rs or not piva_raw:
-                scarta(lineno, 'ragione_sociale o partita_iva mancante')
-                continue
-            piva, errore = normalizza_partita_iva(piva_raw, nazione or 'IT')
-            if errore:
-                scarta(lineno, f'P.IVA non valida: {piva_raw}')
-                continue
-
-            valori = {'ragione_sociale': rs[:200]}
-            tipo = get_mapped(row, 'tipo').lower()
-            if tipo:
-                if tipo not in tipi:
-                    scarta(lineno, f'Tipo non valido: {tipo}')
-                    continue
-                valori['tipo'] = tipo
-            stato = get_mapped(row, 'stato').lower()
-            if stato:
-                if stato not in stati:
-                    scarta(lineno, f'Stato non valido: {stato}')
-                    continue
-                valori['stato'] = stato
-            cf = get_mapped(row, 'codice_fiscale').upper().replace(' ', '')
-            if cf:
-                if (nazione or 'IT') == 'IT' and not valida_codice_fiscale(cf):
-                    scarta(lineno, f'Codice fiscale non valido: {cf}')
-                    continue
-                valori['codice_fiscale'] = cf
-            sdi = get_mapped(row, 'codice_sdi').upper()
-            if sdi:
-                if not SDI_RE.match(sdi):
-                    scarta(lineno, f'Codice SDI non valido: {sdi}')
-                    continue
-                valori['codice_sdi'] = sdi
-            for campo, maxlen in (('pec', 254), ('indirizzo', 200), ('cap', 5),
-                                  ('citta', 100), ('note', None)):
-                v = get_mapped(row, campo)
-                if v:
-                    valori[campo] = v[:maxlen] if maxlen else v
-            provincia = get_mapped(row, 'provincia').upper()[:2]
-            if provincia:
-                valori['provincia'] = provincia
-            if nazione:
-                valori['nazione'] = nazione
-            settore_nome = get_mapped(row, 'settore')
-            if settore_nome:
-                settore_obj = _settore_da_nome(settore_nome)
-                if settore_obj is not None:
-                    valori['settore'] = settore_obj
-
-            # Lookup tollerante: P.IVA italiane storiche possono essere
-            # salvate senza il prefisso IT.
-            candidati = [piva]
-            if piva.startswith('IT'):
-                candidati.append(piva[2:])
-            esistenti = list(Cliente.objects.filter(partita_iva__in=candidati)[:2])
-            if len(esistenti) > 1:
-                scarta(lineno, f'P.IVA {piva} presente su più clienti')
-                continue
-            try:
-                with transaction.atomic():
-                    if esistenti:
-                        cliente = esistenti[0]
-                        for campo, v in valori.items():
-                            setattr(cliente, campo, v)
-                        cliente.save()
-                        updated += 1
-                    else:
-                        valori.setdefault('tipo', TipoCliente.AZIENDA)
-                        valori.setdefault('stato', StatoCliente.PROSPECT)
-                        Cliente.objects.create(partita_iva=piva, **valori)
-                        created += 1
-            except IntegrityError as exc:
-                scarta(lineno, f'Errore di salvataggio: {exc}')
-    return created, updated, skipped, errors
+class _AnteprimaCambiata(Exception):
+    pass
 
 
 @require_perm('clienti.importa')
 def import_csv(request):
-    """Import wizard a 2 step.
+    """Caricamento, corrispondenze, anteprima e conferma atomica con ricevuta."""
+    from .importazione import esegui_piano, prepara_import
 
-    Step 1 (GET o POST senza `step`) → upload file. Al POST con `file`:
-        parse, salva in session e passa a step 2.
-    Step 2 (POST con `step=2`) → conferma con mapping {source_col: target}.
-        Esegue l'upsert e mostra il riepilogo.
-    """
-    base_ctx = {
-        'active_nav': 'clienti',
-        'csv_headers': CSV_HEADERS,
-        'target_labels': TARGET_FIELD_LABELS,
-    }
+    base_ctx = {'active_nav': 'clienti', 'csv_headers': CSV_HEADERS,
+                'target_labels': TARGET_FIELD_LABELS}
+
+    def display(extra=None):
+        return render(request, 'clienti/import_csv.html', {**base_ctx, **(extra or {})})
+
+    def result_redirect(receipt):
+        return HttpResponseRedirect(f'{reverse("clienti:import_csv")}?esito={receipt.pk}')
+
+    if request.method == 'GET' and request.GET.get('esempio') == '1':
+        response = HttpResponse(content_type='text/csv; charset=utf-8')
+        response['Content-Disposition'] = 'attachment; filename="esempio-clienti.csv"'
+        response.write('\ufeff')
+        writer = csv.writer(response)
+        writer.writerow(CSV_HEADERS)
+        writer.writerow(['Azienda di esempio', 'azienda', 'Consulenza', 'IT12345678901',
+                         '', '', '', 'Via Roma 1', '20100', 'Milano', 'MI', 'IT',
+                         'prospect', 'Dati dimostrativi: sostituire prima di importare'])
+        return response
+
+    if request.method == 'GET' and request.GET.get('esito'):
+        try:
+            token = uuid.UUID(request.GET['esito'])
+        except ValueError:
+            raise Http404
+        receipt = get_object_or_404(EsitoImportazioneClienti, pk=token, autore=request.user)
+        return display({'done': True, **receipt.riepilogo})
 
     step = request.POST.get('step', '')
+    if request.method == 'POST' and step == '3':
+        # La ricevuta resta valida anche dopo la pulizia/scadenza della sessione.
+        try:
+            token = uuid.UUID(request.POST.get('upload_token', ''))
+        except ValueError:
+            token = None
+        receipt = EsitoImportazioneClienti.objects.filter(pk=token, autore=request.user).first() if token else None
+        if receipt:
+            return result_redirect(receipt)
 
-    # ----------- STEP 1: upload -------------
-    if request.method == 'POST' and step != '2':
+    if request.method == 'POST' and not step:
+        # Un nuovo caricamento invalida il precedente anche se il file non è valido.
+        request.session.pop(SESSION_KEY, None)
         upload = request.FILES.get('file')
         if not upload:
             messages.error(request, 'Seleziona un file CSV.')
-            return render(request, 'clienti/import_csv.html', base_ctx)
+            return display()
         try:
-            raw = upload.read()
-            headers, rows, delimiter = _csv_decode_and_parse(raw)
-        except Exception as exc:
-            messages.error(request, f'Impossibile leggere il file: {exc}')
-            return render(request, 'clienti/import_csv.html', base_ctx)
-        if not headers:
-            messages.error(request, 'File vuoto o non leggibile.')
-            return render(request, 'clienti/import_csv.html', base_ctx)
+            headers, rows, delimiter = _csv_decode_and_parse(upload.read(MAX_CSV_BYTES + 1))
+        except ValueError as exc:
+            messages.error(request, str(exc))
+            return display()
+        payload = {'headers': headers, 'rows': rows, 'delimiter': delimiter,
+                   'filename': upload.name[:255], 'token': str(uuid.uuid4()),
+                   'uploaded_at': time.time()}
+        request.session[SESSION_KEY] = payload
+        return display(_mapping_context(payload))
 
-        # Salva l'intero payload in session per lo step 2 (preview fa un cap)
-        request.session[SESSION_KEY] = {
-            'headers': headers,
-            'rows': rows,
-            'delimiter': delimiter,
-            'filename': upload.name,
-        }
-        mapping = _guess_mapping(headers)
-
-        ctx = dict(base_ctx)
-        ctx.update({
-            'step': 2,
-            'filename': upload.name,
-            'source_headers': headers,
-            'row_count': len(rows),
-            'preview_rows': rows[:5],
-            'mapping': mapping,
-        })
-        return render(request, 'clienti/import_csv.html', ctx)
-
-    # ----------- STEP 2: conferma + import -------------
-    if request.method == 'POST' and step == '2':
+    is_preview = request.method == 'GET' and request.GET.get('fase') == 'anteprima'
+    if request.method == 'POST' or is_preview:
         payload = request.session.get(SESSION_KEY)
-        if not payload:
-            messages.error(request, 'Sessione scaduta, ricarica il file.')
-            return render(request, 'clienti/import_csv.html', base_ctx)
-
-        headers = payload['headers']
-        rows = payload['rows']
-
-        # Leggi mapping dal form
-        mapping = {}
-        for h in headers:
-            target = (request.POST.get(f'map__{h}') or '').strip()
-            if target in CSV_HEADERS:
-                mapping[h] = target
-            else:
-                mapping[h] = ''
-
-        # Valida che i 2 target obbligatori siano coperti
-        mapped_targets = set(mapping.values()) - {''}
-        missing = {'ragione_sociale', 'partita_iva'} - mapped_targets
-        if missing:
-            messages.error(
-                request,
-                f'Devi mappare i campi obbligatori: {", ".join(sorted(missing))}.',
-            )
-            ctx = dict(base_ctx)
-            ctx.update({
-                'step': 2,
-                'filename': payload.get('filename'),
-                'source_headers': headers,
-                'row_count': len(rows),
-                'preview_rows': rows[:5],
-                'mapping': mapping,
-            })
-            return render(request, 'clienti/import_csv.html', ctx)
-
-        # Esegui import
-        try:
-            created, updated, skipped, errors = _esegui_import(
-                headers, rows, mapping,
-            )
-        finally:
-            # Pulisci la session anche in caso di errore imprevisto.
+        if not payload or time.time() - payload.get('uploaded_at', 0) > IMPORT_TTL_SECONDS:
             request.session.pop(SESSION_KEY, None)
+            messages.error(request, 'Il caricamento è scaduto. Seleziona di nuovo il file CSV.')
+            return display()
+        if request.method == 'POST' and request.POST.get('upload_token') != payload['token']:
+            messages.error(request, 'È stato caricato un altro file. Controlla il caricamento corrente prima di continuare.')
+            return display(_mapping_context(payload))
+        if step == 'mapping':
+            # Tornare alle corrispondenze invalida la vecchia conferma.
+            payload = {k: v for k, v in payload.items() if k not in {'fingerprint', 'preview_token'}}
+            request.session[SESSION_KEY] = payload
+            return display(_mapping_context(payload))
+        if step == '2':
+            mapping = {h: request.POST.get(f'map__{h}', '').strip() for h in payload['headers']}
+            targets = [t for t in mapping.values() if t]
+            missing = {'ragione_sociale', 'partita_iva'} - set(targets)
+            duplicate = len(targets) != len(set(targets))
+            invalid = set(targets) - set(CSV_HEADERS)
+            if missing or duplicate or invalid:
+                payload.pop('preview_token', None)
+                payload.pop('fingerprint', None)
+                request.session[SESSION_KEY] = payload
+                if missing:
+                    messages.error(request, 'Collega le colonne Ragione sociale e Partita IVA.')
+                if duplicate:
+                    messages.error(request, 'Ogni campo cliente può essere collegato a una sola colonna.')
+                if invalid:
+                    messages.error(request, 'Scegli i campi cliente tra quelli disponibili.')
+                return display(_mapping_context(payload, mapping))
+            plan = prepara_import(payload['headers'], payload['rows'], mapping)
+            payload = _store_preview(request, payload, mapping, plan)
+            return display(_preview_context(request, payload, plan))
+        if is_preview and payload.get('preview_token'):
+            plan = prepara_import(payload['headers'], payload['rows'], payload['mapping'])
+            if plan['fingerprint'] != payload['fingerprint']:
+                messages.warning(request, 'I dati sono cambiati. Torna alle corrispondenze e controlla una nuova anteprima.')
+            return display(_preview_context(request, payload, plan))
+        if step == '3' and payload.get('preview_token') and request.POST.get('preview_token') == payload['preview_token']:
+            try:
+                with transaction.atomic():
+                    receipt, created = EsitoImportazioneClienti.objects.get_or_create(
+                        pk=payload['token'], defaults={'autore': request.user, 'fingerprint': payload['fingerprint']},
+                    )
+                    if receipt.autore_id != request.user.pk:
+                        raise Http404
+                    if created:
+                        plan = prepara_import(payload['headers'], payload['rows'], payload['mapping'], lock=True)
+                        if plan['fingerprint'] != payload['fingerprint'] or not (plan['counts']['create'] + plan['counts']['update']):
+                            raise _AnteprimaCambiata
+                        counts = esegui_piano(plan)
+                        errors = [[r['line'], r['error']] for r in plan['rows'] if r['action'] == 'error']
+                        receipt.riepilogo = {
+                            'filename': payload['filename'], 'created': counts['create'],
+                            'updated': counts['update'], 'unchanged': counts['unchanged'],
+                            'skipped': counts['error'], 'errors': errors[:50],
+                            'error_overflow': max(0, len(errors) - 50),
+                        }
+                        receipt.save(update_fields=['riepilogo'])
+                        audit_log(Azione.IMPORT, target_type='Cliente', target_id=str(receipt.pk),
+                                  target_label=payload['filename'], request=request,
+                                  meta={key: receipt.riepilogo[key] for key in ('created', 'updated', 'unchanged', 'skipped')})
+            except (_AnteprimaCambiata, IntegrityError):
+                plan = prepara_import(payload['headers'], payload['rows'], payload['mapping'])
+                payload = _store_preview(request, payload, payload['mapping'], plan)
+                messages.warning(request, 'I dati sono cambiati dopo l’anteprima. Nessuna modifica salvata: controlla il riepilogo aggiornato e conferma di nuovo.')
+                return display(_preview_context(request, payload, plan))
+            request.session.pop(SESSION_KEY, None)
+            return result_redirect(receipt)
+        messages.error(request, 'Controlla di nuovo le corrispondenze per generare un’anteprima valida.')
+        return display(_mapping_context(payload))
 
-        total = created + updated
-        if total:
-            messages.success(
-                request,
-                f'Import completato: {created} creati, {updated} aggiornati'
-                + (f', {skipped} scartati' if skipped else '') + '.',
-            )
-        else:
-            messages.warning(request, f'Nessuna riga importata ({skipped} scartate).')
-
-        audit_log(
-            Azione.IMPORT, target_type='Cliente',
-            target_label=f'{payload.get("filename", "csv")}',
-            request=request,
-            meta={'created': created, 'updated': updated, 'skipped': skipped},
-        )
-
-        ctx = dict(base_ctx)
-        ctx.update({
-            'done': True,
-            'created': created, 'updated': updated, 'skipped': skipped,
-            'errors': errors[:50],
-            'error_overflow': max(0, len(errors) - 50),
-        })
-        return render(request, 'clienti/import_csv.html', ctx)
-
-    # GET → step 1 vuoto
-    return render(request, 'clienti/import_csv.html', base_ctx)
+    # GET è read-only: Chrome può precaricare questo link al passaggio del mouse.
+    # Il payload viene sostituito solo da un nuovo caricamento esplicito.
+    return display()
 
 
 _FORMULA_PREFIXES = ('=', '+', '-', '@', '\t', '\r')
@@ -621,20 +563,7 @@ def _csv_safe(value):
 @require_perm('clienti.esporta')
 def export_csv(request):
     """Export CSV dei clienti che matchano gli stessi filtri della list view."""
-    qs = Cliente.objects.all().select_related('settore')
-    q = (request.GET.get('q') or '').strip()
-    if q:
-        qs = qs.filter(
-            Q(ragione_sociale__icontains=q)
-            | Q(partita_iva__icontains=q)
-            | Q(pec__icontains=q),
-        )
-    stati = request.GET.getlist('stato')
-    if stati:
-        qs = qs.filter(stato__in=stati)
-    settori = [s for s in request.GET.getlist('settore') if s]
-    if settori:
-        qs = qs.filter(settore__slug__in=settori)
+    qs = filtra_clienti(Cliente.objects.select_related('settore'), request.GET)
 
     response = HttpResponse(content_type='text/csv; charset=utf-8')
     response['Content-Disposition'] = 'attachment; filename="clienti.csv"'

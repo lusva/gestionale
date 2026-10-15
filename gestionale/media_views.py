@@ -23,6 +23,7 @@ PROTETTI = {
     'certificati': None,
     'rimborsi_km': 'cashflow.vedi',
     'fatture_acquisto_xml': 'documenti.vedi',
+    'fatture_acquisto_allegati': 'documenti.vedi',
 }
 CARTELLE_REGEX = '|'.join(PROTETTI)
 

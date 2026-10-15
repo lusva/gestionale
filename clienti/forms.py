@@ -1,6 +1,7 @@
 import re
 
 from django import forms
+from django.db import transaction
 
 from .models import Cliente, Contatto, Settore, TipoCliente
 
@@ -54,19 +55,19 @@ def valida_codice_fiscale(cf):
 
 class ClienteForm(forms.ModelForm):
     ref_nome = forms.CharField(
-        label='Nome referente', required=False,
+        label='Nome referente', required=False, max_length=100,
         widget=forms.TextInput(attrs={'class': 'input'}),
     )
     ref_cognome = forms.CharField(
-        label='Cognome referente', required=False,
+        label='Cognome referente', required=False, max_length=100,
         widget=forms.TextInput(attrs={'class': 'input'}),
     )
     ref_email = forms.EmailField(
-        label='Email referente', required=False,
+        label='Email referente', required=False, max_length=254,
         widget=forms.EmailInput(attrs={'class': 'input', 'placeholder': 'nome@dominio.it'}),
     )
     ref_tel = forms.CharField(
-        label='Telefono referente', required=False,
+        label='Telefono referente', required=False, max_length=30,
         widget=forms.TextInput(attrs={'class': 'input', 'placeholder': '+39 …'}),
     )
 
@@ -84,6 +85,8 @@ class ClienteForm(forms.ModelForm):
             'partita_iva', 'codice_fiscale', 'codice_sdi', 'pec',
             'indirizzo', 'cap', 'citta', 'provincia', 'nazione',
             'stato', 'account_manager', 'tags', 'note',
+            # proposte nelle fatture e negli altri documenti a questo cliente
+            'forme_pagamento', 'posizione_iva',
         ]
         widgets = {
             'ragione_sociale': forms.TextInput(attrs={'class': 'input', 'placeholder': 'Es. Rossi & Figli S.r.l.'}),
@@ -101,6 +104,8 @@ class ClienteForm(forms.ModelForm):
             'stato': forms.Select(attrs={'class': 'select'}),
             'account_manager': forms.Select(attrs={'class': 'select'}),
             'tags': forms.SelectMultiple(attrs={'class': 'select', 'size': 5}),
+            'forme_pagamento': forms.Select(attrs={'class': 'select'}),
+            'posizione_iva': forms.Select(attrs={'class': 'select'}),
             'note': forms.Textarea(attrs={'class': 'textarea', 'rows': 3, 'placeholder': 'Informazioni aggiuntive…'}),
         }
 
@@ -165,6 +170,7 @@ class ClienteForm(forms.ModelForm):
         pr = (self.cleaned_data.get('provincia') or '').strip().upper()
         return pr
 
+    @transaction.atomic
     def save(self, commit=True):
         cliente = super().save(commit=commit)
         if commit:

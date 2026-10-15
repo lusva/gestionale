@@ -121,15 +121,16 @@ class DocumentiTest(McpBase):
                          numero=ordine['numero'])['structuredContent']
         self.assertEqual(fatt['totale'], '1220.00')
         self.assertEqual(len(fatt['scadenze']), 1)                   # dalla forma di pagamento
-        nc = self.tool('converti_documento', conversione='fattura_in_nota_credito',
-                       numero=fatt['numero'])['structuredContent']
-        self.assertEqual(nc['etichetta'], f'Nota di credito 1/{now().year}')
-        self.assertEqual([m.objects.count() for m in (TestataOrdine, TestataDdt, TestataFattura,
-                                                      TestataNotaCredito)], [1, 1, 1, 1])
+        # prima della nota di credito: una nota totale salda la fattura (compensazione)
         pagata = self.tool('segna_fattura_pagata', numero=fatt['numero'], data_pagamento='2026-10-05')
         self.assertTrue(pagata['structuredContent']['pagata'])
         again = self.tool('segna_fattura_pagata', numero=fatt['numero'])
         self.assertTrue(again['isError'])
+        nc = self.tool('converti_documento', conversione='fattura_in_nota_credito',
+                       numero=fatt['numero'])['structuredContent']
+        self.assertEqual(nc['etichetta'], f'Nota di credito NC/1/{now().year}')   # sezionale NC predefinito
+        self.assertEqual([m.objects.count() for m in (TestataOrdine, TestataDdt, TestataFattura,
+                                                      TestataNotaCredito)], [1, 1, 1, 1])
 
     def test_ddt_senza_prezzi_e_letture(self):
         r = self.tool('crea_ddt', cliente='Rossi', causale_trasporto='Vendita', porto='Franco',
@@ -180,6 +181,40 @@ class CrmCashflowTest(McpBase):
         el = self.tool('scadenze_fiscali', da=str(localdate()),
                        a=str(localdate() + timedelta(days=40)))['structuredContent']
         self.assertGreaterEqual(el['conteggio'], 1)
+
+    def test_rimborsi_km(self):
+        r = self.tool('crea_rimborso_km', partenza='Scandiano', destinazione='Bologna', km=60,
+                      andata_e_ritorno=True, tariffa_km=0.45, cliente='Rossi', anteprima=True)
+        self.assertEqual(r['structuredContent']['importo'], '54.00')
+        self.assertFalse(RimborsoChilometrico.objects.exists())
+        self.tool('crea_rimborso_km', partenza='Scandiano', destinazione='Bologna', km=60,
+                  andata_e_ritorno=True, tariffa_km=0.45, cliente='Rossi')
+        # senza tariffa vale l'ultima usata
+        r = self.tool('crea_rimborso_km', partenza='Scandiano', destinazione='Parma', km=50)
+        self.assertFalse(r['isError'], r)
+        self.assertEqual(r['structuredContent']['importo'], '22.50')
+        r = self.tool('crea_rimborso_km', riepilogo_mensile=True, importo=310, data='2026-09-30')
+        self.assertTrue(r['structuredContent']['riepilogo_mensile'])
+        self.assertEqual(r['structuredContent']['importo'], '310.00')
+        r = self.tool('crea_rimborso_km', riepilogo_mensile=True)
+        self.assertIn('importo', r['structuredContent']['errori'])
+        el = self.tool('elenco_rimborsi_km', stato='bozza')['structuredContent']
+        self.assertEqual(el['conteggio'], 3)
+        self.assertEqual(el['totali']['da_approvare'], '386.50')
+        self.assertEqual(self.tool('elenco_rimborsi_km', cliente='Rossi')['structuredContent']
+                         ['conteggio'], 1)
+        # approvare: solo un amministratore, anche sui propri
+        rid = el['elementi'][0]['id']
+        r = self.tool('cambia_stato_rimborso_km', id=rid, stato='approvato')
+        self.assertTrue(r['isError'])
+        self.utente.profile.ruolo = Ruolo.AMMINISTRATORE
+        self.utente.profile.save()
+        r = self.tool('cambia_stato_rimborso_km', id=rid, stato='pagato')
+        self.assertIn('approvato prima', r['structuredContent']['messaggio'])
+        self.tool('cambia_stato_rimborso_km', id=rid, stato='approvato')
+        r = self.tool('cambia_stato_rimborso_km', id=rid, stato='pagato', data_pagamento='2026-10-03')
+        self.assertFalse(r['isError'], r)
+        self.assertEqual(str(RimborsoChilometrico.objects.get(pk=rid).data_pagamento), '2026-10-03')
 
     def test_cliente(self):
         r = self.tool('crea_cliente', ragione_sociale='Verdi Srl', partita_iva='02643290353',

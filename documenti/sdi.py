@@ -195,19 +195,22 @@ class PECBackend(SDIBackend):
                 "Configurazione PEC SMTP incompleta: imposta pec_mittente, "
                 "pec_smtp_host/user/password sull'AnagraficaAzienda."
             )
+        # Errore IMAP dell'ultima ``fetch_messages`` (che non lo solleva, per
+        # non fermare sdi_pull): lo legge chi registra l'esito della run.
+        self.ultimo_errore = ''
 
     # === Invio SMTP ===
 
-    def _smtp_connect(self):
+    def _smtp_connect(self, timeout: int = _TIMEOUT):
         """Connessione SMTP autenticata: SSL implicito sulla 465 (default dei
         gestori PEC), altrimenti STARTTLS se ``pec_smtp_use_tls``."""
         port = self.az.pec_smtp_port or 465
         ctx = ssl.create_default_context()
         if port == 465:
             s = smtplib.SMTP_SSL(self.az.pec_smtp_host, port,
-                                 context=ctx, timeout=_TIMEOUT)
+                                 context=ctx, timeout=timeout)
         else:
-            s = smtplib.SMTP(self.az.pec_smtp_host, port, timeout=_TIMEOUT)
+            s = smtplib.SMTP(self.az.pec_smtp_host, port, timeout=timeout)
         try:
             if port != 465 and self.az.pec_smtp_use_tls:
                 s.starttls(context=ctx)
@@ -218,12 +221,14 @@ class PECBackend(SDIBackend):
         return s
 
     def send_xml(self, fattura, xml_bytes: bytes, filename: str) -> SDIInvioResult:
+        from .invio import nome_documento
+        nome = nome_documento(fattura)            # «Fattura 3/2026», «Nota di credito NC/1/2026»
         msg = EmailMessage()
-        msg['Subject'] = f'Fattura {fattura.numero}/{fattura.anno}'
+        msg['Subject'] = nome
         msg['From'] = self.az.pec_mittente
         msg['To'] = self.az.pec_destinatario_sdi or CASELLA_SDI_PRIMO_INVIO
         msg.set_content(
-            f'In allegato la fattura elettronica {fattura.numero}/{fattura.anno}.'
+            f'In allegato il file FatturaPA: {nome[0].lower()}{nome[1:]}.'
         )
         msg.add_attachment(
             xml_bytes,
@@ -255,11 +260,11 @@ class PECBackend(SDIBackend):
         return bool(self.az.pec_imap_host and self.az.pec_imap_user
                     and self.az.pec_imap_password)
 
-    def _imap_connect(self):
+    def _imap_connect(self, timeout: int = _TIMEOUT):
         """Login IMAP e apertura della cartella in sola lettura (EXAMINE):
         nessun flag della casella può essere modificato."""
         M = imaplib.IMAP4_SSL(self.az.pec_imap_host, self.az.pec_imap_port or 993,
-                              timeout=_TIMEOUT)
+                              timeout=timeout)
         try:
             M.login(self.az.pec_imap_user, self.az.pec_imap_password)
             cartella = self.az.pec_imap_folder or 'INBOX'
@@ -336,8 +341,9 @@ class PECBackend(SDIBackend):
                     for m in parsed:
                         m.uid = chiave
                     out.extend(parsed)
-        except Exception:
+        except Exception as exc:
             logger.exception('Errore IMAP durante fetch_messages')
+            self.ultimo_errore = f'IMAP {self.az.pec_imap_host}: {exc}'
         return out
 
     def mark_processed(self, uids: Iterable[str]) -> None:
@@ -555,6 +561,111 @@ def _extract_sdi_details(xml_bytes: bytes) -> tuple[str, str]:
     """Estrae descrizione + IdentificativoSdI da una notifica SDI."""
     info = _extract_sdi_info(xml_bytes)
     return (info['descrizione'], info['id_trasmissione'])
+
+
+# ---------------------------------------------------------------------------
+# Verifica della configurazione (comando sdi_verifica e Impostazioni)
+# ---------------------------------------------------------------------------
+
+# Timeout più corti di quelli dell'invio: la verifica gira anche dentro una
+# richiesta web, che deve finire ben prima dei 120 s di gunicorn.
+TIMEOUT_VERIFICA = 15
+
+
+@dataclass
+class Esito:
+    sezione: str            # 'Anagrafica azienda' | 'Invio (SMTP)' | 'Ricezione (IMAP)'
+    ok: bool | None         # None = solo informazione
+    testo: str
+
+
+def verifica_configurazione(azienda, *, giorni: int = GIORNI_FINESTRA,
+                            timeout: int = TIMEOUT_VERIFICA) -> list[Esito]:
+    """Controlla la configurazione SDI via PEC senza inviare nulla: dati
+    dell'anagrafica, login SMTP, login IMAP, apertura della cartella in sola
+    lettura ed email da elaborare. Non solleva: ogni problema è un esito KO
+    (credenziali errate, server irraggiungibile, timeout)."""
+    from stdnum.it import iva as stdnum_iva
+
+    from documenti.fatt_el import _pulisci_piva
+    from documenti.models import MessaggioPecElaborato
+
+    esiti: list[Esito] = []
+
+    def esito(sezione, ok, testo):
+        esiti.append(Esito(sezione, ok, testo))
+
+    sez = 'Anagrafica azienda'
+    if azienda is None:
+        esito(sez, False, 'Anagrafica azienda non configurata.')
+        return esiti
+    if azienda.sdi_provider == azienda.SdiProvider.PEC:
+        esito(sez, True, 'Invio al SDI attivo (PEC).')
+    else:
+        esito(sez, False, f'Invio al SDI: «{azienda.get_sdi_provider_display()}». '
+                          f'Per inviare dalla PEC scegli «PEC SMTP/IMAP».')
+    piva = _pulisci_piva(azienda.partita_iva)
+    if not piva:
+        esito(sez, False, 'Partita IVA mancante: serve per il nome dei file e come trasmittente.')
+    elif stdnum_iva.is_valid(piva):
+        esito(sez, True, f'Partita IVA {piva}.')
+    else:
+        esito(sez, False, f'Partita IVA {azienda.partita_iva} non valida (11 cifre con '
+                          f'controllo): il SDI scarterebbe ogni fattura.')
+    esito(sez, None, f'Mittente {azienda.pec_mittente or "—"} → SDI '
+                     f'{azienda.pec_destinatario_sdi or CASELLA_SDI_PRIMO_INVIO}')
+
+    try:
+        backend = PECBackend(azienda)
+    except ValueError:
+        esito('Invio (SMTP)', False, 'Mancano indirizzo PEC del mittente, server, utente '
+                                     'o password SMTP.')
+        return esiti
+
+    sez = 'Invio (SMTP)'
+    server = f'{azienda.pec_smtp_host}:{azienda.pec_smtp_port or 465}'
+    try:
+        with backend._smtp_connect(timeout=timeout):
+            pass
+        esito(sez, True, f'Accesso a {server} come {azienda.pec_smtp_user} riuscito.')
+    except Exception as exc:
+        esito(sez, False, f'{server}: {_errore_leggibile(exc)}')
+
+    sez = 'Ricezione (IMAP)'
+    if not backend._imap_configurato():
+        esito(sez, False, 'Mancano server, utente o password IMAP: ricevute e fatture '
+                          'di acquisto non arriveranno.')
+        return esiti
+    server = f'{azienda.pec_imap_host}:{azienda.pec_imap_port or 993}'
+    try:
+        with backend._imap_connect(timeout=timeout) as M:
+            uids = backend.cerca_recenti(M, giorni)
+        esito(sez, True, f'Accesso a {server} riuscito, cartella '
+                         f'{azienda.pec_imap_folder or "INBOX"} aperta in sola lettura.')
+        esito(sez, None, f'{len(uids)} email negli ultimi {giorni} giorni, '
+                         f'{MessaggioPecElaborato.objects.count()} già elaborate in totale.')
+    except Exception as exc:
+        esito(sez, False, f'{server}: {_errore_leggibile(exc)}')
+    return esiti
+
+
+def _errore_leggibile(exc: Exception) -> str:
+    """Il messaggio di un errore SMTP/IMAP/rete senza i byte grezzi del server."""
+    import socket
+    if isinstance(exc, smtplib.SMTPAuthenticationError):
+        return 'utente o password non accettati dal server.'
+    if isinstance(exc, imaplib.IMAP4.error) and 'AUTHENTICATIONFAILED' in str(exc).upper():
+        return 'utente o password non accettati dal server.'
+    if isinstance(exc, socket.gaierror):
+        return 'server non trovato: controlla il nome.'
+    if isinstance(exc, (socket.timeout, TimeoutError)):
+        return 'il server non risponde (tempo scaduto).'
+    if isinstance(exc, ConnectionRefusedError):
+        return 'connessione rifiutata: controlla la porta.'
+    testo = exc.args[-1] if exc.args else exc
+    if isinstance(testo, bytes):
+        testo = testo.decode('utf-8', errors='replace')
+    return str(testo or exc.__class__.__name__)[:300]
 
 
 # ---------------------------------------------------------------------------

@@ -36,6 +36,11 @@
         {{ form.tipo }}{{ form.tipo.errors }}
       </div>
       <div class="field" style="grid-column: 1 / -1;">
+        <label for="{{ form.periodo_iva.id_for_label }}">{{ form.periodo_iva.label }}</label>
+        {{ form.periodo_iva }}{{ form.periodo_iva.errors }}
+        <div style="font: 11px var(--font-body); color: var(--ink-3);">{{ form.periodo_iva.help_text }}</div>
+      </div>
+      <div class="field" style="grid-column: 1 / -1;">
         <label for="{{ form.descrizione.id_for_label }}">Descrizione *</label>
         {{ form.descrizione }}{{ form.descrizione.errors }}
       </div>

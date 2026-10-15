@@ -261,17 +261,18 @@ def _cerca_clienti(a, user):
       'e ultime fatture.',
       area='clienti', perm='clienti.vedi', proprieta={'cliente': CLIENTE}, obbligatori=('cliente',))
 def _scheda_cliente(a, user):
-    from documenti.models import TestataFattura
+    from documenti.models import TestataFattura, con_incassi
 
     from documenti.utils import calcola_valori
 
     c = _cliente(a.get('cliente'))
     fatture = TestataFattura.objects.filter(cliente=c)
     anno = now().year
-    non_pagate = fatture.filter(pagata=False).prefetch_related('righe__iva')
-    # il totale su tutte le fatture aperte, l'elenco solo sulle prime 50
-    da_incassare = sum((calcola_valori(f, righe=list(f.righe.all()))['totale'] for f in non_pagate),
-                       Decimal('0'))
+    non_pagate = con_incassi(fatture.filter(pagata=False)).prefetch_related('righe__iva')
+    # il totale su tutte le fatture aperte (meno gli incassi parziali),
+    # l'elenco solo sulle prime 50
+    da_incassare = sum((calcola_valori(f, righe=list(f.righe.all()))['totale'] - f.incassato_tot
+                        for f in non_pagate), Decimal('0'))
     aperte = [documento('fattura', f, dettaglio=False) for f in non_pagate[:50]]
     return {
         **cliente_v2(c),
@@ -337,11 +338,11 @@ def _dettaglio_documento(a, user):
       'scadute) e i totali scaduto / entro 30 giorni / oltre.',
       area='incassi', perm='documenti.vedi', proprieta={'cliente': CLIENTE, 'fino_al': DATA})
 def _scadenziario_attivo(a, user):
-    from documenti.models import ScadenzaFattura
+    from documenti.models import ScadenzaFattura, crediti_aperti
 
     oggi = localdate()
-    qs = ScadenzaFattura.objects.select_related('fattura__cliente').filter(
-        fattura__pagata=False).order_by('data')
+    # il residuo: un incasso parziale riduce il credito
+    qs = crediti_aperti(ScadenzaFattura.objects.select_related('fattura__cliente')).order_by('data')
     if a.get('cliente') not in (None, ''):
         qs = qs.filter(fattura__cliente=_cliente(a['cliente']))
     fino = _giorno(a.get('fino_al'), 'fino_al')
@@ -350,10 +351,10 @@ def _scadenziario_attivo(a, user):
     # totali sul DB, su tutte le rate; l'elenco si ferma alle prime 500
     fra_30 = oggi + timedelta(days=30)
     tot = qs.aggregate(
-        scaduto=Sum('importo', filter=Q(data__lt=oggi)),
-        entro_30_giorni=Sum('importo', filter=Q(data__gte=oggi, data__lte=fra_30)),
-        oltre_30_giorni=Sum('importo', filter=Q(data__gt=fra_30)),
-        totale=Sum('importo'))
+        scaduto=Sum('residuo_db', filter=Q(data__lt=oggi)),
+        entro_30_giorni=Sum('residuo_db', filter=Q(data__gte=oggi, data__lte=fra_30)),
+        oltre_30_giorni=Sum('residuo_db', filter=Q(data__gt=fra_30)),
+        totale=Sum('residuo_db'))
     tot = {k: v or Decimal('0') for k, v in tot.items()}
     elementi = []
     for s in qs[:500]:
@@ -361,9 +362,9 @@ def _scadenziario_attivo(a, user):
         elementi.append({'data': s.data.isoformat(), 'giorni': giorni,
                          'fattura': etichetta('fattura', s.fattura),
                          'cliente': s.fattura.cliente.ragione_sociale if s.fattura.cliente_id else '',
-                         'importo': _d(s.importo)})
+                         'importo': _d(s.importo), 'residuo': _d(s.residuo_db)})
     return tabella('Scadenziario clienti', [('data', 'Scadenza'), ('giorni', 'Giorni'),
-                   ('fattura', 'Fattura'), ('cliente', 'Cliente'), ('importo', 'Importo €')],
+                   ('fattura', 'Fattura'), ('cliente', 'Cliente'), ('residuo', 'Da incassare €')],
                    elementi, totali={k: _d(v) for k, v in tot.items()})
 
 
@@ -652,6 +653,24 @@ def _segna_pagata(a, user):
     servizi.segna_pagata(f, a.get('data_pagamento'))
     return {**documento('fattura', f, dettaglio=False),
             'messaggio': f'{etichetta("fattura", f)} segnata pagata il {f.data_pagamento:%d/%m/%Y}.'}
+
+
+@tool('registra_incasso', 'Registra incasso',
+      "Registra un incasso, anche parziale, su una fattura di vendita: copre le rate aperte dalla "
+      "prima fino all'importo (tutto il residuo, se l'importo manca).",
+      area='incassi', perm='documenti.modifica', lettura=False,
+      proprieta={'numero': NUMERO, 'anno': ANNO, 'sezionale': SEZIONALE,
+                 'importo': {'type': 'number'}, 'data': DATA},
+      obbligatori=('numero',))
+def _registra_incasso(a, user):
+    f = servizi.trova_documento('fattura', a.get('numero'), a.get('anno'), a.get('sezionale', ''))
+    incassi = servizi.incassa(f, a.get('importo'), a.get('data'))
+    totale = sum((i.importo for i in incassi), Decimal('0'))
+    return {**documento('fattura', f, dettaglio=False),
+            'incassato': _d(totale),
+            'rate': [{'scadenza': i.scadenza.data.isoformat(), 'importo': _d(i.importo)} for i in incassi],
+            'messaggio': f'Registrato incasso di {totale} € su {etichetta("fattura", f)}'
+                         + (': fattura saldata.' if f.pagata else '.')}
 
 
 @tool('registra_pagamento_fornitore', 'Registra pagamento a fornitore',
@@ -1027,38 +1046,154 @@ def _crea_spesa(a, user):
             'messaggio': f'Spesa «{spesa.descrizione}» creata con {nuove} scadenze.'}
 
 
+# --------------------------------------------------------------------------- #
+# Rimborsi chilometrici
+# --------------------------------------------------------------------------- #
+
+STATI_RIMBORSO = ['bozza', 'approvato', 'pagato']
+
+
+def _rimborso(r) -> dict:
+    return {'id': r.pk, 'data': r.data.isoformat(),
+            'amministratore': r.amministratore.get_full_name() or r.amministratore.get_username(),
+            'riepilogo_mensile': r.is_riepilogo_mensile,
+            'tratta': 'Riepilogo mensile' if r.is_riepilogo_mensile
+            else f'{r.partenza} → {r.destinazione}',
+            'km': _d(r.km), 'tariffa_km': str(r.tariffa_km) if r.tariffa_km is not None else None,
+            'importo': _d(r.importo), 'causale': r.causale,
+            'cliente': r.cliente.ragione_sociale if r.cliente_id else None,
+            'stato': r.get_stato_display(),
+            'data_pagamento': r.data_pagamento.isoformat() if r.data_pagamento else None,
+            'url': _url('cashflow:rimborso_km_update', r.pk)}
+
+
+@tool('elenco_rimborsi_km', 'Rimborsi chilometrici',
+      'Le trasferte e i riepiloghi mensili dei rimborsi km, per stato, periodo, cliente o '
+      'tratta, con i totali da approvare e da pagare.',
+      area='cashflow', perm='cashflow.vedi',
+      proprieta={'stato': {'type': 'string', 'enum': STATI_RIMBORSO}, 'da': DATA, 'a': DATA,
+                 'cliente': CLIENTE,
+                 'testo': {'type': 'string', 'description': 'Cerca in partenza, destinazione e causale.'},
+                 'solo_miei': {'type': 'boolean', 'description': "Solo i rimborsi dell'utente collegato."}})
+def _elenco_rimborsi(a, user):
+    from cashflow.models import RimborsoChilometrico
+
+    qs = RimborsoChilometrico.objects.select_related('amministratore', 'cliente')
+    if a.get('stato') not in (None, ''):
+        if a['stato'] not in STATI_RIMBORSO:
+            raise DatiNonValidi({'stato': f'Stato sconosciuto: {a["stato"]}.'})
+        qs = qs.filter(stato=a['stato'])
+    da, al = _giorno(a.get('da'), 'da'), _giorno(a.get('a'), 'a')
+    if da:
+        qs = qs.filter(data__gte=da)
+    if al:
+        qs = qs.filter(data__lte=al)
+    if a.get('cliente') not in (None, ''):
+        qs = qs.filter(cliente=_cliente(a['cliente']))
+    testo = str(a.get('testo') or '').strip()
+    if testo:
+        qs = qs.filter(Q(partenza__icontains=testo) | Q(destinazione__icontains=testo)
+                       | Q(causale__icontains=testo))
+    if a.get('solo_miei') is True:
+        qs = qs.filter(amministratore=user)
+    tot = qs.aggregate(km_totali=Sum('km'), importo_totale=Sum('importo'),
+                       da_approvare=Sum('importo', filter=Q(stato='bozza')),
+                       da_pagare=Sum('importo', filter=~Q(stato='pagato')))
+    elementi = [_rimborso(r) for r in qs[:300]]
+    return tabella('Rimborsi chilometrici', [('data', 'Data'), ('amministratore', 'Chi'),
+                   ('tratta', 'Tratta'), ('km', 'Km'), ('importo', 'Importo €'), ('stato', 'Stato')],
+                   elementi, totali={k: _d(v or Decimal('0')) for k, v in tot.items()})
+
+
 @tool('crea_rimborso_km', 'Crea rimborso chilometrico',
-      "Un rimborso chilometrico per una trasferta dell'utente: importo = km × tariffa.",
+      "Un rimborso chilometrico dell'utente collegato, in bozza. Trasferta singola: importo = km × "
+      'tariffa (con andata_e_ritorno i km si raddoppiano; senza tariffa_km vale l\'ultima usata '
+      "dall'utente). Riepilogo mensile: riepilogo_mensile=true e l'importo totale del mese.",
       area='cashflow', perm='cashflow.modifica', lettura=False,
-      proprieta={'data': DATA, 'partenza': S, 'destinazione': S, 'km': {'type': 'number'},
+      proprieta={'data': {'type': 'string', 'description': 'Data della trasferta (o un giorno del '
+                                                           'mese per il riepilogo), AAAA-MM-GG; oggi se manca.'},
+                 'partenza': S, 'destinazione': S,
+                 'km': {'type': 'number', 'description': 'Km percorsi (di sola andata se andata_e_ritorno).'},
+                 'andata_e_ritorno': {'type': 'boolean', 'description': 'true = i km valgono doppi.'},
                  'tariffa_km': {'type': 'number', 'description': '€/km, es. dalle tabelle ACI.'},
-                 'causale': S, 'cliente': CLIENTE},
-      obbligatori=('partenza', 'destinazione', 'km', 'tariffa_km'))
+                 'riepilogo_mensile': {'type': 'boolean',
+                                       'description': 'Totale forfettario del mese, senza tratta né km.'},
+                 'importo': {'type': 'number', 'description': 'Solo per il riepilogo mensile.'},
+                 'causale': S, 'cliente': CLIENTE, 'note': S})
 def _crea_rimborso(a, user):
     from cashflow.models import RimborsoChilometrico
 
     errori = {}
-    km = servizi._decimale(a.get('km'), 'km', errori)
-    tariffa = None
-    if a.get('tariffa_km') in (None, ''):
-        errori['tariffa_km'] = 'Obbligatoria.'
-    else:
-        try:
-            tariffa = Decimal(str(a['tariffa_km'])).quantize(Decimal('0.0001'))
-            if tariffa <= 0:
-                errori['tariffa_km'] = 'Deve essere maggiore di zero.'
-        except Exception:                                   # noqa: BLE001
-            errori['tariffa_km'] = 'Non è un numero.'
-    for campo in ('partenza', 'destinazione'):
-        if not str(a.get(campo) or '').strip():
-            errori[campo] = 'Obbligatoria.'
+    riepilogo = a.get('riepilogo_mensile') is True
+    giorno = _giorno(a.get('data'), 'data', predefinito=localdate())
     cliente = servizi.risolvi_cliente(a.get('cliente'), 'cliente', errori, obbligatorio=False)
+    dati = {'data': giorno, 'amministratore': user, 'is_riepilogo_mensile': riepilogo,
+            'causale': str(a.get('causale') or '').strip()[:200], 'cliente': cliente,
+            'note': str(a.get('note') or '')}
+    if riepilogo:
+        dati['importo'] = servizi._decimale(a.get('importo'), 'importo', errori)
+    else:
+        for campo in ('partenza', 'destinazione'):
+            dati[campo] = str(a.get(campo) or '').strip()[:200]
+            if not dati[campo]:
+                errori[campo] = 'Obbligatoria.'
+        km = servizi._decimale(a.get('km'), 'km', errori)
+        if km is not None and a.get('andata_e_ritorno') is True:
+            km *= 2
+        if km is not None and km >= 1000000:
+            errori['km'] = 'Troppi km.'
+        dati['km'] = km
+        if a.get('tariffa_km') in (None, ''):
+            ultimo = (RimborsoChilometrico.objects.filter(amministratore=user, tariffa_km__gt=0)
+                      .order_by('-data', '-pk').first())
+            if ultimo is None:
+                errori['tariffa_km'] = 'Obbligatoria: nessuna tariffa usata in precedenza.'
+            else:
+                dati['tariffa_km'] = ultimo.tariffa_km
+        else:
+            try:
+                tariffa = Decimal(str(a['tariffa_km']).strip()).quantize(Decimal('0.0001'))
+            except (ArithmeticError, ValueError, TypeError):
+                errori['tariffa_km'] = 'Non è un numero.'
+            else:
+                if not tariffa.is_finite() or tariffa <= 0 or tariffa >= 100:
+                    errori['tariffa_km'] = 'Deve essere maggiore di zero (€/km).'
+                dati['tariffa_km'] = tariffa
     if errori:
         raise DatiNonValidi(errori)
-    r = RimborsoChilometrico.objects.create(
-        data=_giorno(a.get('data'), 'data', predefinito=localdate()), amministratore=user,
-        partenza=str(a['partenza']).strip()[:200], destinazione=str(a['destinazione']).strip()[:200],
-        km=km, tariffa_km=tariffa, causale=str(a.get('causale') or '')[:200], cliente=cliente)
-    return {'id': r.pk, 'data': r.data.isoformat(), 'tratta': f'{r.partenza} → {r.destinazione}',
-            'km': _d(r.km), 'importo': _d(r.importo), 'stato': r.get_stato_display(),
-            'messaggio': f'Rimborso di {r.importo} € registrato ({r.partenza} → {r.destinazione}).'}
+    r = RimborsoChilometrico.objects.create(**dati)
+    r = RimborsoChilometrico.objects.select_related('amministratore', 'cliente').get(pk=r.pk)
+    cosa = f'riepilogo di {r.data:%m/%Y}' if riepilogo else f'{r.partenza} → {r.destinazione}, {_d(r.km)} km'
+    return {**_rimborso(r), 'messaggio': f'Rimborso di {r.importo} € registrato ({cosa}).'}
+
+
+@tool('cambia_stato_rimborso_km', 'Approva o paga rimborso km',
+      'Porta un rimborso chilometrico (per id, vedi elenco_rimborsi_km) in approvato o pagato, o '
+      'lo riporta indietro. Solo un Amministratore (anche sui propri rimborsi); una bozza va '
+      'approvata prima di essere pagata.',
+      area='cashflow', perm='cashflow.modifica', lettura=False,
+      proprieta={'id': {'type': 'integer', 'description': 'Id del rimborso.'},
+                 'stato': {'type': 'string', 'enum': STATI_RIMBORSO},
+                 'data_pagamento': {'type': 'string', 'description': 'Per «pagato», AAAA-MM-GG; oggi se manca.'}},
+      obbligatori=('id', 'stato'))
+def _stato_rimborso(a, user):
+    from cashflow.models import RimborsoChilometrico, StatoRimborso, puo_approvare_rimborsi
+
+    if not puo_approvare_rimborsi(user):
+        raise DatiNonValidi({'stato': 'Solo un amministratore può approvare o pagare i rimborsi.'})
+    stato = a.get('stato')
+    if stato not in STATI_RIMBORSO:
+        raise DatiNonValidi({'stato': f'Stato sconosciuto: {stato}.'})
+    pk = _intero(a.get('id'), 'id')
+    r = RimborsoChilometrico.objects.select_related('amministratore', 'cliente').filter(pk=pk).first()
+    if r is None:
+        raise DatiNonValidi({'id': f'Nessun rimborso con id {pk}.'})
+    if stato == StatoRimborso.PAGATO and r.stato == StatoRimborso.BOZZA:
+        raise DatiNonValidi({'stato': 'Il rimborso è in bozza: va approvato prima di essere pagato.'})
+    prima = r.get_stato_display()
+    r.stato = stato
+    r.data_pagamento = (_giorno(a.get('data_pagamento'), 'data_pagamento', predefinito=localdate())
+                        if stato == StatoRimborso.PAGATO else None)
+    r.save()
+    return {**_rimborso(r), 'messaggio': f'Rimborso {r.pk} ({r.importo} €): da {prima} a '
+                                         f'{r.get_stato_display()}.'}

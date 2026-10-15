@@ -1,0 +1,82 @@
+{% extends 'settings/_settings_base.html' %}
+
+{% block title %}Impostazioni · Fatturazione{% endblock %}
+
+{% block settings_content %}
+<form method="post" class="card" style="padding: 24px;">
+  {% csrf_token %}
+  <div class="flex-between mb-16">
+    <div>
+      <div style="font: 600 16px var(--font-display);">Liquidazione IVA</div>
+      <div style="font: 13px var(--font-body); color: var(--ink-3);">
+        Ogni quanto liquidi e versi l'IVA. Il gestionale stima l'importo dalle fatture emesse e
+        ricevute e lo mette fra le scadenze fiscali e nel cashflow.
+      </div>
+    </div>
+    {% if puo_modificare and azienda %}
+      <button type="submit" class="btn btn-brand">{% icon 'check' size=14 %} Salva</button>
+    {% endif %}
+  </div>
+
+  {% if not azienda %}
+    <div class="callout warn">
+      <div class="ico">{% icon 'alert' size=14 %}</div>
+      <div>Compila prima l'<a href="{% url 'anagrafiche:anagrafica_azienda' %}">anagrafica dell'azienda</a>.</div>
+    </div>
+  {% else %}
+    {% if senza_iva %}
+      <div class="callout warn mb-16">
+        <div class="ico">{% icon 'alert' size=14 %}</div>
+        <div>Il regime fiscale è «{{ regime }}»: l'IVA non si liquida, quindi nessuna stima viene calcolata
+          qualunque sia la scelta qui sotto.</div>
+      </div>
+    {% endif %}
+
+    <div class="iva-scelte">
+      <label class="iva-scelta {% if scelta == 'trimestrale' %}attiva{% endif %}">
+        <input type="radio" name="liquidazione_iva" value="trimestrale" {% if scelta == 'trimestrale' %}checked{% endif %} {% if not puo_modificare %}disabled{% endif %} />
+        <div>
+          <div class="iva-titolo">Trimestrale</div>
+          <div class="iva-testo">Versamenti entro il 16 maggio, 20 agosto e 16 novembre; il quarto trimestre
+            entro il 16 marzo dell'anno dopo. Si aggiunge l'1% di interessi.</div>
+        </div>
+      </label>
+      <label class="iva-scelta {% if scelta == 'mensile' %}attiva{% endif %}">
+        <input type="radio" name="liquidazione_iva" value="mensile" {% if scelta == 'mensile' %}checked{% endif %} {% if not puo_modificare %}disabled{% endif %} />
+        <div>
+          <div class="iva-titolo">Mensile</div>
+          <div class="iva-testo">Versamento entro il 16 del mese successivo, senza interessi.</div>
+        </div>
+      </label>
+      <label class="iva-scelta {% if scelta == '' %}attiva{% endif %}">
+        <input type="radio" name="liquidazione_iva" value="" {% if scelta == '' %}checked{% endif %} {% if not puo_modificare %}disabled{% endif %} />
+        <div>
+          <div class="iva-titolo">Non calcolare</div>
+          <div class="iva-testo">Nessuna stima: le scadenze IVA le inserisci a mano.</div>
+        </div>
+      </label>
+    </div>
+
+    <div style="font: 12px/1.5 var(--font-body); color: var(--ink-3); margin-top: 16px;">
+      La periodicità trimestrale è un'opzione legata al volume d'affari: se hai dubbi chiedi al commercialista.
+      Cambiandola, le stime ancora da pagare vengono ricalcolate; le scadenze pagate o corrette a mano restano.
+      Vedi il dettaglio in <a href="{% url 'cashflow:liquidazione_iva' %}">Cashflow › Liquidazione IVA</a>.
+      {% if not puo_modificare %}<br>Per cambiarla serve il permesso di modificare le impostazioni.{% endif %}
+    </div>
+  {% endif %}
+</form>
+
+<style>
+  .iva-scelte { display: grid; gap: 10px; }
+  .iva-scelta {
+    display: flex; gap: 12px; align-items: flex-start;
+    padding: 14px 16px;
+    border: 1px solid var(--border); border-radius: var(--r-md);
+    background: var(--surface); cursor: pointer;
+  }
+  .iva-scelta:has(input:checked) { border-color: var(--brand-violet); background: color-mix(in oklab, var(--brand-violet) 6%, var(--surface)); }
+  .iva-scelta input { margin-top: 3px; accent-color: var(--brand-purple); }
+  .iva-titolo { font: 600 14px var(--font-body); color: var(--ink); }
+  .iva-testo { font: 13px/1.5 var(--font-body); color: var(--ink-3); margin-top: 2px; }
+</style>
+{% endblock %}

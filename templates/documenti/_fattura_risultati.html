@@ -1,0 +1,8 @@
+{% comment %}
+  Risultati della lista fatture: la tabella (sostituita da HTMX quando si
+  cambiano i filtri) e, fuori banda, i conteggi nel sottotitolo.
+{% endcomment %}
+<div id="fatture-risultati">
+  {% include 'documenti/_fattura_table.html' %}
+</div>
+{% if request.htmx %}{% include 'documenti/_fattura_kpi.html' with oob=True %}{% endif %}

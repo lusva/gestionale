@@ -34,13 +34,16 @@ class FornitoreForm(forms.ModelForm):
             'ragione_sociale', 'nome', 'cognome',
             'partita_iva', 'codice_fiscale',
             'email', 'telefono',
-            'fatturazione_elettronica',
+            'fatturazione_elettronica', 'forme_pagamento',
         ]
         widgets = {
             'ragione_sociale': TEXT, 'nome': TEXT, 'cognome': TEXT,
             'partita_iva': TEXT_MONO, 'codice_fiscale': TEXT_MONO,
             'email': EMAIL, 'telefono': TEL,
-            'fatturazione_elettronica': SELECT,
+            'fatturazione_elettronica': SELECT, 'forme_pagamento': SELECT,
+        }
+        help_texts = {
+            'forme_pagamento': 'Proposta nelle fatture di acquisto inserite a mano, per calcolarne le scadenze.',
         }
 
     def clean_partita_iva(self):
@@ -205,7 +208,9 @@ ScadenzaFormSet = forms.inlineformset_factory(
 
 
 class AnagraficaAziendaForm(forms.ModelForm):
-    """Form singleton per l'anagrafica dell'azienda titolare del gestionale."""
+    """Form singleton per l'anagrafica dell'azienda titolare del gestionale.
+    Logo, intestazione e piè di pagina dei documenti sono in
+    ``IntestazioneDocumentiForm`` (Impostazioni › Documenti)."""
 
     class Meta:
         model = AnagraficaAzienda
@@ -214,9 +219,8 @@ class AnagraficaAziendaForm(forms.ModelForm):
             'indirizzo_legale', 'comune_legale', 'cap_legale', 'prov_legale',
             'indirizzo_op', 'comune_op', 'cap_op',
             'email', 'telefono',
-            'logo', 'intestazione_documenti', 'contenuto_footer',
             'fatturazione_elettronica', 'profilo_fiscale',
-            'liquidazione_iva', 'modulo_magazzino_attivo',
+            'modulo_magazzino_attivo',
             'certificato_p12', 'certificato_password', 'firma_motivo',
         ]
         widgets = {
@@ -227,13 +231,9 @@ class AnagraficaAziendaForm(forms.ModelForm):
             'indirizzo_op': TEXT, 'comune_op': TEXT,
             'cap_op': TEXT_MONO,
             'email': EMAIL, 'telefono': TEL,
-            'intestazione_documenti': TEXT,
-            'contenuto_footer': TEXTAREA,
             'fatturazione_elettronica': SELECT,
             'profilo_fiscale': SELECT,
-            'liquidazione_iva': SELECT,
             'firma_motivo': TEXT,
-            'logo': forms.FileInput(attrs={'accept': 'image/*', 'class': 'logo-input'}),
             'certificato_p12': forms.FileInput(attrs={'class': 'input', 'accept': '.p12,.pfx'}),
             'certificato_password': forms.PasswordInput(
                 attrs={'class': 'input', 'autocomplete': 'new-password',
@@ -249,3 +249,54 @@ class AnagraficaAziendaForm(forms.ModelForm):
         if not pwd and self.instance and self.instance.pk:
             return self.instance.certificato_password
         return pwd
+
+
+class IntestazioneDocumentiForm(forms.ModelForm):
+    """Logo, intestazione, piè di pagina e colore dei documenti stampati
+    (Impostazioni › Documenti, solo amministratori). I dati dell'azienda sono
+    gli stessi dell'anagrafica: cambiarli qui li cambia anche lì."""
+
+    rimuovi_logo = forms.BooleanField(
+        required=False, label='Rimuovi il logo',
+        help_text='Senza logo, in testa ai documenti va la ragione sociale.',
+    )
+
+    class Meta:
+        model = AnagraficaAzienda
+        fields = [
+            'logo', 'ragione_sociale',
+            'indirizzo_legale', 'cap_legale', 'comune_legale', 'prov_legale',
+            'partita_iva', 'codice_fiscale',
+            'email', 'telefono', 'sito_web',
+            'intestazione_documenti',
+            'rea', 'capitale_sociale', 'contenuto_footer',
+            'colore_documenti',
+        ]
+        widgets = {
+            'logo': forms.FileInput(attrs={
+                'accept': 'image/png,image/jpeg,image/webp', 'class': 'logo-input',
+            }),
+            'ragione_sociale': TEXT,
+            'indirizzo_legale': TEXT, 'cap_legale': TEXT_MONO,
+            'comune_legale': TEXT, 'prov_legale': SELECT,
+            'partita_iva': TEXT_MONO, 'codice_fiscale': TEXT_MONO,
+            'email': EMAIL, 'telefono': TEL,
+            'sito_web': forms.TextInput(attrs={'class': 'input', 'placeholder': 'www.esempio.it'}),
+            'intestazione_documenti': forms.Textarea(attrs={'class': 'textarea', 'rows': 4}),
+            'rea': forms.TextInput(attrs={'class': 'input mono', 'placeholder': 'RE-123456'}),
+            'capitale_sociale': forms.TextInput(attrs={'class': 'input', 'placeholder': '€ 10.000,00 i.v.'}),
+            'contenuto_footer': forms.Textarea(attrs={'class': 'textarea', 'rows': 2}),
+            'colore_documenti': forms.TextInput(attrs={'type': 'color', 'class': 'colore-input'}),
+        }
+
+    def clean_colore_documenti(self):
+        return (self.cleaned_data.get('colore_documenti') or '').lower()
+
+    def save(self, commit=True):
+        azienda = super().save(commit=False)
+        # un logo nuovo vince sulla spunta «rimuovi»
+        if self.cleaned_data.get('rimuovi_logo') and 'logo' not in self.files:
+            azienda.logo = None
+        if commit:
+            azienda.save()
+        return azienda

@@ -67,6 +67,19 @@
             {{ form.pec }}
             {{ form.pec.errors }}
           </div>
+          <div class="field">
+            <label for="{{ form.forme_pagamento.id_for_label }}">Forma di pagamento abituale</label>
+            {{ form.forme_pagamento }}
+            {{ form.forme_pagamento.errors }}
+          </div>
+          <div class="field">
+            <label for="{{ form.posizione_iva.id_for_label }}">IVA abituale</label>
+            {{ form.posizione_iva }}
+            {{ form.posizione_iva.errors }}
+          </div>
+          <div class="field" style="grid-column: 1 / -1; margin-top: -6px;">
+            <span class="text-sm text-muted">Forma di pagamento e IVA si propongono da sole nelle fatture e nelle offerte a questo cliente.</span>
+          </div>
         </div>
       </div>
 

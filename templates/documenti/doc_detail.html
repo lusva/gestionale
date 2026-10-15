@@ -5,14 +5,14 @@
   <span class="sep">{% icon 'chevronRight' size=14 %}</span>
   <a href="{% url urls.list %}" style="color: inherit; text-decoration: none;">{{ doc_label_plural }}</a>
   <span class="sep">{% icon 'chevronRight' size=14 %}</span>
-  <span class="current">{{ documento.numero }}/{{ documento.anno }}</span>
+  <span class="current">{% if documento.sezionale %}{{ documento.sezionale }}/{% endif %}{{ documento.numero }}/{{ documento.anno }}</span>
 {% endblock %}
 
 {% block content %}
 <div class="page">
   <div class="page-header">
     <div>
-      <h1 class="page-title">{{ doc_label }} {{ documento.numero }}/{{ documento.anno }}</h1>
+      <h1 class="page-title">{{ doc_label }} {% if documento.sezionale %}{{ documento.sezionale }}/{% endif %}{{ documento.numero }}/{{ documento.anno }}</h1>
       <p class="page-subtitle">
         {% if counterparty == 'cliente' and documento.cliente %}
           {{ documento.cliente.ragione_sociale }}
@@ -33,6 +33,21 @@
         <a href="{% url 'documenti:ddt_pdf' documento.pk %}" target="_blank" class="btn btn-ghost">{% icon 'download' size=14 %} PDF</a>
       {% elif active_nav == 'note_credito' %}
         <a href="{% url 'documenti:nota_credito_pdf' documento.pk %}" target="_blank" class="btn btn-ghost">{% icon 'download' size=14 %} PDF</a>
+        <a href="{% url 'documenti:nota_credito_xml' documento.pk %}" class="btn btn-ghost">{% icon 'download' size=14 %} XML FatturaPA</a>
+        {% if has_sdi and sdi_attivo and user_perms_map|get_item:'documenti.modifica' %}
+          {% if documento.sdi_stato == 'non_inviata' %}
+            <form method="post" action="{% url 'documenti:nota_credito_invia_sdi' documento.pk %}" style="margin: 0;"
+                  onsubmit="return confirm('Invio la nota di credito al SDI? Una volta trasmessa non si modifica più.');">
+              {% csrf_token %}
+              <button type="submit" class="btn btn-brand">{% icon 'upload' size=14 %} Invia al SDI</button>
+            </form>
+          {% elif documento.sdi_stato == 'scartata' or documento.sdi_stato == 'rifiutata' %}
+            <form method="post" action="{% url 'documenti:nota_credito_invia_sdi' documento.pk %}" style="margin: 0;">
+              {% csrf_token %}
+              <button type="submit" class="btn btn-brand">{% icon 'upload' size=14 %} Reinvia al SDI</button>
+            </form>
+          {% endif %}
+        {% endif %}
       {% endif %}
       {% if user_perms_map|get_item:'documenti.modifica' %}
         {# Workflow transizioni — visibili solo per i tipi documento applicabili #}
@@ -51,14 +66,23 @@
             <button type="submit" class="btn btn-ghost">{% icon 'arrowRight' size=14 %} Genera fattura</button>
           </form>
         {% endif %}
-        <a href="{% url urls.update documento.pk %}" class="btn btn-brand">
-          {% icon 'edit' size=14 %} Modifica
-        </a>
+        {% if not non_modificabile %}
+          <a href="{% url urls.update documento.pk %}" class="btn {% if has_sdi and sdi_attivo and documento.sdi_stato == 'non_inviata' %}btn-ghost{% else %}btn-brand{% endif %}">
+            {% icon 'edit' size=14 %} Modifica
+          </a>
+        {% endif %}
       {% endif %}
     </div>
   </div>
 
-  <div class="grid" style="grid-template-columns: 1fr 320px; gap: 24px;">
+  {% if non_modificabile %}
+    <div class="callout mb-16">
+      <div class="ico">{% icon 'lock' size=14 %}</div>
+      <div style="font: 13px/1.5 var(--font-body); color: var(--ink-2);">Trasmessa al SDI: non si modifica più. Per correggerla emetti un'altra nota o una fattura.</div>
+    </div>
+  {% endif %}
+
+  <div class="layout-documento">
     <div class="flex-col gap-16">
       <div class="card" style="padding: 24px;">
         <div class="section-title">Righe documento</div>
@@ -97,6 +121,26 @@
           </tbody>
         </table>
       </div>
+
+      {% if has_sdi and messaggi_sdi %}
+        <div class="card" style="padding: 24px;">
+          <div class="section-title">Messaggi SDI</div>
+          <div class="tbl-scroll">
+            <table class="tbl" style="margin-top: 8px;">
+              <thead><tr><th style="width: 130px;">Data/ora</th><th style="width: 80px;">Tipo</th><th>Descrizione</th></tr></thead>
+              <tbody>
+                {% for m in messaggi_sdi %}
+                  <tr>
+                    <td>{{ m.timestamp|date:'d/m/Y H:i' }}</td>
+                    <td><span class="badge badge-neutral">{{ m.tipo }}</span></td>
+                    <td>{{ m.descrizione|truncatechars:120|default:'—' }}</td>
+                  </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      {% endif %}
 
       {% if documento.note %}
         <div class="card" style="padding: 24px;">
@@ -147,6 +191,29 @@
         </div>
       </div>
 
+      {% if has_sdi %}
+        <div class="card" style="padding: 18px;">
+          <div style="font: 600 14px var(--font-display); margin-bottom: 8px;">SDI</div>
+          <span class="badge {% if documento.sdi_stato == 'accettata' %}badge-success{% elif documento.sdi_stato == 'scartata' or documento.sdi_stato == 'rifiutata' %}badge-danger{% elif documento.sdi_stato == 'non_inviata' %}badge-neutral{% else %}badge-info{% endif %}">{{ documento.get_sdi_stato_display }}</span>
+          {% if documento.sdi_data_invio %}<div class="text-sm text-muted" style="margin-top: 6px;">Inviata il {{ documento.sdi_data_invio|date:'d/m/Y H:i' }}</div>{% endif %}
+          {% if documento.sdi_id_trasmissione %}<div style="font: 10px var(--font-mono); color: var(--ink-3); margin-top: 4px;">ID: {{ documento.sdi_id_trasmissione }}</div>{% endif %}
+          {% if documento.sdi_ultimo_messaggio %}<div style="font: 11px var(--font-body); color: var(--ink-2); margin-top: 4px;">{{ documento.sdi_ultimo_messaggio|truncatechars:160 }}</div>{% endif %}
+          {% if not sdi_attivo and documento.sdi_stato == 'non_inviata' %}<div class="text-sm text-muted" style="margin-top: 6px;">L'invio al SDI dal gestionale è disabilitato (Impostazioni › Integrazioni).</div>{% endif %}
+        </div>
+        {% if compensazioni %}
+          <div class="card" style="padding: 18px;">
+            <div style="font: 600 14px var(--font-display); margin-bottom: 8px;">Crediti stornati</div>
+            {% for c in compensazioni %}
+              <div class="riepilogo-voce">
+                <a href="{% url 'documenti:fattura_detail' c.scadenza.fattura_id %}">Fattura {{ c.scadenza.fattura.numero }}/{{ c.scadenza.fattura.anno }}</a>
+                <span class="mono">{{ c.importo|euro:2 }}</span>
+              </div>
+            {% endfor %}
+            <div class="text-sm text-muted" style="margin-top: 6px;">Compensati sulle rate aperte: la fattura esce da scadenziario e solleciti.</div>
+          </div>
+        {% endif %}
+      {% endif %}
+
       {% if chain %}
         <div class="card" style="padding: 18px;">
           <div style="font: 600 14px var(--font-display); margin-bottom: 12px;">Documenti collegati</div>
@@ -157,14 +224,14 @@
                 {% if c.verso == 'indietro' %}← origine{% else %}→ derivato{% endif %}
               </span>
               <span style="font: 500 12px var(--font-display); flex: 1;">
-                {{ c.tipo }} {{ c.doc.numero }}/{{ c.doc.anno }}
+                {{ c.tipo }} {% if c.doc.sezionale %}{{ c.doc.sezionale }}/{% endif %}{{ c.doc.numero }}/{{ c.doc.anno }}
               </span>
             </a>
           {% endfor %}
         </div>
       {% endif %}
 
-      {% if user_perms_map|get_item:'documenti.elimina' %}
+      {% if user_perms_map|get_item:'documenti.elimina' and not non_eliminabile %}
         <a href="{% url urls.delete documento.pk %}" class="btn btn-ghost"
            style="justify-content: center; color: var(--danger); border-color: color-mix(in oklab, var(--danger) 30%, var(--border));">
           {% icon 'trash' size=14 %} Elimina {{ doc_label|lower }}

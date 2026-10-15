@@ -15,6 +15,6 @@ class OpportunitaForm(forms.ModelForm):
             'valore': forms.NumberInput(attrs={'class': 'input mono', 'step': '0.01', 'min': '0'}),
             'stadio': forms.Select(attrs={'class': 'select'}),
             'probabilita': forms.NumberInput(attrs={'class': 'input', 'min': 0, 'max': 100}),
-            'chiusura_prevista': forms.DateInput(attrs={'class': 'input', 'type': 'date'}),
+            'chiusura_prevista': forms.DateInput(attrs={'class': 'input', 'type': 'date'}, format='%Y-%m-%d'),
             'owner': forms.Select(attrs={'class': 'select'}),
         }

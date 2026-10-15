@@ -11,12 +11,15 @@ from django.shortcuts import get_object_or_404, redirect, render
 from django.template.loader import render_to_string
 from django.urls import reverse
 from django.utils.crypto import get_random_string
+from django.utils.http import url_has_allowed_host_and_scheme
+from django.views.decorators.clickjacking import xframe_options_sameorigin
 from django.views.decorators.http import require_POST
 
 from accounts.models import Profile, Ruolo, StatoUtente
 from accounts.permissions import require_perm
 from api.models import ApiToken, Webhook, WebhookEvento
 from audit.models import AuditLog, Azione
+from audit.utils import log as registra_audit
 
 from .models import Organizzazione
 
@@ -64,6 +67,7 @@ SECTIONS = [
     ('ruoli', 'Ruoli'),
     ('integrazioni', 'Integrazioni'),
     ('fatturazione', 'Fatturazione'),
+    ('documenti', 'Intestazione documenti'),
     ('api', 'API & Webhook'),
     ('audit', 'Audit log'),
     ('backup', 'Backup'),
@@ -219,6 +223,9 @@ def invita_utente(request):
             ruolo_val = ruolo if ruolo in dict(Ruolo.choices) else Ruolo.ACCOUNT_MANAGER
             profile.ruolo = ruolo_val
             profile.stato = StatoUtente.INVITATO
+            # dal dialogo della pagina Team
+            profile.qualifica = request.POST.get('qualifica', '').strip()[:80]
+            profile.reparto = request.POST.get('reparto', '').strip()[:60]
             profile.save()
 
             sent = _send_invito_email(
@@ -232,6 +239,9 @@ def invita_utente(request):
                     f'Utente creato ma la mail non è partita — controlla i log. '
                     f'Password temporanea per {email}: {password}',
                 )
+        prossima = request.POST.get('next', '')
+        if url_has_allowed_host_and_scheme(prossima, {request.get_host()}, request.is_secure()):
+            return redirect(prossima)
         return redirect('settings:utenti')
     ctx = _base_context(request, 'utenti')
     ctx['ruoli_choices'] = Ruolo.choices
@@ -239,10 +249,146 @@ def invita_utente(request):
 
 
 @login_required
+@login_required
+def fatturazione(request):
+    """Impostazioni di fatturazione: la periodicità della liquidazione IVA
+    (stima automatica in cashflow/iva.py)."""
+    from accounts.permissions import has_perm
+    from anagrafiche.models import AnagraficaAzienda
+    from cashflow import iva
+
+    az = AnagraficaAzienda.objects.select_related('profilo_fiscale').first()
+    if request.method == 'POST':
+        if not has_perm(request.user, 'impostazioni.modifica'):
+            return HttpResponseForbidden('Permesso negato')
+        scelta = request.POST.get('liquidazione_iva', '')
+        if scelta not in dict(AnagraficaAzienda.LiquidazioneIva.choices):
+            messages.error(request, 'Periodicità non valida.')
+        elif az is None:
+            messages.error(request, "Compila prima l'anagrafica dell'azienda.")
+        elif scelta == az.liquidazione_iva:
+            messages.info(request, 'Nessuna modifica.')
+        else:
+            iva.cambia_periodicita(scelta)
+            messages.success(request, {
+                'trimestrale': 'Liquidazione IVA trimestrale: stime ricalcolate.',
+                'mensile': 'Liquidazione IVA mensile: stime ricalcolate.',
+                '': 'Stima della liquidazione IVA spenta: tolte le stime ancora da pagare.',
+            }[scelta])
+        return redirect('settings:fatturazione')
+    ctx = _base_context(request, 'fatturazione')
+    regime = az.profilo_fiscale if az and az.profilo_fiscale_id else None
+    ctx.update({
+        'azienda': az,
+        'scelta': az.liquidazione_iva if az else '',
+        'regime': regime,
+        'senza_iva': bool(regime and regime.regime_fiscale in iva.REGIMI_SENZA_IVA),
+        'puo_modificare': has_perm(request.user, 'impostazioni.modifica'),
+    })
+    return render(request, 'settings/fatturazione.html', ctx)
+
+
+COLORI_DOCUMENTI_SUGGERITI = [
+    ('#5b21b6', 'Viola'),
+    ('#1e3a8a', 'Blu notte'),
+    ('#0f766e', 'Verde petrolio'),
+    ('#7f1d1d', 'Bordeaux'),
+    ('#1f2937', 'Antracite'),
+]
+
+
+@require_perm('impostazioni.modifica')
+def documenti(request):
+    """Logo, intestazione, piè di pagina e colore dei documenti stampati
+    (fatture, offerte, ordini, DDT, note di credito). Solo gli
+    amministratori (permesso ``impostazioni.modifica``) li vedono e li
+    cambiano; ogni modifica finisce nell'audit log."""
+    from anagrafiche.forms import IntestazioneDocumentiForm
+    from anagrafiche.models import AnagraficaAzienda
+    from documenti.esempio import TIPI
+
+    az = AnagraficaAzienda.current()
+    if request.method == 'POST':
+        form = IntestazioneDocumentiForm(request.POST, request.FILES, instance=az)
+        if form.is_valid():
+            form.save()
+            registra_audit(Azione.UPDATE, request=request, target=az,
+                           meta={'sezione': 'Intestazione documenti', 'campi': form.changed_data})
+            messages.success(request, 'Intestazione dei documenti aggiornata.')
+            return redirect('settings:documenti')
+    else:
+        form = IntestazioneDocumentiForm(instance=az)
+    ctx = _base_context(request, 'documenti')
+    ctx.update({
+        'form': form,
+        'azienda': az,
+        'tipi_anteprima': TIPI,
+        'colori_suggeriti': COLORI_DOCUMENTI_SUGGERITI,
+    })
+    return render(request, 'settings/documenti.html', ctx)
+
+
+@xframe_options_sameorigin          # si mostra in un iframe nella pagina qui sopra
+@require_perm('impostazioni.modifica')
+def documenti_anteprima(request):
+    """PDF di un documento di esempio (``?tipo=fattura|offerta|ddt``) con
+    l'intestazione salvata: niente viene scritto."""
+    from django.http import Http404
+
+    from anagrafiche.models import AnagraficaAzienda
+    from documenti import esempio
+    from documenti.utils import crea_pdf
+
+    tipo = request.GET.get('tipo', 'fattura')
+    if tipo not in esempio.TIPI:
+        raise Http404
+    template, ctx = esempio.contesto(tipo, AnagraficaAzienda.objects.first())
+    return crea_pdf(template, ctx, f'anteprima-{tipo}.pdf', request=request)
+
+
+@login_required
 def placeholder(request, titolo):
     ctx = _base_context(request, titolo.lower())
     ctx['placeholder_titolo'] = titolo
     return render(request, 'settings/placeholder.html', ctx)
+
+
+@login_required
+def backup(request):
+    """Backup completo (database + file): elenco, creazione e download. Solo
+    superuser: dentro ci sono anche password PEC e certificato di firma."""
+    from . import backup as bk
+    ctx = _base_context(request, 'backup')
+    ctx['puo'] = request.user.is_superuser
+    if request.method == 'POST':
+        if not request.user.is_superuser:
+            messages.error(request, 'Solo un superuser può creare i backup.')
+            return redirect('settings:backup')
+        try:
+            file = bk.crea(con_media=request.POST.get('media') != '0')
+        except Exception as exc:  # disco pieno, permessi, database non SQLite…
+            messages.error(request, f'Backup non riuscito: {exc}')
+            return redirect('settings:backup')
+        registra_audit(Azione.EXPORT, request=request, target_type='Backup', target_label=file.name,
+                  meta={'byte': file.stat().st_size})
+        messages.success(request, f'Backup creato: {file.name}. Scaricalo e conservalo al sicuro.')
+        return redirect('settings:backup')
+    ctx['backups'] = bk.elenco() if request.user.is_superuser else []
+    ctx['conserva'] = bk.CONSERVA
+    return render(request, 'settings/backup.html', ctx)
+
+
+@login_required
+def backup_scarica(request, nome):
+    from django.http import FileResponse, Http404
+    from . import backup as bk
+    if not request.user.is_superuser:
+        raise Http404
+    file = bk.percorso(nome)
+    if file is None:
+        raise Http404
+    registra_audit(Azione.EXPORT, request=request, target_type='Backup', target_label=f'Download {nome}')
+    return FileResponse(file.open('rb'), as_attachment=True, filename=nome)
 
 
 @require_perm('impostazioni.modifica')

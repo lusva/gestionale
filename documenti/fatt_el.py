@@ -46,18 +46,46 @@ def _fmt_num(value, decimals=2):
 _BASE36 = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ'
 
 
+# Limiti del progressivo (5 caratteri): le fatture hanno la prima cifra
+# numerica fino a pk 466.559 (``pk*36+35 < 10*36**4``), le note di credito
+# usano ``N`` + 4 caratteri fino a pk 46.655 (``pk*36+35 < 36**4``).
+MAX_PK_FATTURA = (10 * 36 ** 4 - 36) // 36
+MAX_PK_NOTA_CREDITO = (36 ** 4 - 36) // 36
+PREFISSO_NOTA_CREDITO = 'N'
+
+
+def _base36(n: int) -> str:
+    cifre = ''
+    while n:
+        n, resto = divmod(n, 36)
+        cifre = _BASE36[resto] + cifre
+    return cifre or '0'
+
+
+def _e_nota_credito(documento) -> bool:
+    from .models import TestataNotaCredito
+    return isinstance(documento, TestataNotaCredito)
+
+
 def progressivo_sdi(fattura) -> str:
     """Progressivo di invio SDI: 5 caratteri alfanumerici maiuscoli.
 
-    È ``pk * 36 + tentativo`` in base 36, con zeri a sinistra fino a 5
-    caratteri (``tentativo`` = ``tentativo_sdi``, i reinvii dopo scarto o
-    rifiuto, al massimo 35): univoco per documento e per invio (a
-    differenza di numero/anno, che si ripete tra sezionali diversi; il SDI
-    rifiuta un nome file già ricevuto) e stabile tra rigenerazioni dello
-    stesso invio, quindi usabile sia in ``<ProgressivoInvio>`` sia nel nome
-    file ``IT<piva>_<progr>.xml`` con cui le notifiche SDI vengono
-    ricondotte alla fattura (``sdi_pull.match_fattura`` fa il contrario:
-    ``divmod(int(progr, 36), 36)``).
+    Il SDI rifiuta un nome file già ricevuto dallo stesso trasmittente, e
+    fatture e note di credito hanno pk indipendenti: i due spazi non devono
+    mai sovrapporsi.
+
+    - Fatture: ``pk * 36 + tentativo`` in base 36 con zeri a sinistra fino a
+      5 caratteri; la prima è sempre una cifra (fino a pk 466.559).
+    - Note di credito: ``N`` + 4 caratteri base 36 di ``pk * 36 +
+      tentativo`` (fino a pk 46.655): una lettera in testa, che nessuna
+      fattura ha.
+
+    ``tentativo`` = ``tentativo_sdi`` (i reinvii dopo scarto o rifiuto, al
+    massimo 35). Univoco per documento e per invio (a differenza di
+    numero/anno, che si ripete tra sezionali) e stabile tra rigenerazioni
+    dello stesso invio: vale sia in ``<ProgressivoInvio>`` sia nel nome file
+    ``IT<piva>_<progr>.xml`` con cui le notifiche si riconducono al documento
+    (``sdi_pull.match_documento`` fa il contrario).
     """
     pk = getattr(fattura, 'pk', None)
     if not pk:
@@ -66,16 +94,14 @@ def progressivo_sdi(fattura) -> str:
         )
     tentativo = min(int(getattr(fattura, 'tentativo_sdi', 0) or 0), 35)
     n = int(pk) * 36 + tentativo
-    cifre = ''
-    while n:
-        n, resto = divmod(n, 36)
-        cifre = _BASE36[resto] + cifre
-    cifre = cifre.rjust(5, '0')
-    if len(cifre) > 5:
-        raise FatturaElettronicaError(
-            f'Progressivo SDI fuori intervallo per il documento #{pk}.'
-        )
-    return cifre
+    if _e_nota_credito(fattura):
+        if pk > MAX_PK_NOTA_CREDITO:
+            raise FatturaElettronicaError(
+                f'Progressivo SDI fuori intervallo per la nota di credito #{pk}.')
+        return PREFISSO_NOTA_CREDITO + _base36(n).rjust(4, '0')
+    if pk > MAX_PK_FATTURA:
+        raise FatturaElettronicaError(f'Progressivo SDI fuori intervallo per il documento #{pk}.')
+    return _base36(n).rjust(5, '0')
 
 
 def nome_file_sdi(fattura, piva) -> str:
@@ -97,6 +123,22 @@ def numero_documento_sdi(fattura) -> str:
     return f'{sez}/{base}' if sez else base
 
 
+def schema_fatturapa():
+    """Lo schema XSD ufficiale FatturaPA da ``documenti/xsd/`` (None se i
+    file non ci sono). Nessun accesso alla rete: l'import della firma
+    digitale punta al file locale."""
+    from pathlib import Path
+    cartella = Path(__file__).resolve().parent / 'xsd'
+    xsd = cartella / 'Schema_del_file_xml_FatturaPA_v1.2.2.xsd'
+    if not (xsd.exists() and (cartella / 'xmldsig-core-schema.xsd').exists()):
+        return None
+    testo = xsd.read_bytes().replace(
+        b'http://www.w3.org/TR/2002/REC-xmldsig-core-20020212/xmldsig-core-schema.xsd',
+        b'xmldsig-core-schema.xsd')
+    parser = etree.XMLParser(no_network=True, load_dtd=False)
+    return etree.XMLSchema(etree.fromstring(testo, parser, base_url=str(xsd)))
+
+
 def _SE(parent, tag, text=None):
     """Crea un SubElement con testo opzionale (omette se None/stringa vuota)."""
     el = etree.SubElement(parent, tag)
@@ -105,25 +147,45 @@ def _SE(parent, tag, text=None):
     return el
 
 
+def destinatario_sdi(cliente) -> tuple[str, str]:
+    """Codice destinatario e PEC del cliente per la FatturaPA.
+
+    Valgono i dati di fatturazione elettronica collegati al cliente, se ci
+    sono, altrimenti quelli della scheda cliente (``codice_sdi``, ``pec``,
+    gli unici che il form del cliente compila). Senza codice: ``0000000``
+    (la fattura arriva alla PEC o nell'area riservata del cliente)."""
+    fe = cliente.fatturazione_elettronica if cliente.fatturazione_elettronica_id else None
+    codici = [fe.sdi if fe else '', cliente.codice_sdi]
+    sdi = next((c.strip().upper() for c in codici
+                if c and c.strip() and c.strip() != '0000000'), '0000000')
+    pec = next((p.strip() for p in (fe.pec if fe else '', cliente.pec) if p and p.strip()), '')
+    return sdi, pec
+
+
+def build_documento_xml(documento) -> bytes:
+    """L'XML FatturaPA di una fattura o di una nota di credito."""
+    return build_fattura_xml(documento)
+
+
 def build_fattura_xml(fattura, tipo_documento: str = None) -> bytes:
-    """Costruisce l'XML FatturaPA per una ``TestataFattura``.
+    """Costruisce l'XML FatturaPA (FPR12) per una ``TestataFattura`` o una
+    ``TestataNotaCredito``.
 
     Ritorna i bytes pronti per essere serviti o scritti su file.
     Solleva ``FatturaElettronicaError`` se mancano dati.
 
-    Il parametro ``tipo_documento`` permette di sovrascrivere il tipo
-    (utile per note di credito che passano TD04 invece di TD24).
+    Nota di credito (TD04): importi positivi come vuole la FatturaPA (il
+    segno lo dà il tipo documento), ``DatiFattureCollegate`` con numero e
+    data di ogni fattura stornata, niente ``DatiPagamento``. La TD08
+    (semplificata) ha un altro formato (FSM10) e qui non si genera.
+
+    Il parametro ``tipo_documento`` permette di sovrascrivere il tipo.
     """
     from anagrafiche.models import AnagraficaAzienda
     from .utils import calcola_valori
 
     cliente = fattura.cliente
     _require(cliente is not None, 'Manca il cliente sulla fattura.')
-    _require(
-        cliente.fatturazione_elettronica_id is not None,
-        "Il cliente non ha SDI/PEC configurati: compila i dati di "
-        "fatturazione elettronica nell'anagrafica cliente.",
-    )
     _require(
         bool(cliente.indirizzo and cliente.citta),
         "Il cliente non ha un indirizzo / città: impossibile compilare "
@@ -160,10 +222,14 @@ def build_fattura_xml(fattura, tipo_documento: str = None) -> bytes:
             f"ma nessuna natura (N1-N7): il SDI la scarterebbe.",
         )
 
+    nota = _e_nota_credito(fattura)
     totals = calcola_valori(fattura, righe)
-    scadenze = list(fattura.scadenze.all())
+    scadenze = [] if nota else list(fattura.scadenze.all())
 
     tipo_doc = tipo_documento or fattura.tipo_documento or 'TD01'
+    _require(tipo_doc != 'TD08', 'Le note di credito semplificate (TD08) hanno il formato '
+                                 'FatturaPA semplificato, che il gestionale non genera: usa TD04.')
+    collegate = list(fattura.fatture_origine.order_by('data_documento', 'numero')) if nota else []
 
     # Radice con namespace p e schemaLocation
     nsmap = {'p': NS['p'], 'ds': NS['ds'], 'xsi': NS['xsi']}
@@ -188,12 +254,12 @@ def build_fattura_xml(fattura, tipo_documento: str = None) -> bytes:
     # Senza codice: 0000000 (PEC del cliente o area riservata), XXXXXXX per
     # i clienti esteri. La PECDestinatario si indica solo con 0000000.
     estero = (cliente.nazione or 'IT').upper() != 'IT'
-    sdi = (cliente.fatturazione_elettronica.sdi or '').strip().upper() or '0000000'
+    sdi, pec = destinatario_sdi(cliente)
     if estero and sdi == '0000000':
         sdi = 'XXXXXXX'
     _SE(dati_trasm, 'CodiceDestinatario', sdi)
-    if cliente.fatturazione_elettronica.pec and sdi == '0000000':
-        _SE(dati_trasm, 'PECDestinatario', cliente.fatturazione_elettronica.pec)
+    if pec and sdi == '0000000':
+        _SE(dati_trasm, 'PECDestinatario', pec)
 
     # CedentePrestatore
     ced = etree.SubElement(header, 'CedentePrestatore')
@@ -272,6 +338,14 @@ def build_fattura_xml(fattura, tipo_documento: str = None) -> bytes:
         if slot_cassa['natura']:
             _SE(dcp, 'Natura', slot_cassa['natura'])
     _SE(dati_gd, 'ImportoTotaleDocumento', _fmt_num(totals['totale']))
+
+    # La nota di credito cita le fatture che storna (numero e data come nel
+    # loro <Numero> / <Data>).
+    for f in collegate:
+        dfc = etree.SubElement(dati_generali, 'DatiFattureCollegate')
+        _SE(dfc, 'IdDocumento', numero_documento_sdi(f))
+        if f.data_documento:
+            _SE(dfc, 'Data', f.data_documento.strftime('%Y-%m-%d'))
 
     # Dettaglio linee
     dati_bs = etree.SubElement(body, 'DatiBeniServizi')

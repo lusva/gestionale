@@ -4,9 +4,8 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Accedi — AIGIS lab</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com" />
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="preload" href="{% static 'fonts/plus-jakarta-sans-latin.woff2' %}" as="font" type="font/woff2" crossorigin />
+  <link rel="stylesheet" href="{% static 'css/fonts.css' %}" />
   <link rel="stylesheet" href="{% static 'css/app.css' %}" />
   <link rel="icon" type="image/png" href="{% static 'img/logo.png' %}" />
   <style>[x-cloak] { display: none !important; }</style>
@@ -16,7 +15,7 @@
 <div class="login-wrap">
   <aside class="login-left">
     <div class="login-brand">
-      <img class="login-logo" src="{% static 'img/logo-aigis.png' %}" alt="AIGIS lab" width="180" height="60" />
+      <img class="login-logo" src="{% static 'img/logo-aigis-login.png' %}" alt="AIGIS lab" width="180" height="60" />
     </div>
 
     <div class="login-pitch">
@@ -67,7 +66,7 @@
         <label for="id_password">Password</label>
         <div class="login-password">
           <input class="input" :type="show ? 'text' : 'password'" type="password" name="password" id="id_password"
-                 placeholder="••••••••••" autocomplete="current-password"
+                 placeholder="La tua password" autocomplete="current-password"
                  {% if form.username.value %}autofocus{% endif %} required />
           <button type="button" class="btn-icon" @click="show = !show"
                   :aria-label="show ? 'Nascondi password' : 'Mostra password'" aria-label="Mostra password">
@@ -94,6 +93,6 @@
   </main>
 </div>
 
-<script defer src="https://unpkg.com/alpinejs@3.14.1/dist/cdn.min.js"></script>
+<script defer src="{% static 'vendor/alpine-3.14.1.min.js' %}"></script>
 </body>
 </html>

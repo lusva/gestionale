@@ -8,13 +8,37 @@
 <div class="page">
   <div class="page-header">
     <div>
-      <h1 class="page-title">Buongiorno, {{ user_name }}</h1>
+      <h1 class="page-title">Ciao, {{ user_name }}</h1>
       <p class="page-subtitle">Ecco un riepilogo della tua attività — {{ today|date:'l d F Y' }}</p>
     </div>
     <div style="display: flex; gap: 8px;">
-      <a href="#" class="btn btn-ghost">{% icon 'download' size=14 %} Esporta</a>
-      <a href="{% url 'clienti:create' %}" class="btn btn-brand">{% icon 'plus' size=14 %} Nuovo cliente</a>
+      {% if user_perms_map|get_item:'clienti.modifica' %}
+        <a href="{% url 'clienti:create' %}" class="btn btn-ghost">{% icon 'plus' size=14 %} Nuovo cliente</a>
+      {% endif %}
+      {% if user_perms_map|get_item:'documenti.modifica' %}
+        <a href="{% url 'documenti:fattura_create' %}" class="btn btn-brand" data-scorciatoia="n" title="Scorciatoia: N">{% icon 'plus' size=14 %} Nuova fattura</a>
+      {% endif %}
     </div>
+  </div>
+
+  {# Da fare: scadenze e documenti che aspettano (dashboard/da_fare.py) #}
+  <div class="card card-dafare mb-24">
+    {% if da_fare %}
+      <div class="dafare-titolo" style="padding: 8px 10px 4px;">Priorità e prossime scadenze <span>premi <kbd>/</kbd> per cercare</span></div>
+      <div class="dafare-elenco">
+        {% for v in da_fare %}
+          <a href="{{ v.url }}" class="dafare-voce {{ v.livello }}">
+            <span class="ico">{% icon v.icona size=14 %}</span>
+            <span class="dafare-testo"><strong>{{ v.titolo }}</strong><small>{{ v.dettaglio }}</small></span>
+          </a>
+        {% endfor %}
+      </div>
+    {% else %}
+      <div class="dafare-voce info" style="pointer-events: none;">
+        <span class="ico">{% icon 'check' size=14 %}</span>
+        <span class="dafare-testo"><strong>Tutto in ordine</strong><small>Nessuna scadenza in ritardo e nessun documento in attesa.</small></span>
+      </div>
+    {% endif %}
   </div>
 
   <div class="grid grid-4 mb-24">
@@ -31,40 +55,42 @@
       <div class="kpi-spark">{% sparkline spark_opp %}</div>
     </div>
     <div class="kpi accent">
-      <div class="kpi-label">Fatturato MTD</div>
+      <div class="kpi-label">Vendite vinte nel mese</div>
       <div class="kpi-value">{{ kpi_fatturato_mtd|euro_compact }}</div>
+      {% if kpi_fatturato_delta_pct is not None %}
       <div class="kpi-delta {% if kpi_fatturato_delta_pct >= 0 %}up{% else %}down{% endif %}">
         {% if kpi_fatturato_delta_pct >= 0 %}{% icon 'trendUp' size=12 %}+{% else %}{% icon 'trendDown' size=12 %}{% endif %}{{ kpi_fatturato_delta_pct }}% vs. mese prec.
       </div>
-      <div class="kpi-spark">{% sparkline spark_fatturato %}</div>
+      {% else %}<div class="kpi-delta">Nessuna vendita nel mese precedente</div>{% endif %}
+      <div class="kpi-spark">{% sparkline spark_vendite %}</div>
     </div>
     <div class="kpi">
       <div class="kpi-label">Tasso di chiusura</div>
       <div class="kpi-value">{{ kpi_tasso_chiusura }}%</div>
-      <div class="kpi-delta down">{% icon 'trendDown' size=12 %} vs. trim. scorso</div>
-      <div class="kpi-spark">{% sparkline spark_chiusura up=False %}</div>
+      <div class="kpi-delta">{{ kpi_opportunita_vinte }} vinte su {{ kpi_opportunita_chiuse }} chiuse · totale storico</div>
+      <div class="kpi-spark">{% sparkline spark_chiusura %}</div>
     </div>
   </div>
 
   {% if doc_kpi %}
     <div class="grid grid-4 mb-24">
       <div class="kpi" style="border-left: 3px solid var(--brand-teal);">
-        <div class="kpi-label">Fatturato fatturato (mese)</div>
+        <div class="kpi-label">Fatture del mese · imponibile</div>
         <div class="kpi-value">{{ doc_kpi.fatt_mese|euro_compact }}</div>
         <a href="{% url 'documenti:dashboard' %}" class="kpi-delta" style="color: var(--brand-teal); text-decoration: none;">Vai alla dashboard documenti →</a>
       </div>
       <div class="kpi" style="border-left: 3px solid var(--danger);">
         <div class="kpi-label">Crediti scaduti</div>
         <div class="kpi-value">{{ doc_kpi.ar_scaduto|euro_compact }}</div>
-        <a href="{% url 'documenti:scadenziario_attivo' %}" class="kpi-delta" style="color: var(--danger); text-decoration: none;">Scadenziario attivo →</a>
+        <a href="{% url 'documenti:scadenziario_attivo' %}" class="kpi-delta" style="color: var(--danger); text-decoration: none;">Scadenziario clienti →</a>
       </div>
       <div class="kpi" style="border-left: 3px solid var(--warn);">
         <div class="kpi-label">Debiti scaduti</div>
         <div class="kpi-value">{{ doc_kpi.ap_scaduto|euro_compact }}</div>
-        <a href="{% url 'documenti:scadenziario_passivo' %}" class="kpi-delta" style="color: var(--warn); text-decoration: none;">Scadenziario passivo →</a>
+        <a href="{% url 'documenti:scadenziario_passivo' %}" class="kpi-delta" style="color: var(--warn); text-decoration: none;">Scadenziario fornitori →</a>
       </div>
       <div class="kpi">
-        <div class="kpi-label">Fatture da pagare</div>
+        <div class="kpi-label">Fatture da incassare</div>
         <div class="kpi-value">{{ doc_kpi.fatture_da_pagare }}</div>
         <a href="{% url 'documenti:fattura_list' %}?pagata=no" class="kpi-delta" style="color: var(--ink-3); text-decoration: none;">Vedi tutte →</a>
       </div>
@@ -72,49 +98,52 @@
   {% endif %}
 
   <div class="grid mb-24" style="grid-template-columns: 2fr 1fr;">
+    {% if doc_kpi %}
     <div class="card" style="padding: 20px;">
       <div class="flex-between mb-16">
         <div>
-          <div style="font: 500 11px var(--font-body); letter-spacing: 0.05em; text-transform: uppercase; color: var(--ink-3);">Fatturato {{ today|date:'Y' }}</div>
+          <div style="font: 500 11px var(--font-body); letter-spacing: 0.05em; text-transform: uppercase; color: var(--ink-3);">Fatture {{ today|date:'Y' }} · imponibile</div>
           <div style="font: 600 22px var(--font-display); margin-top: 4px;">
             {{ fatturato_anno|euro_compact }}
           </div>
         </div>
-        <div style="display: flex; gap: 4px;">
-          <button type="button" class="btn btn-subtle" style="height: 28px; padding: 0 10px; font-size: 12px;">Mese</button>
-          <button type="button" class="btn btn-ghost" style="height: 28px; padding: 0 10px; font-size: 12px; background: var(--surface-2); color: var(--ink);">Anno</button>
-        </div>
+        <a href="{% url 'documenti:dashboard' %}" class="btn btn-ghost btn-sm">Dettaglio {% icon 'arrowRight' size=12 %}</a>
       </div>
-      {% include 'components/_barchart.html' with bars=bar_data labels=bar_labels %}
+      {% barchart bar_values bar_labels %}
+      <p class="dashboard-note">Totale delle fatture registrate fino a oggi, prima di IVA e note di credito.</p>
     </div>
+    {% endif %}
 
     <div class="card" style="padding: 20px;">
       <div class="flex-between mb-16">
-        <div style="font: 600 15px var(--font-display);">Attività recente</div>
-        <button type="button" class="btn-icon">{% icon 'more' size=14 %}</button>
+        <h2 class="dashboard-section-title">La tua agenda</h2>
+        <a href="{% url 'attivita:list' %}?owner=me&stato=da_fare" class="btn btn-ghost btn-sm">Apri {% icon 'arrowRight' size=12 %}</a>
       </div>
-      <div style="padding: 4px;">
-        {% for a in recent_activity %}
-          <div style="display: flex; gap: 12px; padding: 10px 4px; {% if not forloop.last %}border-bottom: 1px solid var(--border);{% endif %}">
-            <div style="width: 28px; height: 28px; border-radius: 8px; background: var(--surface-2); color: {{ a.color }}; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0;">
-              {% icon a.icon size=13 %}
-            </div>
-            <div style="flex: 1; min-width: 0;">
-              <div style="font: 13px var(--font-body); color: var(--ink-2);">
-                {% if a.owner %}<strong style="color: var(--ink); font-weight: 500;">{{ a.owner.get_short_name|default:a.owner.username }}</strong> — {% endif %}
-                <strong style="color: var(--ink); font-weight: 500;">{{ a.titolo }}</strong>
-                {% if a.cliente %}<span style="color: var(--ink-3);"> · {{ a.cliente.ragione_sociale|truncatechars:28 }}</span>{% endif %}
-              </div>
-              <div style="font: 11px var(--font-body); color: var(--ink-4); margin-top: 2px;">{{ a.created_at|timesince }} fa</div>
-            </div>
-          </div>
+      <div class="dashboard-agenda-filters">
+        <a href="{% url 'attivita:list' %}?owner=me&stato=da_fare&periodo=scadute" class="filter-chip{% if agenda_counts.scadute %} dashboard-overdue{% endif %}">{{ agenda_counts.scadute }} in ritardo</a>
+        <a href="{% url 'attivita:list' %}?owner=me&stato=da_fare&periodo=oggi" class="filter-chip">{{ agenda_counts.oggi }} oggi</a>
+      </div>
+      <div class="dashboard-agenda">
+        {% for a in prossime_attivita %}
+          <a href="{{ a.get_absolute_url }}" class="dashboard-task">
+            <span class="dashboard-task-icon" style="color: {{ a.color }}">{% icon a.icon size=15 %}</span>
+            <span class="dashboard-task-text">
+              <strong>{{ a.titolo }}</strong>
+              {% if a.cliente %}<small>{{ a.cliente.ragione_sociale|truncatechars:34 }}</small>{% endif %}
+              <small{% if a.data < today %} class="dashboard-overdue"{% endif %}>{% if a.data < today %}In ritardo · {% endif %}{{ a.data|date:'d M, H:i' }}</small>
+            </span>
+            {% icon 'chevronRight' size=14 %}
+          </a>
         {% empty %}
           <div class="empty" style="padding: 24px;">
-            <div class="ico">{% icon 'clock' size=18 %}</div>
-            Nessuna attività recente
+            <div class="ico">{% icon 'check' size=18 %}</div>
+            Nessuna attività aperta assegnata a te.
           </div>
         {% endfor %}
       </div>
+      {% if user_perms_map|get_item:'attivita.modifica' %}
+        <a href="{% url 'attivita:create' %}" class="btn btn-ghost dashboard-add-task">{% icon 'plus' size=14 %} Pianifica un'attività</a>
+      {% endif %}
     </div>
   </div>
 
@@ -123,13 +152,21 @@
       <div>
         <div style="font: 600 17px var(--font-display);">Pipeline commerciale</div>
         <div style="font: 13px var(--font-body); color: var(--ink-3); margin-top: 2px;">
-          {{ pipeline_count }} opportunità · valore totale {{ pipeline_total|euro }}
+          {{ pipeline_count }} opportunità aperte · valore totale {{ pipeline_total|euro }}
         </div>
       </div>
-      <a href="{% url 'opportunita:list' %}" class="btn btn-ghost">Vedi tutte {% icon 'arrowRight' size=14 %}</a>
+      <a href="{% url 'opportunita:list' %}?scope=open" class="btn btn-ghost">Apri pipeline {% icon 'arrowRight' size=14 %}</a>
     </div>
 
-    {% include 'opportunita/_pipeline_board.html' %}
+    <div class="grid grid-4 dashboard-pipeline">
+      {% for col in pipeline_cols %}
+        <a href="{% url 'opportunita:list' %}?scope=open&stadio={{ col.id }}" class="card dashboard-stage" style="--stage-color: {{ col.color }}">
+          <span>{{ col.label }}</span>
+          <strong>{{ col.total|euro }}</strong>
+          <small>{{ col.count }} opportunità {% icon 'arrowRight' size=12 %}</small>
+        </a>
+      {% endfor %}
+    </div>
   </div>
 </div>
 {% endblock %}

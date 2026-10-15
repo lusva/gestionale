@@ -66,9 +66,9 @@
         {{ page_obj.start_index }}–{{ page_obj.end_index }} di {{ paginator.count|intcomma }}
       </div>
       <div class="pager">
-        {% if page_obj.has_previous %}<a href="?page={{ page_obj.previous_page_number }}">«</a>{% else %}<span>«</span>{% endif %}
+        {% if page_obj.has_previous %}<a href="{% querystring page=page_obj.previous_page_number %}">«</a>{% else %}<span>«</span>{% endif %}
         <span class="current">{{ page_obj.number }} / {{ paginator.num_pages }}</span>
-        {% if page_obj.has_next %}<a href="?page={{ page_obj.next_page_number }}">»</a>{% else %}<span>»</span>{% endif %}
+        {% if page_obj.has_next %}<a href="{% querystring page=page_obj.next_page_number %}">»</a>{% else %}<span>»</span>{% endif %}
       </div>
     </div>
   {% endif %}

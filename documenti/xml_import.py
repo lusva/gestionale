@@ -18,6 +18,7 @@ from typing import Any
 
 from django.core.files.base import ContentFile
 from django.db import transaction
+from django.utils.timezone import localdate
 from lxml import etree
 
 from anagrafiche.models import Fornitore, PosizioneIva
@@ -26,6 +27,7 @@ from .models import (
     RigaFatturaAcquisto,
     ScadenzaFatturaAcquisto,
     TestataFatturaAcquisto,
+    totali_acquisto,
 )
 
 
@@ -386,6 +388,10 @@ def _importa_body(parsed, fornitore, xml_bytes, safe_filename, pref, warnings):
     fattura = TestataFatturaAcquisto(
         fornitore=fornitore,
         data_documento=data_fornitore,
+        # La liquidazione IVA conta gli acquisti alla data di registrazione:
+        # con il default (oggi) un import fatto in ritardo sposterebbe tutta
+        # l'IVA a credito nel periodo dell'import.
+        data_registrazione=data_fornitore or localdate(),
         data_fornitore=data_fornitore,
         numero_fornitore=numero_fornitore,
         tipo_documento=tipo,
@@ -427,28 +433,24 @@ def _importa_body(parsed, fornitore, xml_bytes, safe_filename, pref, warnings):
             iban=s['iban'] or None,
         )
 
-    fattura.save()  # ricalcolo totali via signal
-
-    # I signal ricalcolano imponibile/imposta/totale dalle righe (senza
-    # bollo, cassa, arrotondamenti, sconti di testata...): per un documento
-    # ricevuto fanno fede gli importi dell'XML. ``update`` non emette signal,
-    # quindi i valori dell'XML restano fino alla prossima modifica delle righe.
-    valori_xml = {}
+    # Gli importi li scrive l'import, una volta sola: i signal non toccano le
+    # fatture con l'XML (fa fede il documento ricevuto, che può avere bollo,
+    # cassa, arrotondamenti, sconti di testata…). Quelli del riepilogo
+    # dell'XML se c'è, altrimenti calcolati dalle righe.
+    valori = totali_acquisto(fattura.righe.select_related('aliquota_iva'))
+    valori = {'imponibile': valori['imponibile'], 'imposta': valori['imposta']}
     if parsed.get('riepilogo'):
-        valori_xml['imponibile'] = sum(
+        valori['imponibile'] = sum(
             (x['imponibile'] for x in parsed['riepilogo']), Decimal('0'),
         )
-        valori_xml['imposta'] = sum(
+        valori['imposta'] = sum(
             (x['imposta'] for x in parsed['riepilogo']), Decimal('0'),
         )
     if testata.get('totale_presente'):
-        valori_xml['totale_documento'] = testata['totale_documento']
-    elif valori_xml:
-        valori_xml['totale_documento'] = (
-            valori_xml['imponibile'] + valori_xml['imposta']
-        )
-    if valori_xml:
-        TestataFatturaAcquisto.objects.filter(pk=fattura.pk).update(**valori_xml)
+        valori['totale_documento'] = testata['totale_documento']
+    else:
+        valori['totale_documento'] = valori['imponibile'] + valori['imposta']
+    TestataFatturaAcquisto.objects.filter(pk=fattura.pk).update(**valori)
     fattura.refresh_from_db()
     return fattura
 

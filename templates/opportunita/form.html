@@ -27,36 +27,37 @@
     <div class="card" style="padding: 24px;">
       <div class="grid grid-2" style="gap: 16px;">
         <div class="field" style="grid-column: 1 / -1;">
-          <label>Titolo *</label>
+          <label for="{{ form.titolo.id_for_label }}">Titolo *</label>
           {{ form.titolo }}{{ form.titolo.errors }}
         </div>
         <div class="field">
-          <label>Cliente *</label>
+          <label for="{{ form.cliente.id_for_label }}">Cliente *</label>
           {{ form.cliente }}{{ form.cliente.errors }}
         </div>
         <div class="field">
-          <label>Stadio</label>
-          {{ form.stadio }}
+          <label for="{{ form.stadio.id_for_label }}">Stadio</label>
+          {{ form.stadio }}{{ form.stadio.errors }}
         </div>
         <div class="field">
-          <label>Valore (€)</label>
+          <label for="{{ form.valore.id_for_label }}">Valore (€)</label>
           {{ form.valore }}{{ form.valore.errors }}
         </div>
         <div class="field">
-          <label>Probabilità (%)</label>
-          {{ form.probabilita }}
+          <label for="{{ form.probabilita.id_for_label }}">Probabilità (%)</label>
+          {{ form.probabilita }}{{ form.probabilita.errors }}
+          <small style="color: var(--ink-3);">Da 0 a 100. Le vinte sono impostate al 100%, le perse allo 0%. Riaprendo, 0% e 100% tornano al 25%.</small>
         </div>
         <div class="field">
-          <label>Chiusura prevista</label>
-          {{ form.chiusura_prevista }}
+          <label for="{{ form.chiusura_prevista.id_for_label }}">Chiusura prevista</label>
+          {{ form.chiusura_prevista }}{{ form.chiusura_prevista.errors }}
         </div>
         <div class="field">
-          <label>Owner</label>
-          {{ form.owner }}
+          <label for="{{ form.owner.id_for_label }}">Responsabile</label>
+          {{ form.owner }}{{ form.owner.errors }}
         </div>
         <div class="field" style="grid-column: 1 / -1;">
-          <label>Descrizione</label>
-          {{ form.descrizione }}
+          <label for="{{ form.descrizione.id_for_label }}">Descrizione</label>
+          {{ form.descrizione }}{{ form.descrizione.errors }}
         </div>
       </div>
     </div>

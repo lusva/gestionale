@@ -18,6 +18,7 @@ from .doc_forms import (
     TestataOrdineForm,
 )
 from .doc_generic import make_doc_views
+from .servizi import storna_crediti
 from .models import (
     TestataDdt,
     TestataDdtFornitore,
@@ -84,6 +85,14 @@ from .models import (
     url_prefix='nota_credito',
     counterparty='cliente',
     has_stato=False,
+    has_sdi=True,
+    dopo_salvataggio=storna_crediti,
+    non_modificabile=lambda nota: (
+        f'La nota di credito è già stata trasmessa al SDI ({nota.get_sdi_stato_display()}): '
+        'non si può modificare.' if nota.emessa_sdi else ''),
+    non_eliminabile=lambda nota: (
+        f'La nota di credito è già stata trasmessa al SDI ({nota.get_sdi_stato_display()}): '
+        'il suo numero è noto al SDI, non si può eliminare.' if nota.trasmessa_sdi else ''),
 )
 
 

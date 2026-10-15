@@ -1,19 +1,66 @@
 {% extends 'base.html' %}
-{% load humanize %}
+{% load static humanize %}
 
 {% block title %}Pipeline opportunità{% endblock %}
 {% block crumb_current %}Opportunità{% endblock %}
+{% block extra_css %}<link rel="stylesheet" href="{% static 'css/pipeline.css' %}">{% endblock %}
 
 {% block content %}
-<div class="page">
+<div class="page pipeline-page">
   <div class="page-header">
     <div>
       <h1 class="page-title">Pipeline opportunità</h1>
-      <p class="page-subtitle">{{ pipeline_count }} opportunità · valore totale {{ pipeline_total|euro }} — trascina le card per cambiare stadio</p>
+      <p class="page-subtitle">Dai priorità alle trattative e pianifica il prossimo contatto.</p>
     </div>
-    <a href="{% url 'opportunita:create' %}" class="btn btn-brand">{% icon 'plus' size=14 %} Nuova opportunità</a>
+    {% if user_perms_map|get_item:'opportunita.modifica' %}
+      <a href="{% url 'opportunita:create' %}" class="btn btn-brand">{% icon 'plus' size=14 %} Nuova opportunità</a>
+    {% endif %}
   </div>
 
-  {% include 'opportunita/_pipeline_board.html' %}
+  <form method="get" action="{% url 'opportunita:list' %}" class="card pipeline-filters" role="search" aria-label="Filtra le opportunità">
+    <div class="field pipeline-search">
+      <label for="pipeline-q">Cerca opportunità o cliente</label>
+      <input id="pipeline-q" class="input" type="search" name="q" value="{{ pipeline_filters.q }}" placeholder="Titolo o ragione sociale" maxlength="200">
+    </div>
+    <div class="field">
+      <label for="pipeline-owner">Responsabile</label>
+      <select id="pipeline-owner" name="owner" class="select">
+        <option value="">Tutti i responsabili</option>
+        <option value="me" {% if pipeline_filters.owner == 'me' %}selected{% endif %}>Le mie opportunità</option>
+        <option value="unassigned" {% if pipeline_filters.owner == 'unassigned' %}selected{% endif %}>Da assegnare</option>
+        {% for owner in pipeline_owners %}<option value="{{ owner.pk }}" {% if pipeline_filters.owner == owner.pk|stringformat:'s' %}selected{% endif %}>{{ owner.get_full_name|default:owner.username }}</option>{% endfor %}
+      </select>
+    </div>
+    <div class="field">
+      <label for="pipeline-attention">Priorità</label>
+      <select id="pipeline-attention" name="attenzione" class="select">
+        <option value="">Tutte le opportunità</option>
+        <option value="overdue" {% if pipeline_filters.attenzione == 'overdue' %}selected{% endif %}>Chiusura in ritardo</option>
+        <option value="stale" {% if pipeline_filters.attenzione == 'stale' %}selected{% endif %}>Ferme da almeno 14 giorni</option>
+        <option value="no_followup" {% if pipeline_filters.attenzione == 'no_followup' %}selected{% endif %}>Senza prossima attività</option>
+      </select>
+    </div>
+    <div class="field">
+      <label for="pipeline-scope">Stato</label>
+      <select id="pipeline-scope" name="scope" class="select">
+        <option value="all" {% if pipeline_filters.scope == 'all' %}selected{% endif %}>Aperte e chiuse</option>
+        <option value="open" {% if pipeline_filters.scope == 'open' %}selected{% endif %}>Solo aperte</option>
+        <option value="closed" {% if pipeline_filters.scope == 'closed' %}selected{% endif %}>Solo chiuse</option>
+      </select>
+    </div>
+    <div class="field">
+      <label for="pipeline-stage">Stadio</label>
+      <select id="pipeline-stage" name="stadio" class="select">
+        <option value="">Tutti gli stadi</option>
+        {% for value,label in stadi %}<option value="{{ value }}" {% if pipeline_filters.stadio == value %}selected{% endif %}>{{ label }}</option>{% endfor %}
+      </select>
+    </div>
+    <div class="pipeline-filter-actions">
+      <button type="submit" class="btn btn-brand">Applica filtri</button>
+      <a href="{% url 'opportunita:list' %}" class="btn btn-ghost">Azzera</a>
+    </div>
+  </form>
+
+  {% include 'opportunita/_pipeline_results.html' %}
 </div>
 {% endblock %}

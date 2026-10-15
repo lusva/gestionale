@@ -1,0 +1,9 @@
+[Unit]
+Description=Gestionale CRM (AIGIS lab) - backup notturno di database e file
+
+[Service]
+Type=oneshot
+User=root
+WorkingDirectory=/opt/gestionale-crm
+EnvironmentFile=/opt/gestionale-crm/.env
+ExecStart=/opt/gestionale-crm/venv/bin/python manage.py backup

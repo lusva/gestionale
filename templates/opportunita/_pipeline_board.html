@@ -1,38 +1,41 @@
-{# Kanban pipeline. Expects: pipeline_cols (list of columns with items) #}
-<div class="pipeline" id="pipeline-board">
+<div class="pipeline" id="pipeline-board" data-can-edit="{% if user_perms_map|get_item:'opportunita.modifica' %}true{% else %}false{% endif %}" role="region" tabindex="0" aria-label="Opportunità per stadio, scorri per vedere tutte le colonne">
   {% for col in pipeline_cols %}
-    <div class="pipe-col" data-stadio="{{ col.id }}">
+    <section class="pipe-col" data-stadio="{{ col.id }}" aria-label="{{ col.label }}">
       <div class="pipe-head">
-        <span style="display: flex; align-items: center; gap: 6px;">
-          <span style="width: 6px; height: 6px; border-radius: 50%; background: {{ col.color }};"></span>
-          {{ col.label }}
-        </span>
+        <span class="pipe-stage-label"><span class="pipe-stage-dot" style="background: {{ col.color }};"></span>{{ col.label }}</span>
         <span class="count">{{ col.count }} · {{ col.total|euro_compact }}</span>
       </div>
-
       {% for o in col.items %}
-        <a href="{% url 'opportunita:detail' o.pk %}" class="pipe-card" draggable="true" data-opp-id="{{ o.pk }}" style="text-decoration: none; color: inherit; display: block;">
-          <div class="cli">{{ o.cliente.ragione_sociale|truncatechars:30 }}</div>
-          <div style="font: 500 11px var(--font-body); color: var(--ink-3); margin-top: 2px;">{{ o.titolo|truncatechars:32 }}</div>
-          <div class="val" style="margin-top: 4px;">{{ o.valore|euro }}</div>
-          <div class="meta">
-            <span style="display: inline-flex; align-items: center; gap: 4px;">
-              {% icon 'clock' size=11 %}{{ o.giorni_in_stadio }}g
-            </span>
-            {% if o.owner %}
-              {% with p=o.owner.profile %}
-                {% avatar p.iniziali|default:o.owner.username|slice:':2' 'sm' 'brand' %}
-              {% endwith %}
-            {% endif %}
-          </div>
-        </a>
+        <article class="pipe-card{% if o.chiusura_in_ritardo %} pipe-card-overdue{% endif %}" draggable="{% if user_perms_map|get_item:'opportunita.modifica' %}true{% else %}false{% endif %}" data-opp-id="{{ o.pk }}" data-move-url="{% url 'opportunita:sposta' o.pk %}">
+          <a href="{% url 'opportunita:detail' o.pk %}" class="pipe-card-main" draggable="false">
+            <div class="cli">{{ o.cliente.ragione_sociale }}</div>
+            <h3 class="pipe-title">{{ o.titolo }}</h3>
+            <div class="pipe-value-row"><span class="val">{{ o.valore|euro }}</span><span>{{ o.probabilita }}%</span></div>
+            <div class="meta">
+              <span>{% icon 'clock' size=11 %} {{ o.giorni_in_stadio }}g in stadio</span>
+              {% if o.owner %}<span title="{{ o.owner.get_full_name|default:o.owner.username }}">{% avatar o.owner.profile.iniziali|default:o.owner.username|slice:':2' 'sm' 'brand' %}</span>{% else %}<span>Da assegnare</span>{% endif %}
+            </div>
+            {% if o.chiusura_prevista and not o.is_chiusa %}<div class="pipe-due{% if o.chiusura_in_ritardo %} is-overdue{% endif %}">{% icon 'calendar' size=12 %} Chiusura {{ o.chiusura_prevista|date:'d M Y' }}{% if o.chiusura_in_ritardo %} · in ritardo{% endif %}</div>{% endif %}
+            {% if o.in_stallo %}<div class="pipe-warning">Ferma da almeno 14 giorni</div>{% endif %}
+          </a>
+          {% if not o.is_chiusa %}
+            <div class="pipe-next-action">
+              {% if o.next_attivita_id %}
+                <a href="{% url 'attivita:detail' o.next_attivita_id %}" draggable="false" class="pipe-followup{% if o.next_attivita_data < pipeline_now %} is-overdue{% endif %}">
+                  <span>{% if o.next_attivita_data < pipeline_now %}Attività in ritardo{% else %}Prossima attività{% endif %} · {{ o.next_attivita_data|date:'d M, H:i' }}</span>
+                  <strong>{{ o.next_attivita_titolo }}</strong>
+                </a>
+              {% else %}<span class="pipe-no-followup">Nessuna attività pianificata</span>{% endif %}
+              {% if user_perms_map|get_item:'attivita.modifica' %}<a class="pipe-plan" draggable="false" href="{% url 'attivita:create' %}?opportunita={{ o.pk }}&amp;cliente={{ o.cliente_id }}">{% icon 'plus' size=12 %} Pianifica follow-up</a>{% endif %}
+            </div>
+          {% endif %}
+        </article>
       {% empty %}
-        <div style="text-align: center; font: 500 11px var(--font-body); color: var(--ink-4); padding: 18px 4px;">—</div>
+        <p class="pipe-empty-col">Nessuna opportunità</p>
       {% endfor %}
-
-      <a href="{% url 'opportunita:create' %}?cliente=&stadio={{ col.id }}" class="btn btn-subtle" style="width: 100%; height: 30px; justify-content: center; font-size: 12px; margin-top: 4px; padding: 0 10px;">
-        {% icon 'plus' size=12 %} Nuova
-      </a>
-    </div>
+      {% if user_perms_map|get_item:'opportunita.modifica' %}
+        <a href="{% url 'opportunita:create' %}?stadio={{ col.id }}" class="btn btn-subtle pipe-add">{% icon 'plus' size=12 %} Nuova in {{ col.label|lower }}</a>
+      {% endif %}
+    </section>
   {% endfor %}
 </div>

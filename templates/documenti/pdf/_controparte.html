@@ -1,0 +1,22 @@
+{# Destinatario del documento. Parametri: soggetto (Cliente o Fornitore), etichetta. #}
+<div class="etichetta">{{ etichetta }}</div>
+<div class="scheda">
+  {% if soggetto %}
+    <div class="scheda-nome">{{ soggetto.ragione_sociale|default:soggetto }}</div>
+    <div class="scheda-righe">
+      {% if soggetto.indirizzo %}<div>{{ soggetto.indirizzo }}</div>{% endif %}
+      {% if soggetto.cap or soggetto.citta %}
+        <div>{{ soggetto.cap }} {{ soggetto.citta }}{% if soggetto.provincia %} ({{ soggetto.provincia }}){% endif %}{% if soggetto.nazione and soggetto.nazione != 'IT' %} · {{ soggetto.nazione }}{% endif %}</div>
+      {% endif %}
+      {% if soggetto.partita_iva and soggetto.partita_iva == soggetto.codice_fiscale %}
+        <div>P.IVA e C.F. {{ soggetto.partita_iva }}</div>
+      {% elif soggetto.partita_iva or soggetto.codice_fiscale %}
+        <div>{% if soggetto.partita_iva %}P.IVA {{ soggetto.partita_iva }}{% endif %}{% if soggetto.partita_iva and soggetto.codice_fiscale %} · {% endif %}{% if soggetto.codice_fiscale %}C.F. {{ soggetto.codice_fiscale }}{% endif %}</div>
+      {% endif %}
+      {% if soggetto.codice_sdi %}<div>Codice destinatario <span class="codice">{{ soggetto.codice_sdi }}</span></div>{% endif %}
+      {% if soggetto.pec %}<div>PEC {{ soggetto.pec }}</div>{% endif %}
+    </div>
+  {% else %}
+    <div class="scheda-righe">—</div>
+  {% endif %}
+</div>

@@ -1,0 +1,20 @@
+<div id="pipeline-results" aria-live="polite" aria-atomic="false">
+  <div class="pipeline-kpis">
+    <div class="card pipeline-kpi"><div class="kpi-label">Opportunità aperte</div><strong>{{ pipeline_count }}</strong><span>nelle condizioni selezionate</span></div>
+    <div class="card pipeline-kpi"><div class="kpi-label">Valore aperto</div><strong>{{ pipeline_total|euro }}</strong><span>escluse le opportunità chiuse</span></div>
+    <div class="card pipeline-kpi"><div class="kpi-label">Valore ponderato</div><strong>{{ pipeline_weighted|euro }}</strong><span>valore × probabilità di chiusura</span></div>
+    <div class="card pipeline-kpi"><div class="kpi-label">Da seguire</div><strong>{{ pipeline_attention_count }}</strong><span>in ritardo, ferme o senza attività</span></div>
+  </div>
+  <div class="pipeline-summary">
+    <p><strong>{{ pipeline_visible_count }}</strong> opportunità visibili{% if pipeline_has_filters %} con i filtri selezionati{% endif %}</p>
+    <p>{% if user_perms_map|get_item:'opportunita.modifica' %}Trascina una scheda per cambiare stadio, oppure aprila e usa «Cambia stadio».{% else %}Apri una scheda per consultare i dettagli.{% endif %}</p>
+  </div>
+  {% if not pipeline_visible_count %}
+    <div class="card pipeline-empty" role="status">
+      <h2>{% if pipeline_has_filters %}Nessuna opportunità corrisponde ai filtri{% else %}La tua prossima opportunità parte da qui{% endif %}</h2>
+      <p>{% if pipeline_has_filters %}Prova una ricerca diversa o azzera i filtri per rivedere tutte le trattative.{% else %}Aggiungi una trattativa, assegna un responsabile e pianifica il primo contatto.{% endif %}</p>
+      {% if pipeline_has_filters %}<a class="btn btn-ghost" href="{% url 'opportunita:list' %}">Azzera filtri</a>{% elif user_perms_map|get_item:'opportunita.modifica' %}<a class="btn btn-brand" href="{% url 'opportunita:create' %}">Crea la prima opportunità</a>{% endif %}
+    </div>
+  {% endif %}
+  {% include 'opportunita/_pipeline_board.html' %}
+</div>

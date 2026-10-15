@@ -22,9 +22,15 @@
         {% elif key == 'ruoli' %}
           <a href="{% url 'settings:ruoli' %}" class="nav-item {% if active_section == 'ruoli' %}active{% endif %}" style="padding: 8px 12px;">{{ label }}</a>
         {% elif key == 'integrazioni' %}
-          <a href="{% url 'settings:integrazioni' %}" class="nav-item {% if active_section == 'integrazioni' %}active{% endif %}" style="padding: 8px 12px;">{{ label }}</a>
+          {% if user_perms_map|get_item:'impostazioni.modifica' %}
+            <a href="{% url 'settings:integrazioni' %}" class="nav-item {% if active_section == 'integrazioni' %}active{% endif %}" style="padding: 8px 12px;">{{ label }}</a>
+          {% endif %}
         {% elif key == 'fatturazione' %}
           <a href="{% url 'settings:fatturazione' %}" class="nav-item {% if active_section == 'fatturazione' %}active{% endif %}" style="padding: 8px 12px;">{{ label }}</a>
+        {% elif key == 'documenti' %}
+          {% if user_perms_map|get_item:'impostazioni.modifica' %}
+            <a href="{% url 'settings:documenti' %}" class="nav-item {% if active_section == 'documenti' %}active{% endif %}" style="padding: 8px 12px;">{{ label }}</a>
+          {% endif %}
         {% elif key == 'api' %}
           <a href="{% url 'settings:api' %}" class="nav-item {% if active_section == 'api' %}active{% endif %}" style="padding: 8px 12px;">{{ label }}</a>
         {% elif key == 'audit' %}

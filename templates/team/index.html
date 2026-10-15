@@ -1,0 +1,147 @@
+{% extends 'base.html' %}
+
+{% block title %}Team{% endblock %}
+{% block crumb_current %}Team{% endblock %}
+
+{% block content %}
+<div class="page team">
+  <div class="page-header">
+    <div>
+      <h1 class="page-title">Team</h1>
+      <p class="page-subtitle">Chi c'è in squadra, cosa ha in carico e chi è collegato.</p>
+    </div>
+    {% if puo_invitare %}
+      <button type="button" class="team-btn team-btn-pieno team-btn-grande" data-apri-dialogo="dialogo-invita">
+        {% icon 'plus' size=15 %} Invita membro
+      </button>
+    {% endif %}
+  </div>
+
+  <div class="team-barra">
+    {% if gruppi %}
+      <div class="team-pillole" role="group" aria-label="Filtra per reparto">
+        <button type="button" class="team-pillola" data-gruppo="" aria-pressed="true">Tutti</button>
+        {% for g in gruppi %}
+          <button type="button" class="team-pillola" data-gruppo="{{ g }}" aria-pressed="false">{{ g }}</button>
+        {% endfor %}
+      </div>
+    {% endif %}
+    <label class="team-cerca">
+      {% icon 'search' size=15 %}
+      <input type="search" placeholder="Cerca persone" aria-label="Cerca persone" autocomplete="off" />
+    </label>
+  </div>
+
+  <div class="team-griglia">
+    {% for m in membri %}
+      {% include 'team/_card.html' %}
+    {% endfor %}
+  </div>
+  <div class="empty team-vuoto" hidden>
+    <div class="ico">{% icon 'search' size=20 %}</div>Nessuno corrisponde ai filtri.
+  </div>
+</div>
+
+<dialog class="team-drawer" id="team-drawer" aria-label="Scheda membro del team">
+  <div class="team-scheda" id="team-scheda"></div>
+</dialog>
+
+{% if puo_invitare %}
+<dialog class="dialogo team-dialogo" id="dialogo-invita" aria-labelledby="dialogo-invita-titolo">
+  <form method="post" action="{% url 'settings:utente_invita' %}">
+    {% csrf_token %}
+    <input type="hidden" name="next" value="{% url 'team:index' %}" />
+    <div class="dialogo-testa">
+      <h2 id="dialogo-invita-titolo">Invita un membro</h2>
+      <p>Riceverà un'email con le credenziali per entrare.</p>
+    </div>
+    <div class="dialogo-corpo">
+      <div class="field">
+        <label for="invita-email">Email *</label>
+        <input class="input" id="invita-email" type="email" name="email" required placeholder="collega@azienda.it" />
+      </div>
+      <div class="grid grid-2" style="gap: 12px;">
+        <div class="field"><label for="invita-nome">Nome</label><input class="input" id="invita-nome" name="first_name" /></div>
+        <div class="field"><label for="invita-cognome">Cognome</label><input class="input" id="invita-cognome" name="last_name" /></div>
+        <div class="field"><label for="invita-qualifica">Mansione</label><input class="input" id="invita-qualifica" name="qualifica" maxlength="80" placeholder="Es. Commerciale" /></div>
+        <div class="field"><label for="invita-reparto">Reparto</label><input class="input" id="invita-reparto" name="reparto" maxlength="60" list="team-reparti" placeholder="Es. Vendite" /></div>
+      </div>
+      <div class="field">
+        <label for="invita-ruolo">Ruolo (permessi)</label>
+        <select class="select" id="invita-ruolo" name="ruolo">
+          {% for val, label in ruoli_choices %}<option value="{{ val }}"{% if val == 'account_manager' %} selected{% endif %}>{{ label }}</option>{% endfor %}
+        </select>
+      </div>
+    </div>
+    <div class="dialogo-piede">
+      <button type="button" class="team-btn team-btn-linea" data-chiudi-dialogo>Annulla</button>
+      <button type="submit" class="team-btn team-btn-pieno">{% icon 'mail' size=14 %} Invia invito</button>
+    </div>
+  </form>
+</dialog>
+{% endif %}
+
+<datalist id="team-reparti">
+  {% for r in reparti %}<option value="{{ r }}"></option>{% endfor %}
+</datalist>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+  var pagina = document.querySelector('.team');
+  var card = Array.from(pagina.querySelectorAll('.team-card'));
+  var vuoto = pagina.querySelector('.team-vuoto');
+  var cerca = pagina.querySelector('.team-cerca input');
+  var gruppo = '';
+
+  // Filtri: reparto (pillole) e testo insieme
+  function filtra() {
+    var q = cerca.value.trim().toLowerCase();
+    var visibili = 0;
+    card.forEach(function (c) {
+      var ok = (!gruppo || c.dataset.gruppo === gruppo)
+        && (!q || c.dataset.cerca.indexOf(q) !== -1);
+      c.hidden = !ok;
+      if (ok) visibili++;
+    });
+    vuoto.hidden = visibili > 0;
+  }
+  pagina.querySelectorAll('.team-pillola').forEach(function (p) {
+    p.addEventListener('click', function () {
+      pagina.querySelectorAll('.team-pillola').forEach(function (x) { x.setAttribute('aria-pressed', x === p); });
+      gruppo = p.dataset.gruppo;
+      filtra();
+    });
+  });
+  cerca.addEventListener('input', filtra);
+
+  // Scheda laterale: si apre subito, il contenuto arriva via HTMX.
+  // ?membro=<id> nell'indirizzo la riapre dopo un ricaricamento.
+  var drawer = document.getElementById('team-drawer');
+  var corpo = document.getElementById('team-scheda');
+  function apriScheda(url, id) {
+    corpo.innerHTML = '<div class="team-scheda-carica" aria-busy="true"></div>';
+    if (!drawer.open) drawer.showModal();
+    htmx.ajax('GET', url, { target: corpo, swap: 'innerHTML' });
+    var u = new URL(location.href);
+    u.searchParams.set('membro', id);
+    history.replaceState(null, '', u);
+  }
+  pagina.addEventListener('click', function (e) {
+    var b = e.target.closest('[data-scheda]');
+    if (b) apriScheda(b.dataset.scheda, b.dataset.membro);
+  });
+  drawer.addEventListener('click', function (e) { if (e.target === drawer) drawer.close(); });
+  drawer.addEventListener('close', function () {
+    var u = new URL(location.href);
+    u.searchParams.delete('membro');
+    history.replaceState(null, '', u);
+  });
+  {% if apri_membro %}
+    var daAprire = pagina.querySelector('[data-scheda][data-membro="{{ apri_membro }}"]');
+    if (daAprire) apriScheda(daAprire.dataset.scheda, daAprire.dataset.membro);
+  {% endif %}
+});
+</script>
+{% endblock %}

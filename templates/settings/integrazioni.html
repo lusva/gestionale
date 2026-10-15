@@ -1,0 +1,283 @@
+{% extends 'settings/_settings_base.html' %}
+
+{% block title %}Impostazioni · Integrazioni{% endblock %}
+
+{% block settings_content %}
+
+{# ---- Stato dell'invio e della ricezione -------------------------------- #}
+<div class="card" style="padding: 24px;">
+  <div class="flex-between mb-16" style="gap: 12px; flex-wrap: wrap;">
+    <div>
+      <div style="font: 600 16px var(--font-display);">Fatturazione elettronica (SDI)</div>
+      <div style="font: 13px var(--font-body); color: var(--ink-3);">Invio delle fatture e ricezione di ricevute e fatture di acquisto dalla PEC aziendale.</div>
+    </div>
+    <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+      <form method="post" style="margin: 0;">
+        {% csrf_token %}
+        <button type="submit" name="azione" value="verifica" class="btn btn-ghost">{% icon 'check' size=14 %} Verifica connessione</button>
+      </form>
+      {% if pec_attiva %}
+        <form method="post" style="margin: 0;">
+          {% csrf_token %}
+          <button type="submit" name="azione" value="controlla" class="btn btn-ghost">{% icon 'mail' size=14 %} Controlla ora la PEC</button>
+        </form>
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="integ-stato">
+    <div>
+      <div class="integ-etichetta">Invio al SDI</div>
+      {% if pec_attiva %}
+        <span class="badge badge-success"><span class="dot"></span>Attivo dalla PEC</span>
+      {% elif azienda.sdi_provider == 'mock' %}
+        <span class="badge badge-warn"><span class="dot"></span>Simulato (mock)</span>
+      {% else %}
+        <span class="badge badge-neutral"><span class="dot"></span>Disabilitato</span>
+      {% endif %}
+    </div>
+    <div>
+      <div class="integ-etichetta">Casella del SDI in uso</div>
+      <div class="mono integ-valore">{{ azienda.pec_destinatario_sdi|default:'sdi01@pec.fatturapa.it' }}</div>
+      {% if casella_sdi_primo_invio %}<div class="integ-nota">quella del primo invio</div>{% endif %}
+    </div>
+    <div>
+      <div class="integ-etichetta">Ultimo controllo della PEC</div>
+      {% if ultimo_controllo.ultima_fine %}
+        <div class="integ-valore">
+          {% if ultimo_controllo.esito == 'errore' %}<span class="text-danger">{% icon 'alert' size=12 %}</span>{% endif %}
+          {{ ultimo_controllo.ultima_fine|timesince }} fa
+        </div>
+        <div class="integ-nota" title="{{ ultimo_controllo.riepilogo }}">{{ ultimo_controllo.riepilogo|truncatechars:90 }}</div>
+      {% else %}
+        <div class="integ-valore">mai</div>
+      {% endif %}
+    </div>
+    <div>
+      <div class="integ-etichetta">Ultima email elaborata</div>
+      <div class="integ-valore">{% if ultima_email %}{{ ultima_email.elaborato_il|date:'d/m/Y H:i' }}{% else %}nessuna{% endif %}</div>
+    </div>
+  </div>
+
+  {% if controllo_in_ritardo %}
+    <div class="callout warn" style="margin-top: 16px;">
+      <div class="ico">{% icon 'alert' size=14 %}</div>
+      <div>
+        La PEC non viene controllata da {% if ultimo_controllo.ultima_fine %}{{ ultimo_controllo.ultima_fine|timesince }}{% else %}quando l'invio è attivo{% endif %}:
+        il controllo automatico (ogni 15 minuti) forse non gira. Sul server:
+        <span class="mono">systemctl status gestionale-sdi-pull.timer</span>.
+      </div>
+    </div>
+  {% endif %}
+
+  {% if esiti %}
+    <div class="integ-esiti">
+      {% regroup esiti by sezione as sezioni %}
+      {% for s in sezioni %}
+        <div class="integ-etichetta" style="margin-top: 12px;">{{ s.grouper }}</div>
+        {% for e in s.list %}
+          <div class="integ-esito {% if e.ok %}ok{% elif e.ok is False %}ko{% else %}info{% endif %}">
+            <span class="segno">{% if e.ok %}{% icon 'check' size=13 %}{% elif e.ok is False %}{% icon 'x' size=13 %}{% endif %}</span>
+            <span>{{ e.testo }}</span>
+          </div>
+        {% endfor %}
+      {% endfor %}
+      <div class="integ-nota" style="margin-top: 10px;">Verifica fatta con i dati salvati. Nessuna email è stata inviata.</div>
+    </div>
+  {% endif %}
+
+  {% if controllo %}
+    <div class="callout {% if not controllo.ok %}warn{% endif %}" style="margin-top: 16px; display: block;">
+      <div style="font: 600 13px var(--font-body); margin-bottom: 6px;">Controllo della PEC</div>
+      <pre class="integ-uscita">{{ controllo.testo }}</pre>
+    </div>
+  {% endif %}
+</div>
+
+{% if fatture_da_correggere %}
+  <div class="card" style="padding: 0;">
+    <div style="padding: 18px 24px 8px; font: 600 14px var(--font-display);">Documenti da correggere e reinviare</div>
+    <div class="tbl-scroll">
+      <table class="tbl">
+        <thead><tr><th>Documento</th><th>Cliente</th><th>Stato</th><th>Messaggio del SDI</th></tr></thead>
+        <tbody>
+          {% for f in fatture_da_correggere %}
+            <tr>
+              <td class="mono">{% if f.titolo_stampa == 'Nota di credito' %}<a href="{% url 'documenti:nota_credito_detail' f.pk %}">NC {% if f.sezionale %}{{ f.sezionale }}/{% endif %}{{ f.numero }}/{{ f.anno }}</a>{% else %}<a href="{% url 'documenti:fattura_detail' f.pk %}">{{ f.numero }}/{{ f.anno }}</a>{% endif %}</td>
+              <td>{{ f.cliente }}</td>
+              <td><span class="badge badge-danger">{{ f.get_sdi_stato_display }}</span></td>
+              <td style="font-size: 12px; color: var(--ink-2);">{{ f.sdi_ultimo_messaggio|truncatechars:120 }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+{% endif %}
+
+{# ---- Configurazione ------------------------------------------------------ #}
+<form method="post" class="card" style="padding: 24px;" data-salva-rapido data-avvisa-modifiche autocomplete="off">
+  {% csrf_token %}
+  {% if form.errors %}
+    <div class="callout warn mb-16"><div class="ico">{% icon 'x' size=14 %}</div><div>Controlla i campi segnati in rosso.{{ form.non_field_errors }}</div></div>
+  {% endif %}
+
+  <div class="section-title">Invio al SDI</div>
+  <div class="field mb-16">
+    <label for="{{ form.sdi_provider.id_for_label }}">{{ form.sdi_provider.label }}</label>
+    {{ form.sdi_provider }}
+    {{ form.sdi_provider.errors }}
+    <div class="integ-nota" style="margin-top: 6px;">
+      <strong>Disabilitato</strong> se emetti le fatture da un altro canale (ad esempio il portale di Aruba o del
+      commercialista): con l'invio attivo il pulsante «Invia al SDI» riemetterebbe fatture già emesse.
+      <strong>PEC</strong>: le fatture partono dalla casella qui sotto e il gestionale legge ricevute e fatture di
+      acquisto ogni 15 minuti. Il canale PEC non ha un ambiente di prova: ogni invio è una fattura emessa.
+    </div>
+  </div>
+
+  <div class="grid grid-2" style="gap: 16px;">
+    <div class="field">
+      <label for="{{ form.pec_mittente.id_for_label }}">{{ form.pec_mittente.label }}</label>
+      {{ form.pec_mittente }}
+      {{ form.pec_mittente.errors }}
+    </div>
+    <div class="field">
+      <label for="{{ form.pec_destinatario_sdi.id_for_label }}">{{ form.pec_destinatario_sdi.label }}</label>
+      {{ form.pec_destinatario_sdi }}
+      {{ form.pec_destinatario_sdi.errors }}
+      <div class="integ-nota" style="margin-top: 4px;">Il primo invio va a <span class="mono">sdi01@pec.fatturapa.it</span>;
+        il SDI risponde da una sua casella (sdiNN) che il gestionale salva qui da solo. Non cambiarla a mano.</div>
+    </div>
+  </div>
+
+  <div class="flex-between" style="margin-top: 24px; gap: 12px; flex-wrap: wrap;">
+    <div class="section-title" style="margin: 0; flex: 1;">Server del gestore PEC</div>
+    <button type="button" class="btn btn-ghost btn-sm" id="preset-aruba">Aruba PEC</button>
+  </div>
+  <div class="integ-nota" style="margin: 6px 0 12px;">«Aruba PEC» riempie server e porte. Per gli altri gestori trovi i dati
+    nella loro guida («configurare la PEC su un programma di posta»). L'utente di solito è l'indirizzo PEC.</div>
+
+  <div class="grid grid-2" style="gap: 24px;">
+    <fieldset class="integ-blocco">
+      <legend>Invio (SMTP)</legend>
+      <div class="integ-host">
+        <div class="field">
+          <label for="{{ form.pec_smtp_host.id_for_label }}">{{ form.pec_smtp_host.label }}</label>
+          {{ form.pec_smtp_host }}{{ form.pec_smtp_host.errors }}
+        </div>
+        <div class="field">
+          <label for="{{ form.pec_smtp_port.id_for_label }}">{{ form.pec_smtp_port.label }}</label>
+          {{ form.pec_smtp_port }}{{ form.pec_smtp_port.errors }}
+        </div>
+      </div>
+      <div class="field">
+        <label for="{{ form.pec_smtp_user.id_for_label }}">{{ form.pec_smtp_user.label }}</label>
+        {{ form.pec_smtp_user }}{{ form.pec_smtp_user.errors }}
+      </div>
+      <div class="field">
+        <label for="{{ form.pec_smtp_password.id_for_label }}">{{ form.pec_smtp_password.label }}</label>
+        {{ form.pec_smtp_password }}{{ form.pec_smtp_password.errors }}
+        {% if azienda.pec_smtp_password %}
+          <label class="integ-check">{{ form.cancella_smtp_password }} {{ form.cancella_smtp_password.label }}</label>
+        {% endif %}
+      </div>
+      <label class="integ-check">{{ form.pec_smtp_use_tls }} {{ form.pec_smtp_use_tls.label }}</label>
+    </fieldset>
+
+    <fieldset class="integ-blocco">
+      <legend>Ricezione (IMAP)</legend>
+      <div class="integ-host">
+        <div class="field">
+          <label for="{{ form.pec_imap_host.id_for_label }}">{{ form.pec_imap_host.label }}</label>
+          {{ form.pec_imap_host }}{{ form.pec_imap_host.errors }}
+        </div>
+        <div class="field">
+          <label for="{{ form.pec_imap_port.id_for_label }}">{{ form.pec_imap_port.label }}</label>
+          {{ form.pec_imap_port }}{{ form.pec_imap_port.errors }}
+        </div>
+      </div>
+      <div class="field">
+        <label for="{{ form.pec_imap_user.id_for_label }}">{{ form.pec_imap_user.label }}</label>
+        {{ form.pec_imap_user }}{{ form.pec_imap_user.errors }}
+      </div>
+      <div class="field">
+        <label for="{{ form.pec_imap_password.id_for_label }}">{{ form.pec_imap_password.label }}</label>
+        {{ form.pec_imap_password }}{{ form.pec_imap_password.errors }}
+        {% if azienda.pec_imap_password %}
+          <label class="integ-check">{{ form.cancella_imap_password }} {{ form.cancella_imap_password.label }}</label>
+        {% endif %}
+      </div>
+      <div class="field">
+        <label for="{{ form.pec_imap_folder.id_for_label }}">{{ form.pec_imap_folder.label }}</label>
+        {{ form.pec_imap_folder }}{{ form.pec_imap_folder.errors }}
+      </div>
+    </fieldset>
+  </div>
+
+  <div style="display: flex; gap: 8px; justify-content: flex-end; flex-wrap: wrap; margin-top: 24px;">
+    <button type="submit" name="azione" value="salva_verifica" class="btn btn-ghost">Salva e verifica</button>
+    <button type="submit" name="azione" value="salva" class="btn btn-brand">{% icon 'check' size=14 %} Salva</button>
+  </div>
+</form>
+
+{% if messaggi_sdi %}
+  <div class="card" style="padding: 0;">
+    <div style="padding: 18px 24px 8px; font: 600 14px var(--font-display);">Ultimi messaggi del SDI</div>
+    <div class="tbl-scroll">
+      <table class="tbl">
+        <thead><tr><th>Quando</th><th>Documento</th><th>Tipo</th><th>Descrizione</th></tr></thead>
+        <tbody>
+          {% for m in messaggi_sdi %}
+            <tr>
+              <td style="white-space: nowrap;">{{ m.timestamp|date:'d/m/Y H:i' }}</td>
+              <td class="mono">{% if m.fattura_id %}<a href="{% url 'documenti:fattura_detail' m.fattura_id %}">{{ m.fattura.numero }}/{{ m.fattura.anno }}</a>{% else %}<a href="{% url 'documenti:nota_credito_detail' m.nota_credito_id %}">NC {{ m.nota_credito.numero }}/{{ m.nota_credito.anno }}</a>{% endif %}</td>
+              <td><span class="badge {% if m.tipo == 'NS' or m.tipo == 'MC' %}badge-danger{% elif m.tipo == 'RC' %}badge-success{% else %}badge-neutral{% endif %}">{{ m.tipo }}</span></td>
+              <td style="font-size: 12px; color: var(--ink-2);">{{ m.descrizione|truncatechars:140 }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+{% endif %}
+
+{{ preset_aruba|json_script:'preset-aruba-dati' }}
+<style>
+  .integ-stato { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 16px; }
+  .integ-etichetta { font: 500 11px var(--font-body); letter-spacing: .04em; text-transform: uppercase; color: var(--ink-3); margin-bottom: 4px; }
+  .integ-valore { font: 500 13px var(--font-body); color: var(--ink); overflow-wrap: anywhere; }
+  .integ-nota { font: 12px/1.5 var(--font-body); color: var(--ink-3); }
+  .integ-esiti { margin-top: 8px; border-top: 1px solid var(--border); padding-top: 4px; }
+  .integ-esito { display: flex; gap: 8px; align-items: flex-start; font: 13px/1.5 var(--font-body); padding: 3px 0; overflow-wrap: anywhere; }
+  .integ-esito .segno { width: 16px; flex-shrink: 0; display: inline-flex; padding-top: 3px; }
+  .integ-esito.ok .segno { color: var(--success); }
+  .integ-esito.ko { color: var(--danger); }
+  .integ-esito.info { color: var(--ink-3); }
+  .integ-uscita { margin: 0; font: 12px/1.5 var(--font-mono); white-space: pre-wrap; overflow-wrap: anywhere; color: var(--ink-2); }
+  .integ-blocco { border: 1px solid var(--border); border-radius: var(--r-md); padding: 12px 16px 16px; margin: 0; min-width: 0; display: flex; flex-direction: column; gap: 12px; }
+  .integ-blocco legend { font: 600 13px var(--font-body); padding: 0 6px; }
+  .integ-host { display: grid; grid-template-columns: minmax(0, 1fr) 90px; gap: 12px; }
+  .integ-check { display: flex; align-items: center; gap: 8px; font: 13px var(--font-body); color: var(--ink-2); margin-top: 6px; }
+</style>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+  /* «Aruba PEC»: server e porte del gestore; l'utente, se vuoto, è
+     l'indirizzo PEC (come vuole Aruba). */
+  document.getElementById('preset-aruba')?.addEventListener('click', function () {
+    const form = this.form;
+    const valori = JSON.parse(document.getElementById('preset-aruba-dati').textContent);
+    const metti = (nome, valore) => {
+      const el = form.elements[nome];
+      if (!el) return;
+      el.value = valore;
+      el.dispatchEvent(new Event('input', { bubbles: true }));
+      el.dispatchEvent(new Event('change', { bubbles: true }));
+    };
+    Object.entries(valori).forEach(([nome, valore]) => metti(nome, valore));
+    const pec = form.elements.pec_mittente.value.trim();
+    ['pec_smtp_user', 'pec_imap_user'].forEach(nome => { if (pec && !form.elements[nome].value.trim()) metti(nome, pec); });
+  });
+</script>
+{% endblock %}

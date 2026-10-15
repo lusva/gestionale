@@ -6,4 +6,5 @@ app_name = 'search'
 
 urlpatterns = [
     path('', views.cerca, name='cerca'),
+    path('rapida/', views.rapida, name='rapida'),
 ]

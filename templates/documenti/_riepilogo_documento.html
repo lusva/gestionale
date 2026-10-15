@@ -1,0 +1,52 @@
+{% comment %}
+  Riepilogo live del form documento (anteprima.documento_anteprima): gli
+  stessi totali che avrà il documento salvato, calcolati sul server.
+{% endcomment %}
+<div class="riepilogo-righe">
+  {% if valori.sconto %}
+    <div class="riepilogo-voce"><span>Righe</span><span class="mono">{{ valori.imponibile_lordo|euro:2 }}</span></div>
+    <div class="riepilogo-voce"><span>Sconto</span><span class="mono">− {{ valori.sconto|euro:2 }}</span></div>
+  {% endif %}
+  <div class="riepilogo-voce"><span>Imponibile</span><span class="mono">{{ valori.imponibile|euro:2 }}</span></div>
+  {% if valori.spese %}
+    <div class="riepilogo-voce"><span>Spese accessorie</span><span class="mono">{{ valori.spese|euro:2 }}</span></div>
+  {% endif %}
+  {% for a in valori.iva_dettaglio %}
+    <div class="riepilogo-voce riepilogo-sub">
+      <span>IVA {% if a.natura %}{{ a.natura }}{% else %}{{ a.aliquota|floatformat:"-2" }}%{% endif %} su {{ a.imponibile|euro:2 }}</span>
+      <span class="mono">{{ a.imposta|euro:2 }}</span>
+    </div>
+  {% empty %}
+    <div class="riepilogo-voce"><span>IVA</span><span class="mono">{{ valori.imposta_totale|euro:2 }}</span></div>
+  {% endfor %}
+  {% if valori.cassa_prev %}
+    <div class="riepilogo-voce"><span>Cassa previdenziale</span><span class="mono">{{ valori.cassa_prev|euro:2 }}</span></div>
+  {% endif %}
+  {% if valori.bollo %}
+    <div class="riepilogo-voce"><span>Bollo</span><span class="mono">{{ valori.bollo|euro:2 }}</span></div>
+  {% endif %}
+  <div class="riepilogo-totale"><span>Totale</span><span class="mono">{{ valori.totale|euro:2 }}</span></div>
+  {% if not n_righe %}
+    <div class="riepilogo-nota">Aggiungi una riga con quantità e prezzo per vedere i totali.</div>
+  {% endif %}
+</div>
+
+{% if tipo == 'fattura' or tipo == 'fattura_acquisto' %}
+  <div class="riepilogo-scadenze">
+    <div class="riepilogo-titolo">
+      Scadenze{% if scadenze_manuali %} (inserite a mano){% elif scadenze and not scadenze_nota %} (dalla forma di pagamento){% endif %}
+    </div>
+    {% for s in scadenze %}
+      <div class="riepilogo-voce"><span>{{ s.data|date:'d/m/Y' }}</span><span class="mono">{{ s.importo|euro:2 }}</span></div>
+    {% empty %}
+      {% if not scadenze_nota %}<div class="riepilogo-nota">Scegli una forma di pagamento: le scadenze si calcolano da sole.</div>{% endif %}
+    {% endfor %}
+    {% if scadenze_nota %}<div class="riepilogo-nota">{{ scadenze_nota }}</div>{% endif %}
+    {% if scadenze_manuali and scadenze_differenza %}
+      <div class="riepilogo-avviso">
+        {% icon 'alert' size=13 %}
+        La somma delle scadenze differisce dal totale di {{ scadenze_differenza|euro:2 }}.
+      </div>
+    {% endif %}
+  </div>
+{% endif %}

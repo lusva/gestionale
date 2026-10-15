@@ -1,0 +1,87 @@
+{% load humanize %}
+<button type="button" class="btn-icon team-chiudi" data-chiudi-dialogo aria-label="Chiudi">{% icon 'x' size=16 %}</button>
+
+<div class="team-scheda-testa">
+  {% include 'team/_avatar.html' with grande=True %}
+  <h2 class="team-scheda-nome">{{ m.nome }}</h2>
+  <div class="team-ruolo">{{ m.sottotitolo }}</div>
+  <div class="team-meta">
+    {% if m.profile.sede %}<span>{% icon 'pin' size=13 %}{{ m.profile.sede }}</span>{% endif %}
+    <span>{% icon 'team' size=13 %}{{ m.gruppo }}</span>
+  </div>
+</div>
+
+<div class="team-stat">
+  <div{% if m.n_ritardo %} class="ritardo"{% endif %}><b>{{ m.n_aperte }}</b><span>Da fare</span></div>
+  <div><b>{{ m.n_completate|intcomma }}</b><span>Completate</span></div>
+  <div class="{{ m.livello_carico }}" title="{{ m.ore_7gg }} h nei prossimi 7 giorni su {{ ore_settimanali }} h"><b>{{ m.carico }}%</b><span>Carico</span></div>
+</div>
+{% if m.n_ritardo %}
+  <p class="team-avviso">{% icon 'alert' size=13 %} {{ m.n_ritardo }} attività in ritardo</p>
+{% endif %}
+
+<div class="team-sezione">Attività assegnate</div>
+<ul class="team-lista">
+  {% for a in da_fare %}
+    <li><a href="{{ a.get_absolute_url }}">
+      <span class="pallino" style="background: {{ a.color }};"></span>
+      <span class="titolo">{{ a.titolo }}{% if a.cliente %}<small>{{ a.cliente.ragione_sociale }}</small>{% endif %}</span>
+      {% if a.data < ora %}<span class="quando ritardo">In ritardo</span>{% else %}<span class="quando">{{ a.data|date:'j M' }}</span>{% endif %}
+    </a></li>
+  {% endfor %}
+  {% if m.n_aperte > da_fare|length %}
+    <li class="team-lista-altre">e altre {{ m.n_aperte|add:'-6' }} da fare</li>
+  {% endif %}
+  {% for a in fatte %}
+    <li class="fatta"><a href="{{ a.get_absolute_url }}">
+      <span class="pallino"></span>
+      <span class="titolo">{{ a.titolo }}{% if a.cliente %}<small>{{ a.cliente.ragione_sociale }}</small>{% endif %}</span>
+      <span class="quando">Fatta</span>
+    </a></li>
+  {% endfor %}
+  {% if not da_fare and not fatte %}
+    <li class="team-lista-vuota">Nessuna attività assegnata.</li>
+  {% endif %}
+</ul>
+
+<div class="team-sezione">Portafoglio</div>
+<div class="team-stat team-stat-piccolo">
+  <div><b>{{ m.n_clienti }}</b><span>Clienti</span></div>
+  <div><b>{{ m.n_opportunita }}</b><span>Opportunità</span></div>
+  <div><b>{{ m.pipeline|euro_compact }}</b><span>Pipeline</span></div>
+</div>
+
+<div class="team-sezione">Contatti</div>
+<div class="team-contatti">
+  {% if m.email %}<a href="mailto:{{ m.email }}">{% icon 'mail' size=14 %}{{ m.email }}</a>{% endif %}
+  {% if m.profile.telefono %}<a href="tel:{{ m.profile.telefono }}">{% icon 'phone' size=14 %}{{ m.profile.telefono }}</a>{% endif %}
+  <span>{% icon 'lock' size=14 %}{{ m.profile.ruolo_label }}</span>
+</div>
+
+{% if puo_modificare %}
+  <details class="team-modifica">
+    <summary>{% icon 'edit' size=13 %} Modifica scheda</summary>
+    <form method="post" action="{% url 'team:modifica' m.pk %}">
+      {% csrf_token %}
+      <div class="grid grid-2" style="gap: 10px;">
+        {% for f in form %}
+          <div class="field"><label for="{{ f.id_for_label }}">{{ f.label }}</label>{{ f }}</div>
+        {% endfor %}
+      </div>
+      <div class="team-modifica-piede">
+        <button type="submit" class="team-btn team-btn-pieno">Salva</button>
+      </div>
+    </form>
+  </details>
+{% endif %}
+
+<div class="team-scheda-piede">
+  {% if m.email %}
+    <a class="team-btn team-btn-linea" href="mailto:{{ m.email }}">{% icon 'mail' size=14 %} Messaggio</a>
+  {% else %}
+    <span class="team-btn team-btn-linea" aria-disabled="true">{% icon 'mail' size=14 %} Messaggio</span>
+  {% endif %}
+  {% if puo_assegnare %}
+    <a class="team-btn team-btn-pieno" href="{% url 'attivita:create' %}?owner={{ m.pk }}">{% icon 'plus' size=14 %} Assegna attività</a>
+  {% endif %}
+</div>

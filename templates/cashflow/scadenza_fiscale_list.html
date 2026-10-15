@@ -49,6 +49,7 @@
         <tr>
           <th>Scadenza</th>
           <th>Tipo</th>
+          <th>Periodo di riferimento</th>
           <th>Descrizione</th>
           <th style="text-align: right;">Importo</th>
           <th>Stato</th>
@@ -65,7 +66,8 @@
               {% endif %}
             </td>
             <td>{{ s.get_tipo_display }}</td>
-            <td>{{ s.descrizione }}{% if s.stimata and not s.pagata %} <a href="{% url 'cashflow:liquidazione_iva' %}" class="badge badge-info" style="text-decoration: none;" title="Calcolata dal gestionale: si aggiorna da sola finché non la modifichi">stima</a>{% endif %}</td>
+            <td style="white-space: nowrap; color: var(--ink-2);">{{ s.periodo_riferimento|default:'—' }}</td>
+            <td>{{ s.descrizione }}{% if s.stimata and not s.pagata %} <a href="{% url 'cashflow:liquidazione_iva' %}" class="badge badge-info" style="text-decoration: none;" title="Calcolata dal gestionale dalle fatture: si aggiorna da sola finché non la modifichi o la segni pagata">stima{% if s.periodo_iva_in_corso %} · periodo in corso{% endif %}</a>{% endif %}</td>
             <td class="mono" style="text-align: right;">{{ s.importo|euro }}</td>
             <td>
               {% if s.pagata %}
@@ -91,7 +93,7 @@
             </td>
           </tr>
         {% empty %}
-          <tr><td colspan="6" style="padding: 24px; text-align: center; color: var(--ink-3);">Nessuna scadenza fiscale.</td></tr>
+          <tr><td colspan="7" style="padding: 24px; text-align: center; color: var(--ink-3);">Nessuna scadenza fiscale.</td></tr>
         {% endfor %}
       </tbody>
     </table>
@@ -99,9 +101,9 @@
 
   {% if is_paginated %}
     <div class="pagination" style="margin-top: 16px;">
-      {% if page_obj.has_previous %}<a href="?page={{ page_obj.previous_page_number }}" class="btn btn-ghost btn-sm">‹</a>{% endif %}
+      {% if page_obj.has_previous %}<a href="{% querystring page=page_obj.previous_page_number %}" class="btn btn-ghost btn-sm">‹</a>{% endif %}
       <span style="font: 12px var(--font-body); color: var(--ink-3);">Pagina {{ page_obj.number }} di {{ page_obj.paginator.num_pages }}</span>
-      {% if page_obj.has_next %}<a href="?page={{ page_obj.next_page_number }}" class="btn btn-ghost btn-sm">›</a>{% endif %}
+      {% if page_obj.has_next %}<a href="{% querystring page=page_obj.next_page_number %}" class="btn btn-ghost btn-sm">›</a>{% endif %}
     </div>
   {% endif %}
 </div>

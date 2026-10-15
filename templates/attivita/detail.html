@@ -1,17 +1,44 @@
 {% extends 'base.html' %}
+{% load static %}
 {% block title %}{{ attivita.titolo }}{% endblock %}
+{% block extra_css %}<link rel="stylesheet" href="{% static 'css/attivita.css' %}" />{% endblock %}
+{% block breadcrumb %}
+  <span class="sep">{% icon 'chevronRight' size=14 %}</span><a href="{% url 'attivita:list' %}">Attività</a>
+  <span class="sep">{% icon 'chevronRight' size=14 %}</span><span class="current">{{ attivita.titolo|truncatechars:32 }}</span>
+{% endblock %}
 {% block content %}
-<div class="page" style="max-width: 720px; margin: 0 auto;">
+<div class="page agenda-detail-page">
   <div class="page-header">
     <div>
       <h1 class="page-title">{{ attivita.titolo }}</h1>
       <p class="page-subtitle">{{ attivita.get_tipo_display }} · {{ attivita.data|date:'d F Y, H:i' }}</p>
     </div>
-    <a href="{% url 'attivita:update' attivita.pk %}" class="btn btn-ghost">{% icon 'edit' size=14 %} Modifica</a>
+    {% if can_edit %}<a href="{% url 'attivita:update' attivita.pk %}" class="btn btn-ghost">{% icon 'edit' size=14 %} Modifica</a>{% endif %}
   </div>
-  <div class="card" style="padding: 20px;">
-    <div class="block-title">Descrizione</div>
-    <div style="white-space: pre-line; color: var(--ink-2);">{{ attivita.descrizione|default:'Nessuna descrizione' }}</div>
+  <div class="card agenda-detail-card">
+    <dl class="agenda-detail-facts">
+      <div><dt>Cliente</dt><dd>{% if attivita.cliente %}<a href="{{ attivita.cliente.get_absolute_url }}">{{ attivita.cliente }}</a>{% else %}Nessun cliente collegato{% endif %}</dd></div>
+      <div><dt>Opportunità</dt><dd>{% if attivita.opportunita %}<a href="{{ attivita.opportunita.get_absolute_url }}">{{ attivita.opportunita.titolo }}</a>{% else %}Nessuna opportunità collegata{% endif %}</dd></div>
+      <div><dt>Assegnatario</dt><dd>{% if attivita.owner %}{{ attivita.owner.get_full_name|default:attivita.owner.username }}{% else %}Da assegnare{% endif %}</dd></div>
+      <div><dt>Durata prevista</dt><dd>{{ attivita.durata_minuti }} minuti</dd></div>
+    </dl>
+    <div class="agenda-detail-state">
+      <span class="{% if attivita.completata %}agenda-done-label{% elif attivita.data < now %}agenda-overdue-label{% endif %}">{% if attivita.completata %}Completata{% elif attivita.data < now %}Scaduta · Da completare{% else %}Da fare{% endif %}</span>
+      {% if can_edit %}
+        <form method="post" action="{% url 'attivita:toggle' attivita.pk %}">
+          {% csrf_token %}<input type="hidden" name="next" value="{{ attivita.get_absolute_url }}" />
+          <button type="submit" class="btn btn-brand">{% icon 'check' size=14 %} {% if attivita.completata %}Riapri attività{% else %}Segna come completata{% endif %}</button>
+        </form>
+      {% endif %}
+    </div>
+  </div>
+  <div class="card agenda-detail-card">
+    <h2 class="block-title">Descrizione</h2>
+    <div class="agenda-description">{{ attivita.descrizione|default:'Nessuna descrizione aggiunta.' }}</div>
+  </div>
+  <div class="agenda-form-actions">
+    <a href="{% url 'attivita:list' %}" class="btn btn-ghost">{% icon 'arrowLeft' size=14 %} Torna all’agenda</a>
+    {% if can_edit %}<a href="{% url 'attivita:delete' attivita.pk %}" class="btn btn-ghost">{% icon 'trash' size=14 %} Elimina attività</a>{% endif %}
   </div>
 </div>
 {% endblock %}

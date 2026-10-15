@@ -1,0 +1,47 @@
+{# Righe del documento. Parametri: righe, prezzi (colonne prezzo e importo), con_iva (colonna aliquota). #}
+<table class="righe">
+  <thead>
+    <tr>
+      <th>Descrizione</th>
+      <th class="num" style="width: 20mm;">Quantità</th>
+      {% if prezzi %}
+        <th class="num" style="width: 25mm;">Prezzo unitario</th>
+        {% if con_iva %}<th class="num" style="width: 13mm;">IVA</th>{% endif %}
+        <th class="num" style="width: 26mm;">Importo</th>
+      {% endif %}
+    </tr>
+  </thead>
+  <tbody>
+    {% for r in righe %}
+      <tr>
+        <td>
+          {% if r.articolo %}
+            <div class="voce">{{ r.articolo.descrizione }}</div>
+            <div class="voce-dettaglio"><span class="codice voce-codice">{{ r.articolo.codice }}</span>{% if r.descrizione_libera %} · {{ r.descrizione_libera|linebreaksbr }}{% endif %}</div>
+          {% else %}
+            {% with parti=r.descrizione_libera|dividi_descrizione %}
+              {% if parti.0 %}
+                <div class="voce">{{ parti.0 }}</div>
+                {% if parti.1 %}<div class="voce-dettaglio">{{ parti.1|linebreaksbr }}</div>{% endif %}
+              {% elif parti.1 %}
+                <div>{{ parti.1|linebreaksbr }}</div>
+              {% else %}
+                <div class="voce-dettaglio">—</div>
+              {% endif %}
+            {% endwith %}
+          {% endif %}
+        </td>
+        <td class="num">{{ r.quantita|floatformat:"-2g" }}{% if r.um %} <span class="um">{{ r.um|lower }}</span>{% endif %}</td>
+        {% if prezzi %}
+          <td class="num">{{ r.importo_unitario|floatformat:"2g" }}</td>
+          {% if con_iva %}
+            <td class="num aliquota">{% if not r.iva %}—{% elif r.iva.natura and not r.iva.aliquota %}{{ r.iva.natura }}{% else %}{{ r.iva.aliquota|floatformat:"-2" }}%{% endif %}</td>
+          {% endif %}
+          <td class="num importo-riga">{{ r.imponibile|floatformat:"2g" }}</td>
+        {% endif %}
+      </tr>
+    {% empty %}
+      <tr><td class="righe-vuote" colspan="{% if prezzi %}{% if con_iva %}5{% else %}4{% endif %}{% else %}2{% endif %}">Nessuna riga</td></tr>
+    {% endfor %}
+  </tbody>
+</table>

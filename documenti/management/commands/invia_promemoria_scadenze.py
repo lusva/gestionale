@@ -27,7 +27,7 @@ from django.core.management.base import BaseCommand
 from django.conf import settings
 from django.utils.timezone import now
 
-from documenti.models import ScadenzaFattura
+from documenti.models import ScadenzaFattura, crediti_aperti
 
 
 class Command(BaseCommand):
@@ -48,13 +48,12 @@ class Command(BaseCommand):
         finestra_futuro = oggi + timedelta(days=giorni)
         finestra_passato = oggi - timedelta(days=giorni)
 
-        scadenze = (
+        # solo il residuo ancora da incassare (un incasso parziale lo riduce)
+        scadenze = crediti_aperti(
             ScadenzaFattura.objects
             .select_related('fattura__cliente')
-            .filter(fattura__pagata=False)
             .filter(data__gte=finestra_passato, data__lte=finestra_futuro)
-            .order_by('fattura__cliente_id', 'data')
-        )
+        ).order_by('fattura__cliente_id', 'data')
 
         # Raggruppo per cliente
         per_cliente: dict = {}
@@ -89,11 +88,12 @@ class Command(BaseCommand):
                     if giorni_diff < 0
                     else f'scade tra {giorni_diff} giorni'
                 ) if giorni_diff != 0 else 'scade oggi'
+                residuo = Decimal(s.residuo_db).quantize(Decimal('0.01'))
                 righe.append(
                     f'  · Fattura {s.fattura.numero}/{s.fattura.anno}'
-                    f' — {s.data.strftime("%d/%m/%Y")} — {s.importo} € ({stato})'
+                    f' — {s.data.strftime("%d/%m/%Y")} — {residuo} € ({stato})'
                 )
-                totale += s.importo
+                totale += residuo
 
             body = (
                 f'Gentile {cli.ragione_sociale},\n\n'

@@ -42,10 +42,11 @@ log = logging.getLogger(__name__)
 PROTOCOLLI = ('2025-06-18', '2025-03-26', '2024-11-05')
 ISTRUZIONI = (
     "Gestionale AigisLab: clienti, documenti di vendita (offerte, ordini, DDT, fatture, note di "
-    "credito), incassi, acquisti, magazzino, CRM e cashflow. Clienti, fornitori e documenti si "
-    "indicano per nome o numero, come li direbbe una persona. Prima di ogni scrittura chiama il "
-    "tool con anteprima=true, mostra il risultato all'utente e procedi solo se conferma; passa "
-    "sempre una chiave univoca per ogni operazione. Le fatture non vengono inviate allo SDI.")
+    "credito), incassi, acquisti, magazzino, CRM, cashflow e rimborsi chilometrici. Clienti, "
+    "fornitori e documenti si indicano per nome o numero, come li direbbe una persona. Prima di "
+    "ogni scrittura chiama il tool con anteprima=true, mostra il risultato all'utente e procedi "
+    "solo se conferma; passa sempre una chiave univoca per ogni operazione. Le fatture non "
+    "vengono inviate allo SDI.")
 
 
 class _Annulla(Exception):

@@ -1,0 +1,11 @@
+[Unit]
+Description=Gestionale CRM (AIGIS lab) - emissione delle fatture ricorrenti
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=root
+WorkingDirectory=/opt/gestionale-crm
+EnvironmentFile=/opt/gestionale-crm/.env
+ExecStart=/opt/gestionale-crm/venv/bin/python manage.py genera_fatture_ricorrenti

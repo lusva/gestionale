@@ -27,21 +27,21 @@
   <form method="get" class="filters" id="clienti-filters">
     <div class="search" style="flex: 0 0 280px; max-width: none;">
       {% icon 'search' size=14 %}
-      <input type="search" name="q" value="{{ q }}" placeholder="Cerca per nome, P.IVA, email…" />
+      <input type="search" name="q" value="{{ q }}" placeholder="Cerca per nome, P.IVA, email…" aria-label="Cerca clienti" />
     </div>
 
     {% for stato in stati_attivi %}
       <label class="filter-chip active" style="cursor: pointer;">
         Stato: {{ stato|title }}
         <input type="hidden" name="stato" value="{{ stato }}" />
-        <button type="button" class="x" aria-label="Rimuovi" onclick="this.closest('label').remove(); this.closest('form').requestSubmit();">{% icon 'x' size=12 %}</button>
+        <button type="button" class="x" aria-label="Rimuovi stato {{ stato }}" onclick="const form = this.closest('form'); this.closest('label').remove(); form.requestSubmit();">{% icon 'x' size=12 %}</button>
       </label>
     {% endfor %}
     {% for slug in settori_attivi %}
       <label class="filter-chip active" style="cursor: pointer;">
         Settore: {{ slug }}
         <input type="hidden" name="settore" value="{{ slug }}" />
-        <button type="button" class="x" aria-label="Rimuovi" onclick="this.closest('label').remove(); this.closest('form').requestSubmit();">{% icon 'x' size=12 %}</button>
+        <button type="button" class="x" aria-label="Rimuovi settore {{ slug }}" onclick="const form = this.closest('form'); this.closest('label').remove(); form.requestSubmit();">{% icon 'x' size=12 %}</button>
       </label>
     {% endfor %}
 
@@ -68,12 +68,14 @@
       <span style="font: 12px var(--font-body); color: var(--ink-3);">
         {{ page_obj.start_index|default:0 }}–{{ page_obj.end_index|default:0 }} di {{ paginator.count|intcomma }}
       </span>
-      <button type="button" class="btn-icon" title="Filtro">{% icon 'filter' size=14 %}</button>
+      <button type="submit" class="btn btn-ghost btn-sm">Cerca</button>
+      {% if q or stati_attivi or settori_attivi %}<a href="{% url 'clienti:list' %}" class="btn btn-ghost btn-sm">Azzera filtri</a>{% endif %}
     </div>
 
     <script>
       function addFilter(kind, value) {
         const form = document.getElementById('clienti-filters');
+        if ([...form.elements].some(el => el.name === kind && el.value === value)) return;
         const input = document.createElement('input');
         input.type = 'hidden';
         input.name = kind;

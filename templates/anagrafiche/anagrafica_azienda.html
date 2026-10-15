@@ -9,7 +9,7 @@
   <div class="page-header">
     <div>
       <h1 class="page-title">Anagrafica azienda</h1>
-      <p class="page-subtitle">Dati fiscali, branding documenti, certificato firma PDF.</p>
+      <p class="page-subtitle">Dati fiscali, sedi, moduli e certificato di firma PDF.</p>
     </div>
     <div style="display: flex; gap: 8px;">
       <button type="submit" class="btn btn-brand">{% icon 'check' size=14 %} Salva</button>
@@ -20,40 +20,27 @@
     <div class="callout warn mb-24"><div class="ico">{% icon 'x' size=14 %}</div><div>{{ form.non_field_errors }}</div></div>
   {% endif %}
 
-  <div class="card" style="padding: 24px; margin-bottom: 16px;">
-    <div class="logo-uploader" x-data="{ preview: '{% if azienda.logo %}{{ azienda.logo.url }}{% endif %}' }">
-      <label class="logo-preview" title="Carica o cambia il logo aziendale">
-        <template x-if="preview"><img :src="preview" alt="Logo" /></template>
-        <template x-if="!preview">
-          <div class="placeholder">
-            {% icon 'upload' size=20 %}
-            <span>Logo</span>
-          </div>
-        </template>
-        <input type="file" name="{{ form.logo.html_name }}" accept="image/*" id="{{ form.logo.id_for_label }}"
-               @change="const f = $event.target.files[0]; if (f) preview = URL.createObjectURL(f);" />
-      </label>
-      <div class="logo-meta field">
-        <label for="{{ form.ragione_sociale.id_for_label }}">Ragione sociale</label>
-        {{ form.ragione_sociale }}
-        {{ form.ragione_sociale.errors }}
-      </div>
+  <div class="callout mb-16">
+    <div class="ico">{% icon 'doc' size=14 %}</div>
+    <div style="font: 13px/1.5 var(--font-body); color: var(--ink-2);">
+      Logo, intestazione, piè di pagina e colore di fatture e documenti si gestiscono in
+      <a href="{% url 'settings:documenti' %}" style="text-decoration: underline;">Impostazioni › Intestazione documenti</a>.
     </div>
-    {{ form.logo.errors }}
   </div>
 
   <div class="card" style="padding: 24px; margin-bottom: 16px;">
     <div class="section-title">Dati anagrafici</div>
     <div class="grid grid-2" style="gap: 16px;">
+      <div class="field" style="grid-column: 1 / -1;">
+        <label for="{{ form.ragione_sociale.id_for_label }}">Ragione sociale</label>
+        {{ form.ragione_sociale }}
+        {{ form.ragione_sociale.errors }}
+      </div>
       <div class="field"><label>Partita IVA</label>{{ form.partita_iva }}</div>
       <div class="field"><label>Codice fiscale</label>{{ form.codice_fiscale }}</div>
       <div class="field"><label>Email</label>{{ form.email }}</div>
       <div class="field"><label>Telefono</label>{{ form.telefono }}</div>
       <div class="field"><label>Profilo fiscale</label>{{ form.profilo_fiscale }}</div>
-      <div class="field">
-        <label>Liquidazione IVA</label>{{ form.liquidazione_iva }}
-        <div style="font: 11px var(--font-body); color: var(--ink-3); margin-top: 4px;">{{ form.liquidazione_iva.help_text }}</div>
-      </div>
       <div class="field"><label>Fatturazione elettronica</label>{{ form.fatturazione_elettronica }}</div>
     </div>
   </div>
@@ -74,14 +61,6 @@
       <div class="field" style="grid-column: 1 / -1;"><label>Indirizzo</label>{{ form.indirizzo_op }}</div>
       <div class="field"><label>Comune</label>{{ form.comune_op }}</div>
       <div class="field"><label>CAP</label>{{ form.cap_op }}</div>
-    </div>
-  </div>
-
-  <div class="card" style="padding: 24px; margin-bottom: 16px;">
-    <div class="section-title">Branding documenti</div>
-    <div class="grid grid-2" style="gap: 16px;">
-      <div class="field" style="grid-column: 1 / -1;"><label>Intestazione documenti</label>{{ form.intestazione_documenti }}</div>
-      <div class="field" style="grid-column: 1 / -1;"><label>Footer documenti</label>{{ form.contenuto_footer }}</div>
     </div>
   </div>
 

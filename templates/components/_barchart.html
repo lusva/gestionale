@@ -1,12 +1,12 @@
-{# Render a bar chart. Params: bars (list of heights 0-100), labels (list of month labels) #}
+{# Render via {% barchart values labels %} (core_settings/templatetags/ui.py), che calcola bars e yaxis. #}
 <div class="chart">
   <div class="chart-yaxis">
-    <span>120k</span><span>90k</span><span>60k</span><span>30k</span><span>0</span>
+    {% for y in yaxis %}<span>{{ y }}</span>{% endfor %}
   </div>
   <div class="chart-grid"><div></div><div></div><div></div><div></div></div>
   <div class="chart-bars">
-    {% for h in bars %}
-      <div class="bar" style="height: {{ h }}%;" title="{{ labels|index:forloop.counter0 }}: {{ h }}%"></div>
+    {% for b in bars %}
+      <div class="bar" style="height: {{ b.pct }}%;" title="{{ b.label }}: {{ b.valore|euro_compact }}"></div>
     {% endfor %}
   </div>
   <div class="chart-xaxis">

@@ -16,6 +16,7 @@ register = template.Library()
 ICON_PATHS = {
     'dashboard': '<rect x="3" y="3" width="7" height="9"/><rect x="14" y="3" width="7" height="5"/><rect x="14" y="12" width="7" height="9"/><rect x="3" y="16" width="7" height="5"/>',
     'users': '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>',
+    'team': '<path d="M18 21a8 8 0 0 0-16 0"/><circle cx="10" cy="8" r="5"/><path d="M22 20c0-3.37-2-6.5-4-8a5 5 0 0 0-.45-8.3"/>',
     'user': '<path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>',
     'briefcase': '<rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/>',
     'target': '<circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/>',
@@ -219,6 +220,64 @@ def sparkline(points, w=80, h=28, up=True):
     return mark_safe(svg)
 
 
+def _nice_step(raw):
+    """Arrotonda il passo dell'asse a 1/2/2.5/5 × 10^n (≥ raw)."""
+    from math import floor, log10
+    mag = 10 ** floor(log10(raw))
+    for m in (1, 2, 2.5, 5, 10):
+        if m * mag >= raw:
+            return m * mag
+    return 10 * mag
+
+
+def _axis_label(v):
+    if v >= 1_000_000:
+        s = f'{v / 1_000_000:g}M'
+    elif v >= 1_000:
+        s = f'{v / 1_000:g}k'
+    else:
+        s = f'{v:g}'
+    return s.replace('.', ',')
+
+
+@register.inclusion_tag('components/_barchart.html')
+def barchart(values, labels, ticks=4):
+    """Bar chart a colonne: ``values`` importi grezzi, ``labels`` etichette asse X.
+
+    Scala le barre su un massimo "arrotondato" e genera le etichette dell'asse Y
+    coerenti con i dati. Le altezze sono stringhe con il punto decimale: un float
+    passerebbe dalla localizzazione italiana ("47,5%") e il CSS verrebbe scartato.
+    """
+    values = [float(v or 0) for v in values]
+    vmax = max(values, default=0)
+    top = _nice_step(vmax / ticks) * ticks if vmax > 0 else 0
+    bars = [
+        {
+            'label': label,
+            'valore': v,
+            'pct': f'{(v / top * 100) if top else 0:.1f}',
+        }
+        for v, label in zip(values, labels)
+    ]
+    step = top / ticks if top else 0
+    yaxis = [_axis_label(step * i) for i in range(ticks, -1, -1)] if top else [''] * ticks + ['0']
+    return {'bars': bars, 'labels': labels, 'yaxis': yaxis}
+
+
+@register.simple_tag(takes_context=True)
+def menu_sidebar(context):
+    """Il menu laterale filtrato per l'utente: {% menu_sidebar as menu %}."""
+    from core_settings.menu import menu_per
+    return menu_per(context)
+
+
+@register.simple_tag(takes_context=True)
+def azioni_palette(context):
+    """Le azioni della palette ⌘K che l'utente può fare."""
+    from core_settings.menu import azioni_palette as azioni
+    return azioni(context.get('user_perms_map') or {})
+
+
 @register.filter
 def get_item(d, key):
     """Dictionary lookup by variable key. {{ mydict|get_item:k }}."""
@@ -272,3 +331,44 @@ def divide(value, arg):
         return (float(value) / arg) if arg else 0
     except (TypeError, ValueError):
         return ''
+
+
+@register.filter
+def logo_ridotto(logo, lato=None):
+    """URL di una copia ridotta del logo (``ImageField``), con lato massimo
+    ``lato`` px (default: quello per i PDF). Vedi ``anagrafiche.logo``."""
+    from anagrafiche.logo import LATO_PDF, logo_ridotto_url
+    try:
+        lato = int(lato) if lato else LATO_PDF
+    except (TypeError, ValueError):
+        lato = LATO_PDF
+    return logo_ridotto_url(logo, lato)
+
+
+@register.simple_tag
+def stile_documenti(azienda):
+    """Le tinte dei documenti stampati dal colore scelto in Impostazioni ›
+    Documenti: ``{% stile_documenti azienda as stile %}`` → ``stile.accento``,
+    ``stile.scuro``, ``stile.medio``, ``stile.tenue``, ``stile.su_accento``."""
+    from anagrafiche.stile_documenti import palette
+    return palette(getattr(azienda, 'colore_documenti', None))
+
+
+@register.filter
+def iban(value):
+    """IBAN a gruppi di quattro caratteri, come si stampa: IT60 X054 2811 …"""
+    compatto = ''.join(str(value or '').split()).upper()
+    return ' '.join(compatto[i:i + 4] for i in range(0, len(compatto), 4))
+
+
+@register.filter
+def dividi_descrizione(testo):
+    """(titolo, dettaglio) della descrizione libera di una riga di documento:
+    la prima riga fa da titolo e il resto va sotto. Un testo lungo su una
+    riga sola resta tutto nel dettaglio: in grassetto sarebbe un muro."""
+    testo = (testo or '').strip()
+    prima, _, resto = testo.partition('\n')
+    prima = prima.strip()
+    if len(prima) > 90:
+        return ('', testo)
+    return (prima, resto.strip())

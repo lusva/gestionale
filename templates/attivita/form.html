@@ -1,63 +1,69 @@
 {% extends 'base.html' %}
+{% load static %}
 
 {% block title %}{% if is_create %}Nuova attività{% else %}{{ object.titolo }}{% endif %}{% endblock %}
+{% block extra_css %}<link rel="stylesheet" href="{% static 'css/attivita.css' %}" />{% endblock %}
 {% block breadcrumb %}
   <span class="sep">{% icon 'chevronRight' size=14 %}</span>
-  <a href="{% url 'attivita:list' %}" style="color: inherit; text-decoration: none;">Attività</a>
+  <a href="{% url 'attivita:list' %}">Attività</a>
   <span class="sep">{% icon 'chevronRight' size=14 %}</span>
   <span class="current">{% if is_create %}Nuova{% else %}{{ object.titolo|truncatechars:32 }}{% endif %}</span>
 {% endblock %}
 
 {% block content %}
-<div class="page" style="max-width: 860px; margin: 0 auto;">
+<div class="page agenda-form-page">
   <form method="post">
     {% csrf_token %}
     <div class="page-header">
-      <h1 class="page-title">{% if is_create %}Nuova attività{% else %}Modifica attività{% endif %}</h1>
-      <div style="display: flex; gap: 8px;">
-        <a href="{% url 'attivita:list' %}" class="btn btn-ghost">Annulla</a>
-        <button type="submit" class="btn btn-brand">{% icon 'check' size=14 %} Salva</button>
+      <div>
+        <h1 class="page-title">{% if is_create %}Nuova attività{% else %}Modifica attività{% endif %}</h1>
+        <p class="page-subtitle">Definisci il prossimo passo, quando farlo e chi se ne occupa.</p>
+      </div>
+      <div class="agenda-form-actions">
+        <a href="{% if is_create %}{% url 'attivita:list' %}{% else %}{{ object.get_absolute_url }}{% endif %}" class="btn btn-ghost">Annulla</a>
+        <button type="submit" class="btn btn-brand">{% icon 'check' size=14 %} Salva attività</button>
       </div>
     </div>
 
-    <div class="card" style="padding: 24px;">
-      <div class="grid grid-2" style="gap: 16px;">
-        <div class="field" style="grid-column: 1 / -1;">
-          <label>Titolo *</label>
+    <div class="card agenda-form-card">
+      {% if form.errors %}<div class="agenda-form-errors" role="alert"><p>Controlla i campi evidenziati prima di salvare.</p>{{ form.non_field_errors }}</div>{% endif %}
+      <div class="agenda-form-grid">
+        <div class="field agenda-form-wide">
+          <label for="{{ form.titolo.id_for_label }}">Titolo *</label>
           {{ form.titolo }}{{ form.titolo.errors }}
         </div>
         <div class="field">
-          <label>Tipo</label>
-          {{ form.tipo }}
+          <label for="{{ form.tipo.id_for_label }}">Tipo</label>
+          {{ form.tipo }}{{ form.tipo.errors }}
         </div>
         <div class="field">
-          <label>Data *</label>
+          <label for="{{ form.data.id_for_label }}">Data e ora *</label>
           {{ form.data }}{{ form.data.errors }}
         </div>
         <div class="field">
-          <label>Durata (minuti)</label>
-          {{ form.durata_minuti }}
+          <label for="{{ form.durata_minuti.id_for_label }}">Durata (minuti)</label>
+          {{ form.durata_minuti }}{{ form.durata_minuti.errors }}
         </div>
         <div class="field">
-          <label>Owner</label>
-          {{ form.owner }}
+          <label for="{{ form.owner.id_for_label }}">Assegnatario</label>
+          {{ form.owner }}{{ form.owner.errors }}
         </div>
         <div class="field">
-          <label>Cliente</label>
-          {{ form.cliente }}
+          <label for="{{ form.cliente.id_for_label }}">Cliente</label>
+          {{ form.cliente }}{{ form.cliente.errors }}
         </div>
         <div class="field">
-          <label>Opportunità</label>
-          {{ form.opportunita }}
+          <label for="{{ form.opportunita.id_for_label }}">Opportunità</label>
+          {{ form.opportunita }}{{ form.opportunita.errors }}
+          <p class="agenda-help" id="id_opportunita_helptext">{{ form.opportunita.help_text }}</p>
         </div>
-        <div class="field" style="grid-column: 1 / -1;">
-          <label>Descrizione</label>
-          {{ form.descrizione }}
+        <div class="field agenda-form-wide">
+          <label for="{{ form.descrizione.id_for_label }}">Descrizione</label>
+          {{ form.descrizione }}{{ form.descrizione.errors }}
         </div>
-        <div class="field" style="grid-column: 1 / -1;">
-          <label style="display: inline-flex; gap: 8px; align-items: center; cursor: pointer;">
-            {{ form.completata }} Attività già completata
-          </label>
+        <div class="field agenda-form-wide">
+          <label class="agenda-mine" for="{{ form.completata.id_for_label }}">{{ form.completata }} Attività già completata</label>
+          {{ form.completata.errors }}
         </div>
       </div>
     </div>

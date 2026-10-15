@@ -9,12 +9,16 @@
 {% endblock %}
 
 {% block content %}
-<form method="post" class="page">
+<form method="post" class="page" id="doc-form" data-documento data-salva-rapido data-avvisa-modifiche>
   {% csrf_token %}
+  {% if documento.pk %}<input type="hidden" name="documento_pk" value="{{ documento.pk }}">{% endif %}
   <div class="page-header">
     <div>
       <h1 class="page-title">{% if is_create %}Nuova {{ doc_label|lower }}{% else %}{{ doc_label }} {{ documento.numero }}/{{ documento.anno }}{% endif %}</h1>
-      <p class="page-subtitle">Compila testata e righe — il numero viene assegnato automaticamente.</p>
+      <p class="page-subtitle">
+        {% if is_create %}Il numero si assegna al salvataggio.{% endif %}
+        I totali a destra si aggiornano mentre scrivi · <kbd data-tasto-mod>⌘</kbd>&nbsp;<kbd>S</kbd> per salvare
+      </p>
     </div>
     <div style="display: flex; gap: 8px;">
       <a href="{% if is_create %}{% url urls.list %}{% else %}{% url urls.detail documento.pk %}{% endif %}" class="btn btn-ghost">Annulla</a>
@@ -29,69 +33,51 @@
     </div>
   {% endif %}
 
-  <div class="grid" style="grid-template-columns: 1fr; gap: 24px;">
-    <div class="card" style="padding: 24px;">
-      <div class="section-title">Testata</div>
-      <div class="grid grid-2" style="gap: 16px;">
-        {% for f in form.visible_fields %}
-          <div class="field {% if f.name == 'note' %}grid-col-full{% endif %}" {% if f.name == 'note' %}style="grid-column: 1 / -1;"{% endif %}>
-            <label for="{{ f.id_for_label }}">{{ f.label }}</label>
-            {{ f }}
-            {% if f.errors %}{{ f.errors }}{% endif %}
-          </div>
-        {% endfor %}
+  <div class="layout-documento">
+    <div class="flex-col gap-16">
+      <div class="card" style="padding: 24px;">
+        <div class="section-title">Testata</div>
+        <div class="grid grid-2" style="gap: 16px;">
+          {% for f in form.visible_fields %}
+            {% if f.name != 'note' %}
+              <div class="field" {% if f.name == 'cliente' or f.name == 'fornitore' or f.name == 'fatture' %}style="grid-column: 1 / -1;"{% endif %}>
+                <label for="{{ f.id_for_label }}">{{ f.label }}</label>
+                {{ f }}
+                {% if f.errors %}{{ f.errors }}{% endif %}
+                {% if f.help_text %}<div class="text-sm text-muted" style="margin-top: 4px;">{{ f.help_text }}</div>{% endif %}
+              </div>
+            {% endif %}
+          {% endfor %}
+        </div>
       </div>
+
+      {% include 'documenti/_righe_formset.html' %}
+
+      {% if form.note %}
+        <div class="card" style="padding: 24px;">
+          <div class="field">
+            <label for="{{ form.note.id_for_label }}">{{ form.note.label }}</label>
+            {{ form.note }}
+            {{ form.note.errors }}
+          </div>
+        </div>
+      {% endif %}
     </div>
 
-    <div class="card" style="padding: 24px;" x-data="formsetMgr('righe', {{ righe_formset.total_form_count }})">
-      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
-        <div class="section-title" style="margin: 0;">Righe</div>
-        <button type="button" class="btn btn-ghost" @click="addRow()">{% icon 'plus' size=14 %} Aggiungi riga</button>
+    <div class="flex-col gap-16">
+      <div class="card riepilogo" style="padding: 18px;">
+        <div style="font: 600 14px var(--font-display); margin-bottom: 8px;">Riepilogo</div>
+        <div id="riepilogo-documento"
+             hx-post="{% url 'documenti:documento_anteprima' tipo_documento_form %}"
+             hx-trigger="load, riepilogo from:body"
+             hx-include="#doc-form" hx-swap="innerHTML" hx-sync="this:replace">
+          <div class="riepilogo-nota">Calcolo dei totali…</div>
+        </div>
+        <button type="submit" class="btn btn-brand" style="width: 100%; justify-content: center; margin-top: 16px;">
+          {% icon 'check' size=14 %} Salva {{ doc_label|lower }}
+        </button>
       </div>
-
-      {{ righe_formset.management_form }}
-
-      <table class="tbl">
-        <thead>
-          <tr>
-            <th style="width: 56px;">#</th>
-            <th>Articolo / descrizione</th>
-            <th style="width: 100px;">Quantità</th>
-            <th style="width: 80px;">UM</th>
-            <th style="width: 110px;">Prezzo</th>
-            <th>IVA</th>
-            <th style="width: 30px;"></th>
-          </tr>
-        </thead>
-        <tbody id="righe-rows">
-          {% for rf in righe_formset %}
-            {% include 'documenti/_riga_row.html' with form=rf %}
-          {% endfor %}
-        </tbody>
-      </table>
-
-      <template id="righe-empty-template">{% include 'documenti/_riga_row.html' with form=righe_formset.empty_form %}</template>
     </div>
   </div>
 </form>
-
-<script>
-function formsetMgr(prefix, initialTotal) {
-  return {
-    prefix, total: initialTotal,
-    addRow() {
-      const tpl = document.getElementById(prefix + '-empty-template');
-      const rows = document.getElementById(prefix + '-rows');
-      if (!tpl || !rows) return;
-      const html = tpl.innerHTML.replaceAll('__prefix__', this.total);
-      const wrapper = document.createElement('tbody');
-      wrapper.innerHTML = html;
-      while (wrapper.firstChild) rows.appendChild(wrapper.firstChild);
-      this.total += 1;
-      const totalInput = document.querySelector('input[name="' + prefix + '-TOTAL_FORMS"]');
-      if (totalInput) totalInput.value = this.total;
-    },
-  };
-}
-</script>
 {% endblock %}

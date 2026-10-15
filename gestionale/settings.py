@@ -97,6 +97,7 @@ INSTALLED_APPS = [
     'audit',
     'api',
     'cashflow',
+    'team',
 ]
 
 MIDDLEWARE = [
@@ -140,6 +141,16 @@ DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.sqlite3',
         'NAME': BASE_DIR / 'db.sqlite3',
+        'OPTIONS': {
+            # WAL: le letture non aspettano le scritture (3 worker gunicorn più
+            # sdi_pull). Con WAL il database è db.sqlite3 + db.sqlite3-wal: per
+            # una copia usa `manage.py backup`, non la copia del solo file.
+            'init_command': 'PRAGMA journal_mode=WAL;',
+            # La transazione che scrive prende subito il lock: chi arriva dopo
+            # aspetta (fino a timeout) invece di fallire con "database is locked".
+            'transaction_mode': 'IMMEDIATE',
+            'timeout': 20,
+        },
     }
 }
 
@@ -165,6 +176,11 @@ FIRST_DAY_OF_WEEK = 1
 STATIC_URL = 'static/'
 STATICFILES_DIRS = [BASE_DIR / 'static']
 STATIC_ROOT = BASE_DIR / 'staticfiles'
+STORAGES = {
+    'default': {'BACKEND': 'django.core.files.storage.FileSystemStorage'},
+    # nomi con hash del contenuto: niente CSS/JS vecchi in cache dopo un deploy
+    'staticfiles': {'BACKEND': 'gestionale.storage.StaticConHash'},
+}
 
 MEDIA_URL = 'media/'
 MEDIA_ROOT = BASE_DIR / 'media'

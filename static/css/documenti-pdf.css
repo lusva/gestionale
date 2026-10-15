@@ -1,0 +1,370 @@
+/* Documenti stampati: fattura, offerta, ordine, DDT, nota di credito.
+
+   Li rende in PDF WeasyPrint, quindi:
+   - impaginazione a tabelle: su più pagine flex e grid non sono affidabili;
+   - piè di pagina e testata «segue» sono elementi running (position:
+     running), ripetuti su ogni pagina con il numero «Pagina X di Y»;
+   - i font sono variabili: il peso si sceglie con font-variation-settings e
+     font-weight resta normal, altrimenti Pango aggiunge il grassetto finto.
+
+   Le tinte d'accento qui sotto sono le predefinite: il template le
+   sovrascrive con quelle del colore scelto in Impostazioni › Documenti. */
+
+@font-face { font-family: 'Doc Sans'; src: url('../fonts/plus-jakarta-sans-latin.woff2') format('woff2'); }
+@font-face { font-family: 'Doc Sans Ext'; src: url('../fonts/plus-jakarta-sans-latin-ext.woff2') format('woff2'); }
+@font-face { font-family: 'Doc Titoli'; src: url('../fonts/outfit-latin.woff2') format('woff2'); }
+@font-face { font-family: 'Doc Titoli Ext'; src: url('../fonts/outfit-latin-ext.woff2') format('woff2'); }
+@font-face { font-family: 'Doc Mono'; src: url('../fonts/jetbrains-mono-latin.woff2') format('woff2'); }
+
+:root {
+  --accento: #5b21b6;
+  --accento-scuro: #3b1576;
+  --accento-medio: #cebcef;
+  --accento-tenue: #f7f3fd;
+  --su-accento: #ffffff;
+
+  --testo: #1c1a24;
+  --testo-2: #55526a;
+  --testo-3: #8b889a;
+  --filo: #e3e1e9;
+}
+
+@page {
+  size: A4;
+  margin: 16mm 16mm 26mm;
+
+  @top-right {
+    content: element(seguito);
+    width: 178mm;
+    vertical-align: bottom;
+    padding-bottom: 6mm;
+  }
+  @bottom-left {
+    content: element(piede);
+    width: 146mm;
+    vertical-align: top;
+    margin-top: 6mm;
+    padding-top: 2.6mm;
+    border-top: 0.5pt solid #e3e1e9;
+  }
+  @bottom-right {
+    content: 'Pagina ' counter(page) ' di ' counter(pages);
+    width: 32mm;
+    vertical-align: top;
+    text-align: right;
+    margin-top: 6mm;
+    padding-top: 2.6mm;
+    border-top: 0.5pt solid #e3e1e9;
+    font-family: 'Doc Sans', sans-serif;
+    font-size: 6.5pt;
+    color: #8b889a;
+  }
+}
+@page :first {
+  @top-right { content: none; }
+}
+
+html {
+  font-family: 'Doc Sans', 'Doc Sans Ext', 'Helvetica Neue', Arial, sans-serif;
+  font-size: 8.4pt;
+  line-height: 1.5;
+  color: var(--testo);
+  font-variation-settings: 'wght' 400;
+}
+body { margin: 0; }
+b, strong, th { font-weight: normal; }
+table { border-collapse: collapse; }
+
+.codice { font-family: 'Doc Mono', monospace; font-size: 0.94em; letter-spacing: 0.02em; }
+.num { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+
+/* Etichetta in maiuscoletto sopra blocchi e colonne */
+.etichetta {
+  font-size: 6.2pt;
+  line-height: 1.3;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--testo-3);
+  font-variation-settings: 'wght' 600;
+  margin-bottom: 2mm;
+}
+
+/* --- Elementi ripetuti su ogni pagina --------------------------------- */
+
+.piede {
+  position: running(piede);
+  font-size: 6.5pt;
+  line-height: 1.55;
+  color: var(--testo-3);
+}
+.piede-legale { color: var(--testo-2); }
+.piede-avvertenza { margin-top: 0.8mm; }
+
+.seguito {
+  position: running(seguito);
+  text-align: right;
+  font-size: 6.6pt;
+  color: var(--testo-3);
+}
+.seguito strong { color: var(--testo-2); font-variation-settings: 'wght' 600; }
+
+/* --- Intestazione ------------------------------------------------------ */
+
+.testata { width: 100%; }
+.testata > tbody > tr > td { padding: 0; vertical-align: top; }
+.testata-mittente { width: 60%; padding-right: 8mm; }
+.testata-documento { width: 40%; text-align: right; }
+
+.logo {
+  display: block;
+  max-width: 62mm;
+  max-height: 18mm;
+  margin-bottom: 4.5mm;
+}
+.logo-testo {
+  font-family: 'Doc Titoli', 'Doc Titoli Ext', sans-serif;
+  font-size: 17pt;
+  line-height: 1.1;
+  letter-spacing: -0.01em;
+  color: var(--accento-scuro);
+  font-variation-settings: 'wght' 600;
+  margin-bottom: 2.5mm;
+}
+.mittente-nome {
+  font-size: 9.6pt;
+  font-variation-settings: 'wght' 650;
+  margin-bottom: 0.8mm;
+}
+.mittente-righe {
+  font-size: 7.5pt;
+  line-height: 1.6;
+  color: var(--testo-2);
+}
+
+.tipo-documento {
+  font-family: 'Doc Titoli', 'Doc Titoli Ext', sans-serif;
+  font-size: 23pt;
+  line-height: 1;
+  letter-spacing: -0.01em;
+  color: var(--accento);
+  font-variation-settings: 'wght' 600;
+  margin: 0.5mm 0 5mm;
+}
+.tipo-documento.lungo { font-size: 16pt; white-space: nowrap; margin-top: 2mm; }
+.estremi { margin-left: auto; }
+.estremi th {
+  text-align: left;
+  vertical-align: baseline;
+  padding: 0.8mm 6mm 0.8mm 0;
+  font-size: 6.2pt;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--testo-3);
+  font-variation-settings: 'wght' 600;
+}
+.estremi td {
+  text-align: right;
+  vertical-align: baseline;
+  padding: 0.8mm 0;
+  font-size: 9pt;
+  font-variation-settings: 'wght' 600;
+  white-space: nowrap;
+}
+.bollino {
+  display: inline-block;
+  margin-top: 2.5mm;
+  padding: 0.8mm 2.4mm;
+  border: 0.6pt solid #c0392b;
+  border-radius: 1mm;
+  color: #c0392b;
+  font-size: 6.4pt;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  font-variation-settings: 'wght' 650;
+}
+
+/* filetto sotto l'intestazione: tratto d'accento su una linea sottile */
+.filetto {
+  position: relative;
+  height: 0;
+  border-top: 0.5pt solid var(--filo);
+  margin: 5.5mm 0 6mm;
+}
+.filetto::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: -1.05pt;
+  width: 26mm;
+  border-top: 1.6pt solid var(--accento);
+}
+
+/* --- Destinatario e condizioni ---------------------------------------- */
+
+.parti { width: 100%; margin-bottom: 7mm; }
+.parti > tbody > tr > td { padding: 0; vertical-align: top; }
+.parti .controparte { width: 54%; }
+.parti .intervallo { width: 7%; }
+.parti .condizioni { width: 39%; }
+
+.scheda {
+  background: var(--accento-tenue);
+  border-radius: 2mm;
+  padding: 4mm 5mm 4.2mm;
+}
+.scheda-nome {
+  font-size: 10pt;
+  line-height: 1.3;
+  font-variation-settings: 'wght' 650;
+  margin-bottom: 1.2mm;
+}
+.scheda-righe {
+  font-size: 7.6pt;
+  line-height: 1.6;
+  color: var(--testo-2);
+}
+
+.dati { width: 100%; }
+.dati th, .dati td {
+  padding: 1.35mm 0;
+  border-bottom: 0.5pt solid var(--filo);
+  vertical-align: top;
+  font-size: 7.6pt;
+}
+.dati tr:first-child th, .dati tr:first-child td { border-top: 0.5pt solid var(--filo); }
+.dati th { text-align: left; color: var(--testo-3); padding-right: 4mm; white-space: nowrap; }
+.dati td { text-align: right; }
+
+/* --- Righe del documento ----------------------------------------------- */
+
+.righe { width: 100%; margin-bottom: 6mm; }
+.righe thead th {
+  text-align: left;
+  vertical-align: bottom;
+  padding: 0 2mm 2mm;
+  border-bottom: 1.2pt solid var(--accento);
+  font-size: 6.2pt;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--accento-scuro);
+  font-variation-settings: 'wght' 650;
+}
+.righe td {
+  padding: 2.3mm 2mm;
+  border-bottom: 0.5pt solid var(--filo);
+  vertical-align: top;
+}
+.righe th:first-child, .righe td:first-child { padding-left: 0; }
+.righe th:last-child, .righe td:last-child { padding-right: 0; }
+.righe th.num { text-align: right; }
+.righe .centro { text-align: center; }
+.righe tr { break-inside: avoid; }
+.voce { font-variation-settings: 'wght' 600; }
+.voce-dettaglio { margin-top: 0.6mm; font-size: 7.3pt; line-height: 1.5; color: var(--testo-2); }
+.voce-codice { color: var(--testo-3); }
+.um { font-size: 6.8pt; color: var(--testo-3); }
+.aliquota { color: var(--testo-2); }
+.importo-riga { font-variation-settings: 'wght' 600; }
+.righe-vuote { padding: 6mm 0; color: var(--testo-3); text-align: center; }
+
+/* --- Riepilogo IVA e totali --------------------------------------------- */
+
+.chiusura { width: 100%; margin-bottom: 6mm; break-inside: avoid; }
+.chiusura > tbody > tr > td { padding: 0; vertical-align: top; }
+.chiusura .sinistra { width: 54%; padding-right: 10mm; }
+.chiusura .destra { width: 46%; }
+
+.iva { width: 100%; }
+.iva th {
+  text-align: left;
+  padding: 0 2mm 1.6mm 0;
+  border-bottom: 0.5pt solid var(--filo);
+  font-size: 6.2pt;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--testo-3);
+  font-variation-settings: 'wght' 600;
+}
+.iva td {
+  padding: 1.5mm 2mm 1.5mm 0;
+  border-bottom: 0.5pt solid var(--filo);
+  font-size: 7.4pt;
+  color: var(--testo-2);
+  vertical-align: top;
+}
+.iva th.num { text-align: right; }
+.iva th:last-child, .iva td:last-child { padding-right: 0; }
+
+.totali { width: 100%; }
+.totali td { padding: 1.25mm 0; font-size: 8pt; }
+.totali .voce-totale { color: var(--testo-2); }
+
+.totale-finale {
+  margin-top: 2.5mm;
+  padding: 3.4mm 4.5mm;
+  border-radius: 1.8mm;
+  background: var(--accento);
+  color: var(--su-accento);
+}
+.totale-finale table { width: 100%; }
+.totale-finale td { padding: 0; vertical-align: middle; }
+.totale-finale .etichetta-totale {
+  font-size: 6.6pt;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  font-variation-settings: 'wght' 600;
+}
+.totale-finale .cifra {
+  font-family: 'Doc Titoli', 'Doc Titoli Ext', sans-serif;
+  font-size: 14pt;
+  letter-spacing: -0.005em;
+  font-variation-settings: 'wght' 600;
+}
+
+/* --- Pagamento, trasporto, note, firme ---------------------------------- */
+
+.blocco { margin-bottom: 5mm; break-inside: avoid; }
+.riquadro {
+  border: 0.5pt solid var(--filo);
+  border-radius: 2mm;
+  padding: 2.6mm 4.5mm;
+}
+.campi { width: 100%; table-layout: fixed; }
+.campi td { padding: 0 5mm 0 0; vertical-align: top; }
+.campi td:last-child { padding-right: 0; }
+.campi + .campi td { padding-top: 3mm; }
+.campi .etichetta { margin-bottom: 0.8mm; }
+.campo { font-size: 8pt; }
+.iban {
+  font-family: 'Doc Mono', monospace;
+  font-size: 8.3pt;
+  letter-spacing: 0.03em;
+  font-variation-settings: 'wght' 500;
+  white-space: nowrap;
+}
+.elenco { width: 100%; }
+.elenco th, .elenco td {
+  padding: 1.2mm 0;
+  border-top: 0.5pt solid var(--filo);
+  vertical-align: baseline;
+  font-size: 7.8pt;
+  text-align: left;
+}
+.elenco tr:first-child th, .elenco tr:first-child td { border-top: none; }
+.elenco th { width: 26mm; padding-right: 4mm; color: var(--testo-3); }
+.bic { margin-left: 8mm; color: var(--testo-3); }
+.bic .iban { margin-left: 1.5mm; color: var(--testo); }
+.trattino { color: var(--testo-3); }
+
+.note {
+  border-left: 1.4pt solid var(--accento-medio);
+  padding: 0.4mm 0 0.4mm 4mm;
+  font-size: 7.8pt;
+  color: var(--testo-2);
+}
+
+.firme { width: 100%; margin-top: 10mm; break-inside: avoid; }
+.firme td { width: 33%; padding: 0 6mm 0 0; vertical-align: top; }
+.firme td:last-child { padding-right: 0; }
+.firma-spazio { height: 13mm; border-bottom: 0.6pt solid #b8b5c4; }
+

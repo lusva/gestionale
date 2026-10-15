@@ -90,6 +90,26 @@ class ScadenzaFiscale(models.Model):
     def __str__(self):
         return f'{self.get_tipo_display()} — {self.descrizione} ({self.data_scadenza})'
 
+    @property
+    def periodo_riferimento(self) -> str:
+        """Il periodo della liquidazione IVA, leggibile («3° trimestre 2026 ·
+        01/07 – 30/09/2026»); '' per le altre scadenze."""
+        from .iva import etichetta_periodo
+        return etichetta_periodo(self.periodo_iva) if self.periodo_iva else ''
+
+    @property
+    def periodo_iva_in_corso(self) -> bool:
+        """Se il periodo della liquidazione IVA («2026-T4», «2026-09») non è
+        ancora finito: la stima cambierà con le prossime fatture."""
+        try:
+            anno, parte = self.periodo_iva.split('-')
+            anno = int(anno)
+            mese = int(parte[1:]) * 3 if parte.startswith('T') else int(parte)
+            fine = date(anno, mese, monthrange(anno, mese)[1])
+        except (ValueError, IndexError):
+            return False
+        return timezone.localdate() <= fine
+
 
 class Periodicita(models.TextChoices):
     MENSILE = 'mensile', 'Mensile'
@@ -199,6 +219,12 @@ class SpesaRicorrente(models.Model):
         ``data_fine`` le future non pagate oltre il limite restano eliminate.
         Ritorna quante scadenze sono state create.
         """
+        if not rigenera:
+            # Il cashflow la chiama a ogni apertura: se non manca niente, niente
+            # transazione (che su SQLite prenderebbe il lock di scrittura).
+            esistenti = set(self.scadenze.values_list('data_scadenza', flat=True))
+            if all(d in esistenti for d in self.date_attese(fino_a)):
+                return 0
         with transaction.atomic():
             if rigenera:
                 oggi = timezone.localdate()

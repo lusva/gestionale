@@ -9,6 +9,7 @@ from django.db.models import Q, Sum
 from django.http import HttpResponseRedirect
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse, reverse_lazy
+from django.utils.timezone import localdate
 from django.views.generic import (
     DeleteView,
     DetailView,
@@ -23,8 +24,8 @@ from .forms import (
     ScadenzeFatturaFormSet,
     TestataFatturaForm,
 )
-from .models import TestataFattura
-from .servizi import base_scadenze, sincronizza_scadenze
+from .models import IncassoScadenza, TestataFattura
+from .servizi import allinea_pagata, base_scadenze, ha_incassi, sincronizza_scadenze
 from .utils import (
     calcola_valori,
     crea_pdf,
@@ -39,6 +40,51 @@ from .utils import (
 # ---------------------------------------------------------------------------
 
 
+def filtra_fatture(qs, params):
+    """I filtri della lista fatture (``q``, ``anno``, ``pagata``, ``tipo``,
+    ``sezionale``, ``sdi``, ``cliente``): gli stessi per lista, export CSV e
+    ZIP, così si scarica quello che si vede."""
+    q = (params.get('q') or '').strip()
+    if q:
+        filtro = (Q(cliente__ragione_sociale__icontains=q)
+                  | Q(cliente__partita_iva__icontains=q)
+                  | Q(note__icontains=q))
+        numero, _, anno_q = q.partition('/')
+        if numero.strip().isdigit():
+            filtro_numero = Q(numero=int(numero))
+            if anno_q.strip().isdigit():
+                filtro_numero &= Q(anno=int(anno_q))
+            filtro |= filtro_numero
+        qs = qs.filter(filtro)
+    anno = (params.get('anno') or '').strip()
+    if anno.isdigit():
+        qs = qs.filter(anno=int(anno))
+    pagata = params.get('pagata')
+    if pagata == 'si':
+        qs = qs.filter(pagata=True)
+    elif pagata == 'no':
+        qs = qs.filter(pagata=False)
+    elif pagata == 'scadute':
+        from .models import ScadenzaFattura, crediti_aperti
+        qs = qs.filter(pagata=False, pk__in=crediti_aperti(
+            ScadenzaFattura.objects.filter(data__lt=localdate())).values('fattura_id'))
+    tipo = (params.get('tipo') or '').strip()
+    if tipo:
+        qs = qs.filter(tipo_documento=tipo)
+    sezionale = (params.get('sezionale') or '').strip()
+    if sezionale:
+        qs = qs.filter(sezionale=sezionale)
+    sdi = (params.get('sdi') or '').strip()
+    if sdi == 'scartata':                 # anche le rifiutate: vanno corrette
+        qs = qs.filter(sdi_stato__in=TestataFattura.SDI_STATI_REINVIO)
+    elif sdi:
+        qs = qs.filter(sdi_stato=sdi)
+    cliente = (params.get('cliente') or '').strip()
+    if cliente.isdigit():
+        qs = qs.filter(cliente_id=int(cliente))
+    return qs
+
+
 class FatturaListView(LoginRequiredMixin, PermRequiredMixin, ListView):
     required_perm = 'documenti.vedi'
     model = TestataFattura
@@ -47,35 +93,9 @@ class FatturaListView(LoginRequiredMixin, PermRequiredMixin, ListView):
     paginate_by = 20
 
     def get_queryset(self):
-        qs = TestataFattura.objects.select_related('cliente').order_by(
-            '-anno', '-numero',
-        )
-        q = (self.request.GET.get('q') or '').strip()
-        if q:
-            qs = qs.filter(
-                Q(numero__icontains=q)
-                | Q(cliente__ragione_sociale__icontains=q)
-                | Q(cliente__partita_iva__icontains=q)
-                | Q(note__icontains=q),
-            )
-        anno = (self.request.GET.get('anno') or '').strip()
-        if anno.isdigit():
-            qs = qs.filter(anno=int(anno))
-        pagata = self.request.GET.get('pagata')
-        if pagata == 'si':
-            qs = qs.filter(pagata=True)
-        elif pagata == 'no':
-            qs = qs.filter(pagata=False)
-        tipo = (self.request.GET.get('tipo') or '').strip()
-        if tipo:
-            qs = qs.filter(tipo_documento=tipo)
-        sezionale = (self.request.GET.get('sezionale') or '').strip()
-        if sezionale:
-            qs = qs.filter(sezionale=sezionale)
-        sdi = (self.request.GET.get('sdi') or '').strip()
-        if sdi:
-            qs = qs.filter(sdi_stato=sdi)
-        return qs
+        from .models import con_incassi
+        qs = con_incassi(TestataFattura.objects.select_related('cliente')).order_by('-anno', '-numero')
+        return filtra_fatture(qs, self.request.GET)
 
     def get_context_data(self, **kwargs):
         ctx = super().get_context_data(**kwargs)
@@ -97,18 +117,37 @@ class FatturaListView(LoginRequiredMixin, PermRequiredMixin, ListView):
         )
         ctx['sdi'] = self.request.GET.get('sdi', '')
         ctx['sdi_choices'] = TestataFattura.SdiStato.choices
-        # KPI rapidi
-        agg = TestataFattura.objects.aggregate(
-            tot=Sum('imponibile'),
+        # KPI delle fatture filtrate (quelle che si vedono)
+        from django.db.models import Count
+        agg = TestataFattura.objects.filter(pk__in=self.object_list.values('pk')).aggregate(
+            n=Count('pk'), tot=Sum('imponibile'), da_pagare=Count('pk', filter=Q(pagata=False)),
         )
         ctx['kpi_totale'] = agg['tot'] or Decimal('0')
-        ctx['kpi_count'] = TestataFattura.objects.count()
-        ctx['kpi_da_pagare'] = TestataFattura.objects.filter(pagata=False).count()
+        ctx['kpi_count'] = agg['n']
+        ctx['kpi_da_pagare'] = agg['da_pagare']
+        ctx['filtri_attivi'] = any(self.request.GET.get(k) for k in (
+            'q', 'anno', 'pagata', 'tipo', 'sezionale', 'sdi', 'cliente'))
+        ctx['oggi'] = localdate()
+        # totale con IVA delle fatture della pagina (gli stessi conti del PDF)
+        from .utils import azienda_per_calcoli
+        pagina = list(ctx['fatture'])
+        if pagina:
+            from .models import RigaDocumento
+            righe = {}
+            for r in RigaDocumento.objects.filter(
+                    testata_fattura__in=pagina).select_related('iva'):
+                righe.setdefault(r.testata_fattura_id, []).append(r)
+            azienda = azienda_per_calcoli()
+            for f in pagina:
+                f.totale_calc = calcola_valori(f, righe.get(f.pk, []), azienda=azienda)['totale']
+                f.giorni_scadenza = (f.prima_scadenza - ctx['oggi']).days if f.prima_scadenza else None
+                f.giorni_ritardo = -f.giorni_scadenza if f.giorni_scadenza else 0
+        ctx['fatture'] = pagina
         return ctx
 
     def get_template_names(self):
         if self.request.htmx and not self.request.htmx.boosted:
-            return ['documenti/_fattura_table.html']
+            return ['documenti/_fattura_risultati.html']
         return [self.template_name]
 
 
@@ -133,7 +172,12 @@ class FatturaDetailView(LoginRequiredMixin, PermRequiredMixin, DetailView):
         f: TestataFattura = self.object
         ctx['active_nav'] = 'fatture'
         ctx['righe'] = f.righe.select_related('articolo', 'iva').all()
-        ctx['scadenze'] = f.scadenze.all()
+        ctx['scadenze'] = list(f.scadenze.prefetch_related('incassi'))
+        ctx['incassi'] = [i for sc in ctx['scadenze'] for i in sc.incassi.all()]
+        ctx['incassi_manuali'] = [i for i in ctx['incassi'] if not i.nota_credito_id]
+        ctx['incassato'] = sum((i.importo for i in ctx['incassi']), Decimal('0'))
+        ctx['residuo'] = sum((sc.importo_residuo for sc in ctx['scadenze']), Decimal('0'))
+        ctx['modalita_choices'] = IncassoScadenza._meta.get_field('modalita').choices
         # Totali documento: gli stessi di PDF e XML (sconti, spese, cassa)
         totals = calcola_valori(f)
         ctx['totals'] = totals
@@ -153,6 +197,23 @@ class FatturaDetailView(LoginRequiredMixin, PermRequiredMixin, DetailView):
                           'verso': 'avanti'})
         ctx['chain'] = chain
         ctx['messaggi_sdi'] = f.messaggi_sdi.all()
+
+        from anagrafiche.models import AnagraficaAzienda
+        azienda = AnagraficaAzienda.objects.first()
+        ctx['sdi_attivo'] = bool(
+            azienda and azienda.sdi_provider != AnagraficaAzienda.SdiProvider.DISABILITATO)
+        oggi = localdate()
+        # scadute = con un residuo da incassare (un incasso parziale non basta)
+        scadute = ([s for s in ctx['scadenze'] if s.data < oggi and s.importo_residuo > 0]
+                   if not f.pagata else [])
+        ctx['scaduta'] = bool(scadute)
+        ctx['oggi'] = oggi
+        if scadute:
+            ctx['giorni_ritardo'] = (oggi - scadute[0].data).days
+            ctx['importo_scaduto'] = sum((s.importo_residuo for s in scadute), Decimal('0'))
+        from .invio import testi_email
+        ctx.update(testi_email(f, azienda, totals['totale'], scadute,
+                               resolve_conto_corrente(f, azienda)))
         return ctx
 
 
@@ -167,11 +228,13 @@ class _FatturaSaveMixin:
     template_name = 'documenti/fattura_form.html'
 
     def _build_formsets(self, instance, post_data=None):
+        # con incassi registrati le scadenze restano come sono: cambiarle o
+        # rifarle dal form cancellerebbe gli incassi
         return {
             'righe_formset': RigaFatturaFormSet(
                 post_data, instance=instance, prefix='righe',
             ),
-            'scadenze_formset': ScadenzeFatturaFormSet(
+            'scadenze_formset': None if ha_incassi(instance) else ScadenzeFatturaFormSet(
                 post_data, instance=instance, prefix='scadenze',
             ),
         }
@@ -211,8 +274,26 @@ class FatturaCreateView(LoginRequiredMixin, PermRequiredMixin, _FatturaSaveMixin
     required_perm = 'documenti.modifica'
 
     def get(self, request, *args, **kwargs):
-        form = TestataFatturaForm()
-        formsets = self._build_formsets(instance=TestataFattura())
+        from .anteprima import formset_con_iniziali, iniziali_da_copia
+        instance = TestataFattura()
+        # ?da=<pk>: «Duplica», il form parte dalla copia di un'altra fattura
+        copia = iniziali_da_copia('fattura', request.GET.get('da', ''), TestataFatturaForm)
+        if copia:
+            testata, righe = copia
+            form = TestataFatturaForm(initial=testata)
+            formsets = self._build_formsets(instance=instance)
+            formsets['righe_formset'] = formset_con_iniziali(RigaFatturaFormSet, instance, righe)
+            return self._render(request, form, formsets, is_create=True)
+        iniziali = {}
+        # ?cliente=<pk>: «Nuova fattura» dalla scheda del cliente
+        cliente_pk = request.GET.get('cliente', '')
+        if cliente_pk.isdigit():
+            from clienti.models import Cliente
+            cliente = Cliente.objects.filter(pk=cliente_pk).first()
+            if cliente is not None:
+                iniziali = {'cliente': cliente.pk, 'forme_pagamento': cliente.forme_pagamento_id}
+        form = TestataFatturaForm(initial=iniziali)
+        formsets = self._build_formsets(instance=instance)
         return self._render(request, form, formsets, is_create=True)
 
     def post(self, request, *args, **kwargs):
@@ -233,6 +314,7 @@ class FatturaCreateView(LoginRequiredMixin, PermRequiredMixin, _FatturaSaveMixin
             righe_fs.save()
             scad_fs.save()
             _maybe_genera_scadenze_auto(fattura, scadenze_formset=scad_fs)
+            allinea_pagata(fattura)
         messages.success(
             request,
             f'Fattura {fattura.numero}/{fattura.anno} creata con successo.',
@@ -246,6 +328,20 @@ class FatturaUpdateView(LoginRequiredMixin, PermRequiredMixin, _FatturaSaveMixin
     def _get_obj(self, pk):
         return get_object_or_404(TestataFattura, pk=pk)
 
+    def dispatch(self, request, *args, **kwargs):
+        # Una fattura presa in carico dal SDI è emessa: modificarla qui la
+        # renderebbe diversa da quella che ha il cliente. Si corregge con una
+        # nota di credito (le scartate o rifiutate invece si correggono).
+        if request.user.is_authenticated and 'pk' in kwargs:
+            fattura = TestataFattura.objects.filter(pk=kwargs['pk']).first()
+            if fattura is not None and fattura.emessa_sdi:
+                messages.error(request, (
+                    f'La fattura {fattura.numero}/{fattura.anno} è già stata trasmessa al SDI '
+                    f'({fattura.get_sdi_stato_display()}): non si può modificare. '
+                    'Per correggerla genera una nota di credito.'))
+                return redirect('documenti:fattura_detail', pk=fattura.pk)
+        return super().dispatch(request, *args, **kwargs)
+
     def get(self, request, pk, *args, **kwargs):
         fattura = self._get_obj(pk)
         form = TestataFatturaForm(instance=fattura)
@@ -258,20 +354,21 @@ class FatturaUpdateView(LoginRequiredMixin, PermRequiredMixin, _FatturaSaveMixin
         prima = base_scadenze(fattura)
         form = TestataFatturaForm(request.POST, instance=fattura)
         formsets = self._build_formsets(instance=fattura, post_data=request.POST)
+        scad_fs = formsets['scadenze_formset']
         all_valid = (
             form.is_valid()
             and formsets['righe_formset'].is_valid()
-            and formsets['scadenze_formset'].is_valid()
+            and (scad_fs is None or scad_fs.is_valid())
         )
         if not all_valid:
             return self._render(request, form, formsets, instance=fattura, is_create=False)
         with transaction.atomic():
             form.save()
             formsets['righe_formset'].save()
-            formsets['scadenze_formset'].save()
-            _maybe_genera_scadenze_auto(
-                fattura, scadenze_formset=formsets['scadenze_formset'], prima=prima,
-            )
+            if scad_fs is not None:
+                scad_fs.save()
+                _maybe_genera_scadenze_auto(fattura, scadenze_formset=scad_fs, prima=prima)
+            allinea_pagata(fattura)
         messages.success(request, 'Fattura aggiornata.')
         return redirect('documenti:fattura_detail', pk=fattura.pk)
 
@@ -328,7 +425,8 @@ def fattura_toggle_pagata(request, pk):
     if not has_perm(request.user, 'documenti.modifica'):
         from django.http import HttpResponse
         return HttpResponse(status=403)
-    from .servizi import DatiNonValidi, segna_pagata
+    from .models import con_incassi
+    from .servizi import DatiNonValidi, annulla_incassi, segna_pagata
     fattura = get_object_or_404(TestataFattura, pk=pk)
     azione = request.POST.get('azione') or ('non_pagata' if fattura.pagata else 'pagata')
     errore = ''
@@ -337,19 +435,60 @@ def fattura_toggle_pagata(request, pk):
             segna_pagata(fattura, request.POST.get('data_pagamento'))
         except DatiNonValidi as e:
             errore = ' '.join(e.errori.values())
-    elif fattura.pagata:
-        fattura.pagata = False
-        fattura.data_pagamento = None
-        fattura.save(update_fields=['pagata', 'data_pagamento'])
+    elif fattura.pagata or azione == 'annulla_incassi':
+        annulla_incassi(fattura)
     if getattr(request, 'htmx', False):
         return render(request, 'documenti/_fattura_pagamento.html',
-                      {'f': fattura, 'errore': errore})
+                      {'f': con_incassi(TestataFattura.objects).get(pk=pk), 'errore': errore})
     if errore:
         messages.error(request, errore)
     else:
         messages.success(request, 'Fattura segnata come pagata.' if fattura.pagata
                          else 'Pagamento annullato.')
     return redirect('documenti:fattura_detail', pk=pk)
+
+
+def incasso_create(request, scadenza_id):
+    """POST dal dettaglio fattura: un incasso (anche parziale) su una scadenza."""
+    from accounts.permissions import has_perm
+    from django.http import HttpResponse
+    from .models import ScadenzaFattura
+    from .servizi import DatiNonValidi, registra_incasso
+    if not has_perm(request.user, 'documenti.modifica'):
+        return HttpResponse(status=403)
+    if request.method != 'POST':
+        return HttpResponse(status=405)
+    scadenza = get_object_or_404(ScadenzaFattura, pk=scadenza_id)
+    try:
+        incasso = registra_incasso(
+            scadenza, request.POST.get('importo', '').replace(',', '.').strip(),
+            request.POST.get('data'), request.POST.get('modalita') or None, request.POST.get('note', ''))
+    except DatiNonValidi as e:
+        messages.error(request, ' '.join(e.errori.values()))
+    else:
+        from core_settings.templatetags.ui import euro
+        messages.success(request, f'Incasso di {euro(incasso.importo, 2)} registrato.')
+    return redirect('documenti:fattura_detail', pk=scadenza.fattura_id)
+
+
+def incasso_elimina(request, pk):
+    """POST: elimina un incasso registrato (la fattura torna da incassare)."""
+    from accounts.permissions import has_perm
+    from django.http import HttpResponse
+    from .models import IncassoScadenza
+    if not has_perm(request.user, 'documenti.modifica'):
+        return HttpResponse(status=403)
+    if request.method != 'POST':
+        return HttpResponse(status=405)
+    incasso = get_object_or_404(IncassoScadenza.objects.select_related('scadenza'), pk=pk)
+    fattura_id = incasso.scadenza.fattura_id
+    if incasso.nota_credito_id:
+        messages.error(request, 'È la compensazione di una nota di credito: si toglie eliminando '
+                                'o modificando la nota.')
+        return redirect('documenti:fattura_detail', pk=fattura_id)
+    incasso.delete()
+    messages.success(request, 'Incasso eliminato.')
+    return redirect('documenti:fattura_detail', pk=fattura_id)
 
 
 def _generic_doc_pdf(request, model, pk, *, doc_label, doc_kind, counterparty='cliente',
@@ -483,6 +622,8 @@ class FatturaAcquistoDetailView(LoginRequiredMixin, PermRequiredMixin, DetailVie
         f = self.object
         ctx['righe'] = f.righe.select_related('articolo', 'aliquota_iva', 'categoria_costo').all()
         ctx['scadenze'] = f.scadenze.prefetch_related('pagamenti').all()
+        from .servizi import motivo_non_eliminabile_acquisto
+        ctx['eliminabile'] = not motivo_non_eliminabile_acquisto(f)
         return ctx
 
 
@@ -508,6 +649,69 @@ def fattura_acquisto_cambia_stato(request, pk):
     fattura.stato = nuovo_stato
     fattura.save(update_fields=['stato'])
     messages.success(request, f'Fattura {fattura.numero}/{fattura.anno} → {fattura.get_stato_display()}.')
+    return redirect('documenti:fattura_acquisto_detail', pk=pk)
+
+
+def fattura_acquisto_conferma(request):
+    """POST dalla lista: conferma le fatture in bozza indicate in ``ids``."""
+    from accounts.permissions import has_perm
+    from django.http import HttpResponse as _Hr
+    from .models import TestataFatturaAcquisto
+    if not request.user.is_authenticated:
+        from django.contrib.auth.views import redirect_to_login
+        return redirect_to_login(request.get_full_path())
+    if not has_perm(request.user, 'documenti.modifica'):
+        return _Hr(status=403)
+    if request.method != 'POST':
+        return redirect('documenti:fattura_acquisto_list')
+    ids = [i for i in request.POST.getlist('ids') if i.isdigit()]
+    n = TestataFatturaAcquisto.objects.filter(
+        pk__in=ids, stato=TestataFatturaAcquisto.StatoFattura.BOZZA,
+    ).update(stato=TestataFatturaAcquisto.StatoFattura.CONFERMATA)
+    if n:
+        messages.success(request, f'{n} fattur{"a confermata" if n == 1 else "e confermate"}.')
+    else:
+        messages.error(request, 'Nessuna fattura in bozza selezionata.')
+    return _redirect_lista_acquisti(request)
+
+
+def _redirect_lista_acquisti(request):
+    from django.utils.http import url_has_allowed_host_and_scheme
+    nxt = request.POST.get('next', '')
+    if nxt and url_has_allowed_host_and_scheme(nxt, allowed_hosts={request.get_host()}):
+        return HttpResponseRedirect(nxt)
+    return redirect('documenti:fattura_acquisto_list')
+
+
+def fattura_acquisto_toggle_pagata(request, pk):
+    """Come ``fattura_toggle_pagata``, per le fatture di acquisto: segnarla
+    pagata salda le rate aperte, annullare elimina i pagamenti registrati."""
+    if request.method != 'POST':
+        return HttpResponseRedirect(reverse('documenti:fattura_acquisto_detail', args=[pk]))
+    from accounts.permissions import has_perm
+    if not has_perm(request.user, 'documenti.modifica'):
+        from django.http import HttpResponse
+        return HttpResponse(status=403)
+    from .models import TestataFatturaAcquisto
+    from .servizi import DatiNonValidi, annulla_pagamento_acquisto, segna_pagata_acquisto
+    fattura = get_object_or_404(TestataFatturaAcquisto, pk=pk)
+    azione = request.POST.get('azione') or ('non_pagata' if fattura.pagata else 'pagata')
+    errore = ''
+    if azione == 'pagata':
+        try:
+            segna_pagata_acquisto(fattura, request.POST.get('data_pagamento'))
+        except DatiNonValidi as e:
+            errore = ' '.join(e.errori.values())
+    elif fattura.pagata:
+        annulla_pagamento_acquisto(fattura)
+    if getattr(request, 'htmx', False):
+        return render(request, 'documenti/_fattura_pagamento.html',
+                      {'f': fattura, 'errore': errore, 'passiva': True})
+    if errore:
+        messages.error(request, errore)
+    else:
+        messages.success(request, 'Fattura segnata come pagata.' if fattura.pagata
+                         else 'Pagamento annullato.')
     return redirect('documenti:fattura_acquisto_detail', pk=pk)
 
 
@@ -603,16 +807,13 @@ def fattura_acquisto_import_xml(request):
 
 
 def fattura_invia_email(request, pk):
-    """Invia la fattura per email al cliente, con PDF e XML allegati.
-
-    L'indirizzo destinatario può essere passato esplicitamente nel form
-    POST (campo ``to``); se omesso, viene letto dalla PEC del cliente o,
-    in alternativa, dal contatto principale.
-    """
+    """Invia la fattura (o il sollecito, ``tipo=sollecito``) per email al
+    cliente: destinatari (``to``), oggetto e testo dalla finestra del
+    dettaglio; vuoti = quelli proposti. Logica in ``invio.invia_email``."""
     from accounts.permissions import has_perm
-    from django.core.mail import EmailMessage
-    from django.conf import settings as django_settings
     from django.http import HttpResponse as _Hr
+
+    from .invio import invia_email
 
     if not request.user.is_authenticated:
         from django.contrib.auth.views import redirect_to_login
@@ -621,102 +822,23 @@ def fattura_invia_email(request, pk):
         return _Hr(status=403)
     if request.method != 'POST':
         return redirect('documenti:fattura_detail', pk=pk)
-
-    fattura = get_object_or_404(
-        TestataFattura.objects.select_related('cliente'), pk=pk,
+    fattura = get_object_or_404(TestataFattura.objects.select_related('cliente'), pk=pk)
+    esito = invia_email(
+        fattura, destinatari=request.POST.get('to') or '',
+        oggetto=request.POST.get('subject') or '', testo=request.POST.get('body') or '',
+        sollecito=request.POST.get('tipo') == 'sollecito', request=request,
     )
-
-    # Risolvi indirizzo destinatario
-    to_addr = (request.POST.get('to') or '').strip()
-    if not to_addr and fattura.cliente:
-        to_addr = (fattura.cliente.pec or '').strip()
-    if not to_addr and fattura.cliente:
-        primary = fattura.cliente.contatti.filter(primary=True).first()
-        if primary and primary.email:
-            to_addr = primary.email
-    if not to_addr:
-        messages.error(
-            request,
-            'Nessun indirizzo email disponibile (PEC cliente o contatto '
-            'principale assenti).',
-        )
-        return redirect('documenti:fattura_detail', pk=pk)
-
-    # Genero PDF in memoria
-    from anagrafiche.models import AnagraficaAzienda
-
-    azienda = AnagraficaAzienda.objects.first()
-    totals = calcola_valori(fattura)
-    pdf_ctx = {
-        'fattura': fattura, 'azienda': azienda,
-        'righe': fattura.righe.select_related('articolo', 'iva').all(),
-        'scadenze': fattura.scadenze.all(),
-        'totals': totals,
-        'conto_corrente': resolve_conto_corrente(fattura, azienda),
-    }
-    pdf_bytes = render_pdf_bytes('documenti/pdf/fattura.html', pdf_ctx, request=request)
-
-    # XML opzionale: lo allego solo se il cliente ha SDI/PEC configurati
-    xml_bytes = None
-    if fattura.cliente and fattura.cliente.fatturazione_elettronica_id:
-        from .fatt_el import build_fattura_xml
-        try:
-            xml_bytes = build_fattura_xml(fattura)
-        except ValueError as exc:  # anche FatturaElettronicaError
-            messages.error(request, f'FatturaPA non generabile, email non inviata: {exc}')
-            return redirect('documenti:fattura_detail', pk=pk)
-
-    # Componi messaggio
-    soggetto = (
-        request.POST.get('subject')
-        or f'Fattura {fattura.numero}/{fattura.anno}'
-        + (f' — {azienda.ragione_sociale}' if azienda and azienda.ragione_sociale else '')
-    )
-    body = (
-        request.POST.get('body')
-        or f'In allegato la fattura {fattura.numero}/{fattura.anno}'
-        + (f' del {fattura.data_documento:%d/%m/%Y}' if fattura.data_documento else '')
-        + '.\n\n'
-        + (
-            f'Cordiali saluti,\n{azienda.ragione_sociale}'
-            if azienda and azienda.ragione_sociale else ''
-        )
-    )
-    msg = EmailMessage(
-        subject=soggetto,
-        body=body,
-        from_email=django_settings.DEFAULT_FROM_EMAIL,
-        to=[to_addr],
-    )
-    msg.attach(
-        f'fattura_{fattura.numero}_{fattura.anno}.pdf',
-        pdf_bytes,
-        'application/pdf',
-    )
-    if xml_bytes:
-        # Nome SDI-conforme: IT<piva>_<progressivo>.xml
-        from .fatt_el import nome_file_sdi
-        msg.attach(
-            nome_file_sdi(fattura, azienda.partita_iva if azienda else ''),
-            xml_bytes,
-            'application/xml',
-        )
-
-    try:
-        msg.send(fail_silently=False)
-    except Exception as exc:
-        messages.error(request, f'Invio email fallito: {exc}')
-        return redirect('documenti:fattura_detail', pk=pk)
-
-    messages.success(request, f'Email inviata a {to_addr}.')
+    messages.add_message(request, messages.SUCCESS if esito.ok else messages.ERROR, esito.messaggio)
     return redirect('documenti:fattura_detail', pk=pk)
 
 
 def fattura_invia_sdi(request, pk):
-    """Costruisce l'XML FatturaPA e lo invia al SDI tramite il backend
-    configurato sull'AnagraficaAzienda. Registra l'invio in MessaggioSdi."""
+    """Costruisce l'XML FatturaPA e lo invia al SDI con il backend
+    configurato sull'anagrafica azienda (``invio.invia_al_sdi``)."""
     from accounts.permissions import has_perm
     from django.http import HttpResponse as _Hr
+
+    from .invio import invia_al_sdi
 
     if not request.user.is_authenticated:
         from django.contrib.auth.views import redirect_to_login
@@ -725,78 +847,9 @@ def fattura_invia_sdi(request, pk):
         return _Hr(status=403)
     if request.method != 'POST':
         return redirect('documenti:fattura_detail', pk=pk)
-
-    fattura = get_object_or_404(TestataFattura, pk=pk)
-
-    if fattura.sdi_stato in (
-        TestataFattura.SdiStato.INVIATA,
-        TestataFattura.SdiStato.ACCETTATA,
-        TestataFattura.SdiStato.RICEVUTA_SDI,
-    ):
-        messages.warning(request, 'La fattura risulta già inviata al SDI.')
-        return redirect('documenti:fattura_detail', pk=pk)
-
-    from .fatt_el import build_fattura_xml, nome_file_sdi
-    from .sdi import get_backend
-    from anagrafiche.models import AnagraficaAzienda
-    from .models import MessaggioSdi
-
-    try:
-        backend = get_backend()
-    except ValueError as exc:  # configurazione PEC incompleta
-        messages.error(request, str(exc))
-        return redirect('documenti:fattura_detail', pk=pk)
-    if backend is None:
-        messages.error(
-            request,
-            "Backend SDI non configurato sull'anagrafica azienda. "
-            "Imposta sdi_provider e (se PEC) le credenziali SMTP.",
-        )
-        return redirect('documenti:fattura_detail', pk=pk)
-
-    # Reinvio dopo scarto/rifiuto: il SDI non accetta due volte lo stesso nome
-    # file, quindi il tentativo (che entra nel progressivo) avanza. Si salva
-    # solo se l'invio riesce.
-    if fattura.sdi_stato in TestataFattura.SDI_STATI_REINVIO:
-        if fattura.tentativo_sdi >= 35:
-            messages.error(request, 'Raggiunto il numero massimo di reinvii al SDI per questa fattura.')
-            return redirect('documenti:fattura_detail', pk=pk)
-        fattura.tentativo_sdi += 1
-
-    try:
-        xml_bytes = build_fattura_xml(fattura)
-        az = AnagraficaAzienda.objects.first()
-        filename = nome_file_sdi(fattura, az.partita_iva if az else '')
-        result = backend.send_xml(fattura, xml_bytes, filename)
-    except ValueError as exc:  # anche FatturaElettronicaError
-        messages.error(request, f'Impossibile generare la FatturaPA: {exc}')
-        return redirect('documenti:fattura_detail', pk=pk)
-    from django.utils.timezone import now as _now
-    if result.success:
-        TestataFattura.objects.filter(pk=fattura.pk).update(
-            sdi_stato=TestataFattura.SdiStato.INVIATA,
-            sdi_data_invio=_now(),
-            sdi_id_trasmissione=result.id_trasmissione or '',
-            sdi_ultimo_messaggio=result.descrizione,
-            tentativo_sdi=fattura.tentativo_sdi,
-        )
-        MessaggioSdi.objects.create(
-            fattura=fattura, tipo='invio',
-            id_trasmissione=result.id_trasmissione or '',
-            descrizione=result.descrizione,
-            payload=xml_bytes.decode('utf-8', errors='replace')[:8000],
-            direzione='out',
-        )
-        messages.success(
-            request,
-            f'Fattura inviata al SDI ({result.descrizione or "OK"}).',
-        )
-    else:
-        TestataFattura.objects.filter(pk=fattura.pk).update(
-            sdi_ultimo_messaggio=result.descrizione,
-        )
-        messages.error(request, f'Invio fallito: {result.descrizione}')
-
+    esito = invia_al_sdi(get_object_or_404(TestataFattura, pk=pk))
+    livello = {'success': messages.SUCCESS, 'warning': messages.WARNING}.get(esito.livello, messages.ERROR)
+    messages.add_message(request, livello, esito.messaggio)
     return redirect('documenti:fattura_detail', pk=pk)
 
 
@@ -836,7 +889,6 @@ def fatture_zip(request):
     from django.http import HttpResponse as _Hr
     from io import BytesIO
     import zipfile
-    from anagrafiche.models import AnagraficaAzienda
 
     if not request.user.is_authenticated:
         from django.contrib.auth.views import redirect_to_login
@@ -844,38 +896,20 @@ def fatture_zip(request):
     if not has_perm(request.user, 'documenti.vedi'):
         return _Hr(status=403)
 
-    qs = TestataFattura.objects.select_related('cliente').order_by(
-        '-anno', '-numero',
-    )
-    q = (request.GET.get('q') or '').strip()
-    if q:
-        qs = qs.filter(
-            Q(numero__icontains=q)
-            | Q(cliente__ragione_sociale__icontains=q)
-            | Q(cliente__partita_iva__icontains=q),
-        )
-    anno = (request.GET.get('anno') or '').strip()
-    if anno.isdigit():
-        qs = qs.filter(anno=int(anno))
-    pagata = request.GET.get('pagata')
-    if pagata == 'si':
-        qs = qs.filter(pagata=True)
-    elif pagata == 'no':
-        qs = qs.filter(pagata=False)
-    tipo = (request.GET.get('tipo') or '').strip()
-    if tipo:
-        qs = qs.filter(tipo_documento=tipo)
-
-    qs = qs[:200]
+    qs = filtra_fatture(
+        TestataFattura.objects.select_related('cliente').order_by('-anno', '-numero'),
+        request.GET,
+    )[:200]
     if not qs:
         messages.warning(request, 'Nessuna fattura trovata con i filtri attuali.')
         return redirect('documenti:fattura_list')
 
-    azienda = AnagraficaAzienda.objects.first()
+    from .utils import azienda_per_calcoli
+    azienda = azienda_per_calcoli()
     buf = BytesIO()
     with zipfile.ZipFile(buf, 'w', zipfile.ZIP_DEFLATED) as zf:
         for f in qs:
-            totals = calcola_valori(f)
+            totals = calcola_valori(f, azienda=azienda)
             ctx = {
                 'fattura': f, 'azienda': azienda,
                 'righe': f.righe.select_related('articolo', 'iva').all(),

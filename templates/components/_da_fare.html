@@ -1,0 +1,13 @@
+{% comment %}
+  Elenco «Da fare» (dashboard/da_fare.py): pannello della campanella e card
+  della dashboard. Ogni voce porta alla pagina dove sistemarla.
+{% endcomment %}
+<div class="dafare-titolo">Da fare <span>{% now 'd/m/Y' %}</span></div>
+{% for v in voci %}
+  <a href="{{ v.url }}" class="dafare-voce {{ v.livello }}">
+    <span class="ico">{% icon v.icona size=14 %}</span>
+    <span class="dafare-testo"><strong>{{ v.titolo }}</strong><small>{{ v.dettaglio }}</small></span>
+  </a>
+{% empty %}
+  <div class="dafare-vuoto">{% icon 'check' size=18 %}<br>Tutto in ordine: nessuna scadenza in ritardo.</div>
+{% endfor %}

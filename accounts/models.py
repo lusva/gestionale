@@ -29,6 +29,10 @@ class Profile(models.Model):
         max_length=20, choices=StatoUtente.choices, default=StatoUtente.ATTIVO,
     )
     telefono = models.CharField(max_length=30, blank=True)
+    # scheda nella pagina Team: mansione, reparto (filtri) e sede
+    qualifica = models.CharField(max_length=80, blank=True)
+    reparto = models.CharField(max_length=60, blank=True)
+    sede = models.CharField(max_length=80, blank=True)
     iniziali = models.CharField(max_length=4, blank=True)
     avatar = models.ImageField(upload_to='avatars/', blank=True, null=True)
     ultimo_accesso = models.DateTimeField(null=True, blank=True)

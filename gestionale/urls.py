@@ -18,6 +18,7 @@ urlpatterns = [
     path('magazzino/', include('magazzino.urls', namespace='magazzino')),
     path('opportunita/', include('opportunita.urls', namespace='opportunita')),
     path('attivita/', include('attivita.urls', namespace='attivita')),
+    path('team/', include('team.urls', namespace='team')),
     path('report/', include('reports.urls', namespace='reports')),
     path('impostazioni/', include('core_settings.urls', namespace='settings')),
     path('cerca/', include('search.urls', namespace='search')),

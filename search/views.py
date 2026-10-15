@@ -16,8 +16,10 @@ from django.core.paginator import Paginator
 from django.db.models import Q
 from django.shortcuts import render
 
+from accounts.permissions import has_perm
 from attivita.models import Attivita
 from clienti.models import Cliente, Contatto
+from clienti.ricerca import CAMPI_CLIENTE, CAMPI_CONTATTO, filtro_parole, normalizza_query
 from opportunita.models import Opportunita
 
 # Documenti: import lazy per non rompere se l'app è disabilitata
@@ -38,38 +40,30 @@ OVERVIEW_CAP = 10
 GROUP_PAGE_SIZE = 20
 
 
-def _querysets(q: str):
+def _querysets(q: str, user):
     """Ritorna i queryset *non tagliati* per ogni gruppo (ordinati)."""
     if not q:
         return {}
     out = {
-        'clienti': (
-            Cliente.objects.filter(
-                Q(ragione_sociale__icontains=q)
-                | Q(partita_iva__icontains=q)
-                | Q(pec__icontains=q)
-                | Q(citta__icontains=q),
-            ).select_related('settore').order_by('ragione_sociale')
-        ),
-        'contatti': (
-            Contatto.objects.filter(
-                Q(nome__icontains=q) | Q(cognome__icontains=q)
-                | Q(email__icontains=q) | Q(telefono__icontains=q),
-            ).select_related('cliente').order_by('-primary', 'cognome')
-        ),
         'opportunita': (
-            Opportunita.objects.filter(
-                Q(titolo__icontains=q) | Q(descrizione__icontains=q)
-                | Q(cliente__ragione_sociale__icontains=q),
-            ).select_related('cliente').order_by('-updated_at')
+            Opportunita.objects.filter(filtro_parole(
+                q, 'titolo', 'descrizione', 'cliente__ragione_sociale',
+            )).select_related('cliente').order_by('-updated_at', '-pk')
         ),
         'attivita': (
-            Attivita.objects.filter(
-                Q(titolo__icontains=q) | Q(descrizione__icontains=q),
-            ).select_related('cliente').order_by('-data')
+            Attivita.objects.filter(filtro_parole(
+                q, 'titolo', 'descrizione', 'cliente__ragione_sociale',
+            )).select_related('cliente').order_by('-data', '-pk')
         ),
     }
-    if _DOCUMENTI_AVAILABLE:
+    if has_perm(user, 'clienti.vedi'):
+        out['clienti'] = Cliente.objects.filter(filtro_parole(
+            q, *CAMPI_CLIENTE,
+        )).select_related('settore').distinct().order_by('ragione_sociale', 'pk')
+        out['contatti'] = Contatto.objects.filter(filtro_parole(
+            q, *CAMPI_CONTATTO,
+        )).select_related('cliente').order_by('-primary', 'cognome', 'nome', 'pk')
+    if _DOCUMENTI_AVAILABLE and has_perm(user, 'documenti.vedi'):
         # Risultati documenti da modelli diversi: oggetto lazy con count()
         # e slicing, valutato solo per la finestra richiesta.
         documenti = _search_documenti(q)
@@ -89,12 +83,11 @@ class _DocumentiResults:
     ordered = True
 
     def __init__(self, q: str):
-        cond = (
-            Q(numero__icontains=q)
-            | Q(cliente__ragione_sociale__icontains=q)
-            | Q(cliente__partita_iva__icontains=q)
-            | Q(note__icontains=q)
-        )
+        cond = _filtro_numero(q)
+        if cond is None:
+            cond = filtro_parole(
+                q, 'cliente__ragione_sociale', 'cliente__partita_iva', 'note',
+            )
         docs_meta = [
             ('Fattura', TestataFattura, 'documenti:fattura_detail'),
             ('Offerta', TestataOfferta, 'documenti:offerta_detail'),
@@ -137,7 +130,7 @@ class _DocumentiResults:
                     'url': reverse(url_name, args=[d.pk]),
                     '_pk': d.pk,
                 })
-        rows.sort(key=lambda r: (r['anno'], r['numero']), reverse=True)
+        rows.sort(key=lambda r: (r['anno'], r['numero'], r['tipo'], r['_pk']), reverse=True)
         return rows
 
     def __getitem__(self, key):
@@ -168,12 +161,14 @@ GROUP_META = {
 
 @login_required
 def cerca(request):
-    q = (request.GET.get('q') or '').strip()
+    q = normalizza_query(request.GET.get('q'))
     group = (request.GET.get('group') or '').strip()
     if group and group not in GROUP_META:
         group = ''
 
-    qsets = _querysets(q)
+    qsets = _querysets(q, request.user)
+    if group not in qsets:
+        group = ''
 
     ctx = {
         'q': q,
@@ -220,3 +215,153 @@ def cerca(request):
             'total': total,
         })
     return render(request, 'search/results.html', ctx)
+
+
+# ---------------------------------------------------------------------------
+# Ricerca rapida per la palette comandi (⌘K): pochi risultati per gruppo, in
+# JSON, mentre si scrive. La pagina /cerca/ resta la ricerca completa.
+# ---------------------------------------------------------------------------
+
+RAPIDA_PER_GRUPPO = 5
+
+
+def _numero_anno(q: str):
+    """«12», «12/2026» o «12-2026» → (12, 2026|None); altrimenti None."""
+    import re
+    m = re.fullmatch(r'\s*(\d{1,7})\s*(?:[/\-]\s*(\d{4}))?\s*', q)
+    if not m:
+        return None
+    return int(m.group(1)), (int(m.group(2)) if m.group(2) else None)
+
+
+def _filtro_numero(q: str):
+    na = _numero_anno(q)
+    if na is None:
+        return None
+    filtro = Q(numero=na[0])
+    if na[1]:
+        filtro &= Q(anno=na[1])
+    return filtro
+
+
+@login_required
+def rapida(request):
+    from django.http import JsonResponse
+    from django.urls import reverse
+
+    from core_settings.templatetags.ui import euro
+
+    q = normalizza_query(request.GET.get('q'))
+    gruppi = []
+    if len(q) < 2 and _numero_anno(q) is None:
+        return JsonResponse({'gruppi': gruppi})
+    n = RAPIDA_PER_GRUPPO
+    numero = _filtro_numero(q)
+    vede_doc = _DOCUMENTI_AVAILABLE and has_perm(request.user, 'documenti.vedi')
+
+    if vede_doc:
+        filtro = filtro_parole(q, 'cliente__ragione_sociale', 'cliente__partita_iva', 'note')
+        if numero is not None:
+            filtro = numero
+        fatture = (TestataFattura.objects.filter(filtro).select_related('cliente')
+                   .order_by('-anno', '-numero')[:n])
+        gruppi.append({'nome': 'Fatture', 'voci': [{
+            'titolo': f'Fattura {f.sezionale + "/" if f.sezionale else ""}{f.numero}/{f.anno}',
+            'sotto': ' · '.join(x for x in (
+                f.cliente.ragione_sociale if f.cliente else '', euro(f.imponibile, 2),
+                'pagata' if f.pagata else 'da incassare') if x),
+            'url': reverse('documenti:fattura_detail', args=[f.pk]),
+        } for f in fatture]})
+
+        from documenti.models import TestataFatturaAcquisto
+        filtro = filtro_parole(
+            q, 'fornitore__ragione_sociale', 'fornitore__partita_iva', 'numero_fornitore',
+        )
+        if numero is not None:
+            filtro |= numero
+        acquisti = (TestataFatturaAcquisto.objects.filter(filtro).select_related('fornitore')
+                    .order_by('-anno', '-numero')[:n])
+        gruppi.append({'nome': 'Fatture di acquisto', 'voci': [{
+            'titolo': f'Acquisto {a.numero}/{a.anno}'
+                      + (f' · rif. {a.numero_fornitore}' if a.numero_fornitore else ''),
+            'sotto': ' · '.join(x for x in (
+                a.fornitore.ragione_sociale if a.fornitore else '', euro(a.totale_documento, 2),
+                'pagata' if a.pagata else 'da pagare') if x),
+            'url': reverse('documenti:fattura_acquisto_detail', args=[a.pk]),
+        } for a in acquisti]})
+
+        altri = []
+        for model, nome, url_name in ((TestataOfferta, 'Offerta', 'documenti:offerta_detail'),
+                                      (TestataOrdine, 'Ordine', 'documenti:ordine_detail'),
+                                      (TestataDdt, 'DDT', 'documenti:ddt_detail'),
+                                      (TestataNotaCredito, 'Nota di credito',
+                                       'documenti:nota_credito_detail')):
+            filtro = numero if numero is not None else filtro_parole(
+                q, 'cliente__ragione_sociale', 'cliente__partita_iva', 'note',
+            )
+            for d in model.objects.filter(filtro).select_related('cliente').order_by('-anno', '-numero')[:3]:
+                altri.append({
+                    'titolo': f'{nome} {d.numero}/{d.anno}',
+                    'sotto': d.cliente.ragione_sociale if d.cliente else '',
+                    'url': reverse(url_name, args=[d.pk]),
+                })
+        gruppi.append({'nome': 'Altri documenti', 'voci': altri[:n]})
+
+    if has_perm(request.user, 'clienti.vedi'):
+        clienti = (Cliente.objects.filter(filtro_parole(
+            q, *CAMPI_CLIENTE,
+        )).distinct().order_by('ragione_sociale', 'pk')[:n])
+        gruppi.append({'nome': 'Clienti', 'voci': [{
+            'titolo': c.ragione_sociale,
+            'sotto': ' · '.join(x for x in (c.partita_iva, c.citta) if x),
+            'url': reverse('clienti:detail', args=[c.pk]),
+        } for c in clienti]})
+        contatti = (Contatto.objects.filter(filtro_parole(
+            q, *CAMPI_CONTATTO,
+        )).select_related('cliente').order_by('cognome', 'nome', 'pk')[:3])
+        gruppi.append({'nome': 'Contatti', 'voci': [{
+            'titolo': f'{c.nome} {c.cognome}'.strip(),
+            'sotto': ' · '.join(x for x in (c.cliente.ragione_sociale, c.email) if x),
+            'url': reverse('clienti:detail', args=[c.cliente_id]),
+        } for c in contatti]})
+
+    if vede_doc:
+        from anagrafiche.models import Articolo, Fornitore
+        fornitori = (Fornitore.objects.filter(soft_delete=False).filter(
+            Q(ragione_sociale__icontains=q) | Q(partita_iva__icontains=q)
+            | Q(cognome__icontains=q)).order_by('ragione_sociale')[:n])
+        gruppi.append({'nome': 'Fornitori', 'voci': [{
+            'titolo': str(f),
+            'sotto': f.partita_iva or '',
+            'url': reverse('anagrafiche:fornitore_detail', args=[f.pk]),
+        } for f in fornitori]})
+        articoli = (Articolo.objects.filter(Q(codice__icontains=q) | Q(descrizione__icontains=q))
+                    .order_by('codice')[:n])
+        gruppi.append({'nome': 'Articoli', 'voci': [{
+            'titolo': f'{a.codice} — {a.descrizione}' if a.descrizione else a.codice,
+            'sotto': euro(a.prezzo_listino, 2) if a.prezzo_listino else '',
+            'url': reverse('anagrafiche:articolo_detail', args=[a.pk]),
+        } for a in articoli]})
+
+    opportunita = (Opportunita.objects.filter(filtro_parole(
+        q, 'titolo', 'descrizione', 'cliente__ragione_sociale',
+    )).select_related('cliente').order_by('-updated_at', '-pk')[:3])
+    gruppi.append({'nome': 'Opportunità', 'voci': [{
+        'titolo': o.titolo,
+        'sotto': o.cliente.ragione_sociale if o.cliente else '',
+        'url': reverse('opportunita:detail', args=[o.pk]),
+    } for o in opportunita]})
+
+    attivita = (Attivita.objects.filter(filtro_parole(
+        q, 'titolo', 'descrizione', 'cliente__ragione_sociale',
+    )).select_related('cliente').order_by('completata', '-data', '-pk')[:3])
+    gruppi.append({'nome': 'Attività', 'voci': [{
+        'titolo': a.titolo,
+        'sotto': ' · '.join(x for x in (
+            a.cliente.ragione_sociale if a.cliente else '',
+            'completata' if a.completata else 'da completare',
+        ) if x),
+        'url': reverse('attivita:detail', args=[a.pk]),
+    } for a in attivita]})
+
+    return JsonResponse({'gruppi': [g for g in gruppi if g['voci']]})

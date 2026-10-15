@@ -88,14 +88,12 @@ class ReportView(LoginRequiredMixin, TemplateView):
 
         # Bar chart: fatturato per mese dell'anno corrente
         year = local_now.year
-        monthly = []
-        for m in range(1, 13):
-            s = Opportunita.objects.filter(
-                stadio=Stadio.CHIUSA_WIN, data_chiusura__year=year, data_chiusura__month=m,
-            ).aggregate(s=Sum('valore'))['s'] or 0
-            monthly.append(float(s))
-        max_m = max(monthly) if monthly else 0
-        bars = [round(v / max_m * 95, 1) if max_m else 0 for v in monthly]
+        from django.db.models.functions import ExtractMonth
+        per_mese = dict(Opportunita.objects.filter(
+            stadio=Stadio.CHIUSA_WIN, data_chiusura__year=year,
+        ).annotate(m=ExtractMonth('data_chiusura')).values('m').annotate(
+            s=Sum('valore')).order_by().values_list('m', 's'))
+        monthly = [float(per_mese.get(m) or 0) for m in range(1, 13)]
         month_labels = ['Gen', 'Feb', 'Mar', 'Apr', 'Mag', 'Giu', 'Lug', 'Ago', 'Set', 'Ott', 'Nov', 'Dic']
 
         # Donut: fatturato per settore
@@ -130,7 +128,7 @@ class ReportView(LoginRequiredMixin, TemplateView):
 
         # Top 5 clienti per fatturato
         top5 = (
-            Cliente.objects
+            Cliente.objects.select_related('settore')
             .annotate(fatturato=Sum(
                 'opportunita__valore',
                 filter=Q(opportunita__stadio=Stadio.CHIUSA_WIN),
@@ -160,7 +158,7 @@ class ReportView(LoginRequiredMixin, TemplateView):
             'kpi_nuovi_clienti': nuovi_clienti,
             'kpi_valore_medio': valore_medio,
             'kpi_churn': churn,
-            'bar_data': bars,
+            'bar_values': monthly,
             'bar_labels': month_labels,
             'sectors': sectors,
             'donut_arcs': donut_arcs,

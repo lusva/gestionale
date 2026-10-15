@@ -1,0 +1,30 @@
+{% comment %}
+  Barra di navigazione in alto (da 1200px in su): le stesse voci della
+  sidebar (core_settings/menu.py), un menu a tendina per gruppo. Sotto i
+  1200px resta il pulsante ☰ che apre la sidebar come pannello.
+{% endcomment %}
+{% menu_sidebar as menu %}
+<nav class="navbar" aria-label="Menu principale" x-data="{ aperto: '' }"
+     @keydown.escape.window="aperto = ''" @click.outside="aperto = ''">
+  {% if menu.dashboard %}
+    <a href="{{ menu.dashboard.url }}" class="navbar-voce{% if menu.dashboard.attiva %} attiva{% endif %}"{% if menu.dashboard.attiva %} aria-current="page"{% endif %}>{{ menu.dashboard.etichetta }}</a>
+  {% endif %}
+  {% for g in menu.gruppi %}
+    <div class="navbar-gruppo">
+      <button type="button" class="navbar-voce{% if g.attivo %} attiva{% endif %}" aria-haspopup="true"
+              :aria-expanded="aperto === '{{ g.chiave }}'"
+              @click="aperto = aperto === '{{ g.chiave }}' ? '' : '{{ g.chiave }}'">
+        {{ g.breve }}{% icon 'chevronDown' size=12 %}
+      </button>
+      <div class="navbar-menu" x-show="aperto === '{{ g.chiave }}'" x-cloak x-transition.opacity.duration.120ms>
+        <div class="navbar-menu-titolo">{{ g.titolo }}</div>
+        {% for v in g.voci %}
+          <a href="{{ v.url }}" class="{% if v.attiva %}attiva{% endif %}"{% if v.attiva %} aria-current="page"{% endif %}>
+            {% icon v.icona size=15 %}<span>{{ v.etichetta }}</span>
+            {% if v.conteggio %}<span class="count">{{ v.conteggio }}</span>{% endif %}
+          </a>
+        {% endfor %}
+      </div>
+    </div>
+  {% endfor %}
+</nav>

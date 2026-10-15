@@ -1,0 +1,138 @@
+{% extends 'base.html' %}
+
+{% block title %}{% if is_create %}Nuova fattura ricorrente{% else %}{{ r.nome }}{% endif %}{% endblock %}
+{% block breadcrumb %}
+  <span class="sep">{% icon 'chevronRight' size=14 %}</span>
+  <a href="{% url 'documenti:ricorrente_list' %}" style="color: inherit; text-decoration: none;">Fatture ricorrenti</a>
+  <span class="sep">{% icon 'chevronRight' size=14 %}</span>
+  <span class="current">{% if is_create %}Nuova{% else %}{{ r.nome }}{% endif %}</span>
+{% endblock %}
+
+{% block content %}
+<form method="post" class="page" id="doc-form" data-documento data-salva-rapido data-avvisa-modifiche>
+  {% csrf_token %}
+  {% if r.pk %}<input type="hidden" name="documento_pk" value="{{ r.pk }}">{% endif %}
+  <div class="page-header">
+    <div>
+      <h1 class="page-title">{% if is_create %}Nuova fattura ricorrente{% else %}{{ r.nome }}{% endif %}</h1>
+      <p class="page-subtitle">Ogni periodo nasce una fattura vera, datata il giorno dell'emissione · <kbd data-tasto-mod>⌘</kbd>&nbsp;<kbd>S</kbd> per salvare</p>
+    </div>
+    <div style="display: flex; gap: 8px;">
+      <a href="{% if is_create %}{% url 'documenti:ricorrente_list' %}{% else %}{% url 'documenti:ricorrente_detail' r.pk %}{% endif %}" class="btn btn-ghost">Annulla</a>
+      <button type="submit" class="btn btn-brand">{% icon 'check' size=14 %} Salva</button>
+    </div>
+  </div>
+
+  {% if form.non_field_errors or righe_formset.non_form_errors %}
+    <div class="callout warn mb-24">
+      <div class="ico">{% icon 'x' size=14 %}</div>
+      <div>{{ form.non_field_errors }}{{ righe_formset.non_form_errors }}</div>
+    </div>
+  {% endif %}
+
+  <div class="layout-documento">
+    <div class="flex-col gap-16">
+
+      <div class="card" style="padding: 24px;">
+        <div class="section-title">Ricorrenza</div>
+        <div class="grid grid-2" style="gap: 16px;">
+          <div class="field" style="grid-column: 1 / -1;">
+            <label for="{{ form.nome.id_for_label }}">Nome *</label>
+            {{ form.nome }}{{ form.nome.errors }}
+          </div>
+          <div class="field" style="grid-column: 1 / -1;">
+            <label for="{{ form.cliente.id_for_label }}">Cliente *</label>
+            {{ form.cliente }}{{ form.cliente.errors }}
+          </div>
+          <div class="field">
+            <label for="{{ form.periodicita.id_for_label }}">Ogni</label>
+            {{ form.periodicita }}{{ form.periodicita.errors }}
+          </div>
+          <div class="field">
+            <label for="{{ form.giorno_emissione.id_for_label }}">{{ form.giorno_emissione.label }}</label>
+            {{ form.giorno_emissione }}{{ form.giorno_emissione.errors }}
+            <div class="text-sm text-muted" style="margin-top: 4px;">{{ form.giorno_emissione.help_text }}</div>
+          </div>
+          <div class="field">
+            <label for="{{ form.data_inizio.id_for_label }}">{{ form.data_inizio.label }}</label>
+            {{ form.data_inizio }}{{ form.data_inizio.errors }}
+          </div>
+          <div class="field">
+            <label for="{{ form.data_fine.id_for_label }}">{{ form.data_fine.label }}</label>
+            {{ form.data_fine }}{{ form.data_fine.errors }}
+            <div class="text-sm text-muted" style="margin-top: 4px;">Vuota = finché non la sospendi.</div>
+          </div>
+          <div class="field" style="grid-column: 1 / -1;">
+            <label for="{{ form.competenza.id_for_label }}">{{ form.competenza.label }}</label>
+            {{ form.competenza }}{{ form.competenza.errors }}
+            <div class="text-sm text-muted" style="margin-top: 4px;">Il periodo che va nella descrizione: quello in corso al momento dell'emissione (canone anticipato) o quello appena finito (a consuntivo).</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card" style="padding: 24px;">
+        <div class="section-title">Fattura</div>
+        <div class="grid grid-2" style="gap: 16px;">
+          <div class="field">
+            <label for="{{ form.forme_pagamento.id_for_label }}">{{ form.forme_pagamento.label }}</label>
+            {{ form.forme_pagamento }}{{ form.forme_pagamento.errors }}
+            <div class="text-sm text-muted" style="margin-top: 4px;">{{ form.forme_pagamento.help_text }}</div>
+          </div>
+          <div class="field">
+            <label for="{{ form.conto_corrente.id_for_label }}">{{ form.conto_corrente.label }}</label>
+            {{ form.conto_corrente }}{{ form.conto_corrente.errors }}
+          </div>
+        </div>
+        <details class="altre-opzioni" {% if form.tipo_documento.errors or form.sezionale.errors or form.sezionale.value %}open{% endif %}>
+          <summary>{% icon 'chevronRight' size=12 %} Tipo documento e sezionale</summary>
+          <div class="grid grid-2" style="gap: 16px;">
+            <div class="field">
+              <label for="{{ form.tipo_documento.id_for_label }}">Tipo documento</label>
+              {{ form.tipo_documento }}{{ form.tipo_documento.errors }}
+            </div>
+            <div class="field">
+              <label for="{{ form.sezionale.id_for_label }}">Sezionale</label>
+              {{ form.sezionale }}{{ form.sezionale.errors }}
+            </div>
+          </div>
+        </details>
+      </div>
+
+      {% include 'documenti/_righe_formset.html' %}
+      <div class="text-sm text-muted" style="margin-top: -8px;">
+        Nelle descrizioni e nelle note puoi scrivere
+        {% for s in segnaposto %}<code>{% templatetag openbrace %}{{ s }}{% templatetag closebrace %}</code>{% if not forloop.last %}, {% endif %}{% endfor %}:
+        diventano il periodo della fattura (es. «Canone {% templatetag openbrace %}mese{% templatetag closebrace %} {% templatetag openbrace %}anno{% templatetag closebrace %}» → «Canone ottobre 2026»).
+        Senza IVA sulla riga si usa quella del cliente.
+      </div>
+
+      <div class="card" style="padding: 24px;">
+        <div class="field">
+          <label for="{{ form.note.id_for_label }}">{{ form.note.label }}</label>
+          {{ form.note }}{{ form.note.errors }}
+        </div>
+        <div class="section-title" style="margin-top: 20px;">Dopo l'emissione</div>
+        <label class="checkbox-inline" for="{{ form.invia_sdi.id_for_label }}">{{ form.invia_sdi }} {{ form.invia_sdi.label }}</label>
+        <div class="text-sm text-muted" style="margin: 2px 0 10px 24px;">Solo se l'invio al SDI è attivo in Impostazioni › Integrazioni. Altrimenti la fattura resta da inviare.</div>
+        <label class="checkbox-inline" for="{{ form.invia_email.id_for_label }}">{{ form.invia_email }} {{ form.invia_email.label }}</label>
+        <div class="text-sm text-muted" style="margin: 2px 0 0 24px;">Al contatto principale del cliente (o alla sua PEC), con PDF e XML.</div>
+      </div>
+    </div>
+
+    <div class="flex-col gap-16">
+      <div class="card riepilogo" style="padding: 18px;">
+        <div style="font: 600 14px var(--font-display); margin-bottom: 8px;">Una fattura del periodo</div>
+        <div id="riepilogo-documento"
+             hx-post="{% url 'documenti:ricorrente_anteprima' %}"
+             hx-trigger="load, riepilogo from:body"
+             hx-include="#doc-form" hx-swap="innerHTML" hx-sync="this:replace">
+          <div class="riepilogo-nota">Calcolo dei totali…</div>
+        </div>
+        <button type="submit" class="btn btn-brand" style="width: 100%; justify-content: center; margin-top: 16px;">
+          {% icon 'check' size=14 %} Salva
+        </button>
+      </div>
+    </div>
+  </div>
+</form>
+{% endblock %}

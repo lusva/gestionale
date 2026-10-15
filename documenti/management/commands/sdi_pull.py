@@ -49,7 +49,7 @@ import re
 from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction
 
-from documenti.models import MessaggioSdi, TestataFattura
+from documenti.models import MessaggioSdi, TestataFattura, TestataNotaCredito
 from documenti.sdi import CASELLA_SDI_PRIMO_INVIO, GIORNI_FINESTRA
 
 logger = logging.getLogger(__name__)
@@ -92,34 +92,37 @@ def progressivo_da_nome_file(nome: str) -> str:
     return match.group('progr').upper() if match else ''
 
 
-def match_fattura(m):
-    """Trova la TestataFattura cui si riferisce una notifica SDI.
+def match_documento(m):
+    """Trova la fattura o la nota di credito cui si riferisce una notifica SDI.
 
-    1. ``IdentificativoSdI`` già registrato sulla fattura;
+    1. ``IdentificativoSdI`` già registrato sul documento;
     2. progressivo del file inviato (NomeFile della notifica o, in
        mancanza, il prefisso del nome dell'allegato notifica), confrontato
-       con ``progressivo_sdi`` delle fatture effettivamente inviate.
+       con ``progressivo_sdi`` dei documenti effettivamente inviati: con la
+       ``N`` in testa è una nota di credito, altrimenti una fattura.
 
     Nessun fallback euristico: se non c'è corrispondenza univoca → ``None``.
     """
-    from documenti.fatt_el import progressivo_sdi
+    from documenti.fatt_el import PREFISSO_NOTA_CREDITO, progressivo_sdi
 
     if m.id_trasmissione:
-        qs = TestataFattura.objects.filter(sdi_id_trasmissione=m.id_trasmissione)
-        if qs.count() == 1:
-            return qs.first()
+        for modello in (TestataFattura, TestataNotaCredito):
+            qs = modello.objects.filter(sdi_id_trasmissione=m.id_trasmissione)
+            if qs.count() == 1:
+                return qs.first()
 
     progr = progressivo_da_nome_file(m.nome_file) or progressivo_da_nome_file(m.filename)
     if not progr:
         return None
-    inviate = TestataFattura.objects.exclude(
-        sdi_stato=TestataFattura.SdiStato.NON_INVIATA,
-    )
-    # Formato legacy (prima di ``progressivo_sdi``): <numero:05d><anno>.
-    # Accettato solo se identifica un'unica fattura inviata (i sezionali
-    # possono ripetere numero/anno).
-    if len(progr) == 9 and progr.isdigit():
-        qs = inviate.filter(numero=int(progr[:5]), anno=int(progr[5:]))
+    modello, cifre = TestataFattura, progr
+    if progr.startswith(PREFISSO_NOTA_CREDITO):
+        modello, cifre = TestataNotaCredito, progr[1:]
+    inviati = modello.objects.exclude(sdi_stato=TestataFattura.SdiStato.NON_INVIATA)
+    # Formato legacy delle fatture (prima di ``progressivo_sdi``):
+    # <numero:05d><anno>. Accettato solo se identifica un'unica fattura
+    # inviata (i sezionali possono ripetere numero/anno).
+    if modello is TestataFattura and len(progr) == 9 and progr.isdigit():
+        qs = inviati.filter(numero=int(progr[:5]), anno=int(progr[5:]))
         if qs.count() == 1:
             return qs.first()
         return None
@@ -127,13 +130,17 @@ def match_fattura(m):
     # ``fatt_el.progressivo_sdi``). Una notifica di un invio precedente
     # (tentativo diverso dall'attuale) non corrisponde e viene ignorata.
     try:
-        pk, _tentativo = divmod(int(progr, 36), 36)
+        pk, _tentativo = divmod(int(cifre, 36), 36)
     except ValueError:
         return None
-    fattura = inviate.filter(pk=pk).first()
-    if fattura is not None and progressivo_sdi(fattura) == progr:
-        return fattura
+    documento = inviati.filter(pk=pk).first()
+    if documento is not None and progressivo_sdi(documento) == progr:
+        return documento
     return None
+
+
+# nome storico, usato da chi importava la funzione
+match_fattura = match_documento
 
 
 class Command(BaseCommand):
@@ -145,6 +152,22 @@ class Command(BaseCommand):
         parser.add_argument('--giorni', type=int, default=GIORNI_FINESTRA)
 
     def handle(self, *args, **opts):
+        if opts['dry_run']:
+            self._esegui(opts)
+            return
+        # Ogni run si registra (Impostazioni › Integrazioni mostra se il timer
+        # gira) e non parte se ce n'è già una in corso: il timer e il pulsante
+        # «Controlla ora la PEC» elaborerebbero due volte le stesse email.
+        from core_settings.esecuzioni import GiaInCorso, esecuzione
+        try:
+            with esecuzione('sdi_pull') as stato:
+                self._esegui(opts, stato)
+        except GiaInCorso:
+            self.stdout.write(self.style.WARNING(
+                'Un controllo della PEC è già in corso: questa run salta.'
+            ))
+
+    def _esegui(self, opts, stato=None):
         dry = opts['dry_run']
         limit = opts['limit']
 
@@ -157,14 +180,23 @@ class Command(BaseCommand):
             self.stdout.write(self.style.WARNING(
                 'Backend SDI non configurato (sdi_provider=disabilitato).'
             ))
+            if stato:
+                stato.riepilogo = 'Invio al SDI disabilitato: nulla da controllare.'
             return
 
         # Il backend non registra nulla come elaborato: lo facciamo noi dopo
         # l'elaborazione. ``limit`` è applicato dal backend sui messaggi
         # sorgente: gli eccedenti restano da elaborare per la run successiva.
         msgs = list(backend.fetch_messages(limit=limit, giorni=opts['giorni']))
+        errore_casella = getattr(backend, 'ultimo_errore', '')
+        if errore_casella:
+            self.stdout.write(self.style.ERROR(f'  {errore_casella}'))
+            if stato:
+                stato.esito, stato.riepilogo = 'errore', errore_casella
         if not msgs:
             self.stdout.write('Nessun nuovo messaggio.')
+            if stato and not errore_casella:
+                stato.riepilogo = 'Nessun nuovo messaggio.'
             return
 
         n_notif, n_fatture, n_skip, n_err = 0, 0, 0, 0
@@ -198,12 +230,18 @@ class Command(BaseCommand):
 
         self.stdout.write('')
         notif, fatt = ('da applicare', 'da importare') if dry else ('applicate', 'importate')
-        self.stdout.write(self.style.SUCCESS(
-            f'{"Dry-run (nulla di scritto)" if dry else "Completato"}: '
+        riepilogo = (
             f'{n_notif} notifiche {notif}, '
             f'{n_fatture} fatture acquisto {fatt}, {n_skip} ignorate, '
             f'{n_err} in errore (restano da elaborare).'
+        )
+        self.stdout.write(self.style.SUCCESS(
+            f'{"Dry-run (nulla di scritto)" if dry else "Completato"}: {riepilogo}'
         ))
+        if stato:
+            if n_err or errore_casella:
+                stato.esito = 'errore'
+            stato.riepilogo = ' · '.join(filter(None, [errore_casella, riepilogo]))
 
     # === Elaborazione singolo messaggio ===
 
@@ -223,7 +261,7 @@ class Command(BaseCommand):
             return 'fattura' if self._import_fattura_acquisto(m, dry) else 'skip'
 
         self._aggiorna_casella_sdi(m, dry)
-        fattura = self._match_fattura(m)
+        fattura = self._match_fattura(m)          # fattura o nota di credito
         if fattura is None:
             logger.warning(
                 'sdi_pull: notifica %s non associabile (id=%s, NomeFile=%s, file=%s)',
@@ -238,14 +276,15 @@ class Command(BaseCommand):
         new_state = stato_da_notifica(m)
         if dry:
             self.stdout.write(
-                f'  [DRY] {m.tipo} → fattura {fattura}: '
+                f'  [DRY] {m.tipo} → {fattura}: '
                 f'{m.descrizione[:60]}'
                 + (f' → stato {new_state}' if new_state else '')
             )
             return 'notifica'
 
+        nota = isinstance(fattura, TestataNotaCredito)
         MessaggioSdi.objects.create(
-            fattura=fattura, tipo=m.tipo,
+            **{'nota_credito' if nota else 'fattura': fattura}, tipo=m.tipo,
             id_trasmissione=m.id_trasmissione,
             descrizione=m.descrizione[:255],
             payload=m.raw[:8000],
@@ -260,17 +299,17 @@ class Command(BaseCommand):
             and fattura.sdi_stato == TestataFattura.SdiStato.RIFIUTATA
         ):
             updates['sdi_stato'] = new_state
-        TestataFattura.objects.filter(pk=fattura.pk).update(**updates)
+        type(fattura).objects.filter(pk=fattura.pk).update(**updates)
         self.stdout.write(self.style.SUCCESS(
-            f'  {m.tipo} → fattura {fattura}: {m.descrizione[:60]}'
+            f'  {m.tipo} → {fattura}: {m.descrizione[:60]}'
         ))
         return 'notifica'
 
     # === Helper ===
 
     def _match_fattura(self, m):
-        """Trova la TestataFattura cui si riferisce una notifica SDI."""
-        return match_fattura(m)
+        """Trova la fattura o nota di credito cui si riferisce una notifica SDI."""
+        return match_documento(m)
 
     def _aggiorna_casella_sdi(self, m, dry):
         """Il SDI risponde al primo invio da una sua casella sdiNN, da usare

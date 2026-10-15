@@ -79,10 +79,10 @@
       </div>
       <div class="pager">
         {% if page_obj.has_previous %}
-          <a href="?{% if q %}q={{ q }}&{% endif %}{% if azione %}azione={{ azione }}&{% endif %}{% if target_type %}target_type={{ target_type }}&{% endif %}page={{ page_obj.previous_page_number }}">«</a>
+          <a href="{% querystring page=page_obj.previous_page_number %}">«</a>
         {% endif %}
         {% if page_obj.has_next %}
-          <a href="?{% if q %}q={{ q }}&{% endif %}{% if azione %}azione={{ azione }}&{% endif %}{% if target_type %}target_type={{ target_type }}&{% endif %}page={{ page_obj.next_page_number }}">»</a>
+          <a href="{% querystring page=page_obj.next_page_number %}">»</a>
         {% endif %}
       </div>
     </div>

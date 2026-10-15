@@ -8,6 +8,8 @@ from django.db.models import ProtectedError
 from django.shortcuts import get_object_or_404, redirect, render
 
 from accounts.permissions import require_perm
+from audit.models import Azione
+from audit.utils import log as registra_audit
 
 from .crud_generic import make_anag_views
 from .forms import (
@@ -209,6 +211,8 @@ def anagrafica_azienda_edit(request):
         form = AnagraficaAziendaForm(request.POST, request.FILES, instance=az)
         if form.is_valid():
             form.save()
+            registra_audit(Azione.UPDATE, request=request, target=az,
+                           meta={'sezione': 'Anagrafica azienda', 'campi': form.changed_data})
             messages.success(request, 'Anagrafica azienda aggiornata.')
             return redirect('anagrafiche:anagrafica_azienda')
     else:

@@ -1,311 +1,145 @@
-{% load static humanize %}<!DOCTYPE html>
-<html lang="it">
-<head>
-  <meta charset="utf-8" />
-  <title>{{ doc_label }} {{ documento.numero }}/{{ documento.anno }}</title>
-  <link rel="stylesheet" href="{% static 'css/tokens.css' %}">
-  <link rel="stylesheet" href="{% static 'css/variants.css' %}">
-  <style>
-    @page { size: A4; margin: 0; }
-    body { margin: 0; background: var(--paper); }
-    .page { box-shadow: none; }
-    table { border-collapse: collapse; }
-    .va-meta-cell.empty { visibility: hidden; }
-    .va-iva-recap {
-      width: 100%;
-      margin: 0 0 8mm;
-      font-size: var(--fs-sm);
-    }
-    .va-iva-recap th, .va-iva-recap td {
-      padding: 5px 8px;
-      border-bottom: 1px solid var(--ink-100);
-      text-align: left;
-    }
-    .va-iva-recap th {
-      font-size: var(--fs-xs);
-      text-transform: uppercase;
-      letter-spacing: 0.08em;
-      color: var(--ink-500);
-      font-weight: 600;
-      border-bottom: 1px solid var(--ink-200);
-    }
-    .va-iva-recap .num { text-align: right; font-variant-numeric: tabular-nums; }
-    .va-iva-recap caption {
-      caption-side: top;
-      text-align: left;
-      font-size: var(--fs-xs);
-      text-transform: uppercase;
-      letter-spacing: 0.1em;
-      color: var(--ink-500);
-      font-weight: 600;
-      margin-bottom: 4px;
-    }
-    .va-ddt-info {
-      background: var(--ink-50);
-      border-radius: var(--r-md);
-      padding: 4mm 5mm;
-      margin-bottom: 8mm;
-      display: grid;
-      grid-template-columns: repeat(3, 1fr);
-      gap: 4mm 8mm;
-      font-size: var(--fs-sm);
-    }
-    .va-ddt-info .va-meta-label { margin-bottom: 2px; }
-  </style>
-</head>
-<body>
-<div class="page variant-a">
-  <div class="page-inner">
+{% extends 'documenti/pdf/_base.html' %}
+{% comment %}
+  Offerta, ordine, DDT e nota di credito (vedi _generic_doc_pdf).
+  doc_kind: offerta | ordine | ddt | nota_credito; counterparty: cliente | fornitore.
+{% endcomment %}
 
-    <header class="va-header">
-      <div class="va-logo-wrap">
-        {% if azienda.logo %}
-          <img src="{{ azienda.logo.url }}" alt="{{ azienda.ragione_sociale|default:'Logo' }}" class="va-logo">
-        {% else %}
-          <img src="{% static 'img/logo-aigis.png' %}" alt="AIGIS Lab" class="va-logo">
-        {% endif %}
-      </div>
-      <div class="va-doc-title">
-        <div class="va-doc-type">{{ doc_label }}</div>
-        <div class="va-doc-number">N° <span class="mono">{{ documento.numero }}/{{ documento.anno }}</span></div>
-        <div class="va-doc-date muted">{{ documento.data_documento|date:'d/m/Y' }}</div>
-      </div>
-    </header>
+{% block titolo %}{{ doc_label }} {{ documento.numero }}/{{ documento.anno }}{% endblock %}
 
-    <div class="va-divider"></div>
+{% block seguito %}
+  <strong>{% if doc_kind == 'ddt' %}Documento di trasporto{% else %}{{ doc_label }}{% endif %} n. {{ documento.numero }}/{{ documento.anno }}</strong>
+  del {{ documento.data_documento|date:'d/m/Y' }}{% if counterparty == 'cliente' and documento.cliente %} · {{ documento.cliente.ragione_sociale|default:documento.cliente }}{% elif documento.fornitore %} · {{ documento.fornitore.ragione_sociale|default:documento.fornitore }}{% endif %}
+{% endblock %}
 
-    <section class="va-parties">
-      <div class="va-party">
-        <div class="va-party-label">Mittente</div>
-        <div class="va-party-name">{{ azienda.ragione_sociale|default:'—' }}</div>
-        <div class="muted">{{ azienda.indirizzo_legale }}</div>
-        <div class="muted">{{ azienda.cap_legale }} {{ azienda.comune_legale }}{% if azienda.prov_legale %} ({{ azienda.prov_legale }}){% endif %}</div>
-        <div class="muted">P.IVA {{ azienda.partita_iva|default:'—' }}{% if azienda.codice_fiscale %} · C.F. {{ azienda.codice_fiscale }}{% endif %}</div>
-        {% if azienda.email %}<div class="muted">{{ azienda.email }}</div>{% endif %}
-        {% if azienda.telefono %}<div class="muted">{{ azienda.telefono }}</div>{% endif %}
-      </div>
-      <div class="va-party va-party-right">
+{% block tipo_classe %}{% if doc_kind == 'ddt' %} lungo{% endif %}{% endblock %}
+{% block tipo %}{% if doc_kind == 'ddt' %}Documento di trasporto{% else %}{{ doc_label }}{% endif %}{% endblock %}
+
+{% block estremi %}
+  <tr><th>Numero</th><td>{{ documento.numero }}/{{ documento.anno }}</td></tr>
+  <tr><th>Data</th><td>{{ documento.data_documento|date:'d/m/Y' }}</td></tr>
+{% endblock %}
+
+{% block bollino %}
+  {% if has_stato and 'Annullat' in documento.get_stato_display %}
+    <div class="bollino">{{ documento.get_stato_display }}</div>
+  {% endif %}
+{% endblock %}
+
+{% block contenuto %}
+  <table class="parti">
+    <tr>
+      <td class="controparte">
         {% if counterparty == 'cliente' %}
-          <div class="va-party-label">Destinatario</div>
-          {% if documento.cliente %}
-            <div class="va-party-name">{{ documento.cliente.ragione_sociale }}</div>
-            {% if documento.cliente.indirizzo %}<div class="muted">{{ documento.cliente.indirizzo }}</div>{% endif %}
-            <div class="muted">{{ documento.cliente.cap }} {{ documento.cliente.citta }}{% if documento.cliente.provincia %} ({{ documento.cliente.provincia }}){% endif %}</div>
-            <div class="muted">P.IVA {{ documento.cliente.partita_iva|default:'—' }}{% if documento.cliente.codice_fiscale %} · C.F. {{ documento.cliente.codice_fiscale }}{% endif %}</div>
-            {% if documento.cliente.codice_sdi %}<div class="muted">Codice SDI: <span class="mono">{{ documento.cliente.codice_sdi }}</span></div>{% endif %}
-            {% if documento.cliente.pec %}<div class="muted">PEC: {{ documento.cliente.pec }}</div>{% endif %}
-          {% else %}<div class="muted">—</div>{% endif %}
-        {% else %}
-          <div class="va-party-label">Fornitore</div>
-          {% if documento.fornitore %}
-            <div class="va-party-name">{{ documento.fornitore.ragione_sociale }}</div>
-            <div class="muted">P.IVA {{ documento.fornitore.partita_iva|default:'—' }}{% if documento.fornitore.codice_fiscale %} · C.F. {{ documento.fornitore.codice_fiscale }}{% endif %}</div>
-          {% else %}<div class="muted">—</div>{% endif %}
-        {% endif %}
-      </div>
-    </section>
-
-    {% if documento.scadenza or documento.forme_pagamento or has_stato or documento.tipo_documento %}
-      <section class="va-meta">
-        {% if documento.tipo_documento %}
-          <div class="va-meta-cell">
-            <div class="va-meta-label">Tipo</div>
-            <div class="mono">{{ documento.tipo_documento }}</div>
-          </div>
-        {% endif %}
-        {% if documento.scadenza %}
-          <div class="va-meta-cell">
-            <div class="va-meta-label">{% if doc_kind == 'offerta' %}Validità{% else %}Scadenza{% endif %}</div>
-            <div>{{ documento.scadenza|date:'d/m/Y' }}</div>
-          </div>
-        {% endif %}
-        {% if documento.forme_pagamento %}
-          <div class="va-meta-cell">
-            <div class="va-meta-label">Pagamento</div>
-            <div>{{ documento.forme_pagamento }}</div>
-          </div>
-        {% endif %}
-        {% if has_stato %}
-          <div class="va-meta-cell">
-            <div class="va-meta-label">Stato</div>
-            <div>{{ documento.get_stato_display }}</div>
-          </div>
-        {% endif %}
-      </section>
-    {% endif %}
-
-    {% if doc_kind == 'ddt' %}
-      <section class="va-ddt-info">
-        <div>
-          <div class="va-meta-label">Causale trasporto</div>
-          <div>{{ documento.causale_trasporto|default:'—' }}</div>
-        </div>
-        <div>
-          <div class="va-meta-label">Aspetto beni</div>
-          <div>{{ documento.aspetto_beni|default:'—' }}</div>
-        </div>
-        <div>
-          <div class="va-meta-label">Porto</div>
-          <div>{{ documento.porto|default:'—' }}</div>
-        </div>
-        <div>
-          <div class="va-meta-label">Vettore</div>
-          <div>{{ documento.vettore|default:'—' }}</div>
-        </div>
-        <div>
-          <div class="va-meta-label">Colli / palette</div>
-          <div class="tabular">{{ documento.numero_palette|default:0 }}</div>
-        </div>
-        <div>
-          <div class="va-meta-label">Peso netto / lordo</div>
-          <div class="tabular">{{ documento.peso_netto|floatformat:2 }} / {{ documento.peso_lordo|floatformat:2 }} kg</div>
-        </div>
-      </section>
-    {% endif %}
-
-    <table class="line-table va-table">
-      <thead>
-        <tr>
-          <th style="width: 8mm;">#</th>
-          <th>Descrizione</th>
-          {% if show_totals %}
-            <th class="qty" style="width: 18mm;">Qtà</th>
-            <th class="num" style="width: 24mm;">Prezzo</th>
-            {% if show_iva %}<th class="num" style="width: 16mm;">IVA</th>{% endif %}
-            <th class="num" style="width: 26mm;">Totale</th>
+          {% if doc_kind == 'nota_credito' %}
+            {% include 'documenti/pdf/_controparte.html' with soggetto=documento.cliente etichetta='Cessionario / committente' %}
+          {% elif doc_kind == 'ddt' %}
+            {% include 'documenti/pdf/_controparte.html' with soggetto=documento.cliente etichetta='Destinatario' %}
           {% else %}
-            <th class="qty" style="width: 18mm;">Qtà</th>
-            <th class="qty" style="width: 14mm;">UM</th>
+            {% include 'documenti/pdf/_controparte.html' with soggetto=documento.cliente etichetta='Cliente' %}
           {% endif %}
-        </tr>
-      </thead>
-      <tbody>
-        {% for r in righe %}
-          <tr>
-            <td class="muted">{{ r.numero_riga|default:forloop.counter }}</td>
-            <td>
-              {% if r.articolo %}
-                <div class="va-item-name">{{ r.articolo.descrizione }}</div>
-                <div class="muted va-item-desc">
-                  <span class="mono">{{ r.articolo.codice }}</span>{% if r.descrizione_libera %} · {{ r.descrizione_libera }}{% endif %}
-                </div>
-              {% elif r.descrizione_libera %}
-                <div class="va-item-name">{{ r.descrizione_libera|truncatechars:80 }}</div>
-                {% if r.descrizione_libera|length > 80 %}
-                  <div class="muted va-item-desc">{{ r.descrizione_libera }}</div>
-                {% endif %}
-              {% else %}
-                <div class="muted">—</div>
-              {% endif %}
-            </td>
-            {% if show_totals %}
-              <td class="qty tabular">{{ r.quantita|floatformat:2 }}{% if r.um %}<span class="muted"> {{ r.um }}</span>{% endif %}</td>
-              <td class="num tabular">{{ r.importo_unitario|floatformat:2 }} €</td>
-              {% if show_iva %}<td class="num tabular muted">{% if r.iva %}{{ r.iva.aliquota }}%{% else %}—{% endif %}</td>{% endif %}
-              <td class="num tabular"><strong>{{ r.imponibile|floatformat:2 }} €</strong></td>
-            {% else %}
-              <td class="qty tabular">{{ r.quantita|floatformat:2 }}</td>
-              <td class="qty muted">{{ r.um|default:'—' }}</td>
-            {% endif %}
-          </tr>
-        {% endfor %}
-      </tbody>
-    </table>
-
-    {% if show_totals and totals %}
-      <section class="va-totals-wrap">
-        <div class="totals va-totals">
-          <div class="row">
-            <span class="muted">Imponibile lordo</span>
-            <span class="tabular">{{ totals.imponibile_lordo|floatformat:2 }} €</span>
-          </div>
-          {% if totals.sconto %}
-            <div class="row">
-              <span class="muted">Sconto</span>
-              <span class="tabular">− {{ totals.sconto|floatformat:2 }} €</span>
-            </div>
-            <div class="row">
-              <span class="muted">Imponibile netto</span>
-              <span class="tabular">{{ totals.imponibile|floatformat:2 }} €</span>
-            </div>
+        {% else %}
+          {% include 'documenti/pdf/_controparte.html' with soggetto=documento.fornitore etichetta='Fornitore' %}
+        {% endif %}
+      </td>
+      <td class="intervallo"></td>
+      <td class="condizioni">
+        <div class="etichetta">Condizioni</div>
+        <table class="dati">
+          {% if documento.tipo_documento %}
+            <tr><th>Tipo documento</th><td><span class="codice">{{ documento.tipo_documento }}</span></td></tr>
           {% endif %}
-          <div class="row">
-            <span class="muted">IVA</span>
-            <span class="tabular">{{ totals.imposta_totale|floatformat:2 }} €</span>
-          </div>
-          {% if totals.spese %}
-            <div class="row">
-              <span class="muted">Spese</span>
-              <span class="tabular">{{ totals.spese|floatformat:2 }} €</span>
-            </div>
-          {% endif %}
-          {% if totals.cassa_prev %}
-            <div class="row">
-              <span class="muted">Cassa previdenziale</span>
-              <span class="tabular">{{ totals.cassa_prev|floatformat:2 }} €</span>
-            </div>
-          {% endif %}
-          {% if totals.bollo %}
-            <div class="row">
-              <span class="muted">Imposta di bollo</span>
-              <span class="tabular">{{ totals.bollo|floatformat:2 }} €</span>
-            </div>
-          {% endif %}
-          <div class="row grand">
-            <span>Totale</span>
-            <span class="tabular">{{ totals.totale|floatformat:2 }} €</span>
-          </div>
-        </div>
-      </section>
-
-      {% if totals.iva_dettaglio|length > 1 %}
-        <table class="va-iva-recap">
-          <caption>Riepilogo IVA</caption>
-          <thead>
-            <tr>
-              <th>Aliquota</th>
-              <th>Natura</th>
-              <th class="num">Imponibile</th>
-              <th class="num">Imposta</th>
-            </tr>
-          </thead>
-          <tbody>
-            {% for iva in totals.iva_dettaglio %}
-              <tr>
-                <td>{{ iva.aliquota }}%</td>
-                <td class="muted">{{ iva.natura|default:'—' }}</td>
-                <td class="num tabular">{{ iva.imponibile|floatformat:2 }} €</td>
-                <td class="num tabular">{{ iva.imposta|floatformat:2 }} €</td>
-              </tr>
+          {% if doc_kind == 'nota_credito' %}
+            {% for f in documento.fatture_origine.all %}
+              <tr><th>{% if forloop.first %}Rif. fattura{% endif %}</th><td>n. {% if f.sezionale %}{{ f.sezionale }}/{% endif %}{{ f.numero }}/{{ f.anno }} del {{ f.data_documento|date:'d/m/Y' }}</td></tr>
             {% endfor %}
-          </tbody>
+          {% endif %}
+          {% if doc_kind == 'offerta' and documento.scadenza %}
+            <tr><th>Valida fino al</th><td>{{ documento.scadenza|date:'d/m/Y' }}</td></tr>
+          {% elif documento.scadenza %}
+            <tr><th>Scadenza</th><td>{{ documento.scadenza|date:'d/m/Y' }}</td></tr>
+          {% endif %}
+          {% if doc_kind == 'ddt' %}
+            <tr><th>Causale</th><td>{{ documento.causale_trasporto|default:'—' }}</td></tr>
+            {% if documento.data_ora_ritiro %}<tr><th>Inizio trasporto</th><td>{{ documento.data_ora_ritiro|date:'d/m/Y H:i' }}</td></tr>{% endif %}
+          {% endif %}
+          {% if show_totals %}<tr><th>Valuta</th><td>Euro</td></tr>{% endif %}
         </table>
-      {% endif %}
-    {% endif %}
+      </td>
+    </tr>
+  </table>
 
-    {% if documento.note %}
-      <section class="va-notes">
-        <div class="va-meta-label">Note</div>
-        <div>{{ documento.note|linebreaksbr }}</div>
-      </section>
-    {% endif %}
+  {% include 'documenti/pdf/_righe.html' with prezzi=show_totals con_iva=show_iva %}
 
-    <footer class="va-footer">
-      <div class="va-footer-bar"></div>
-      <div class="va-footer-top">
-        <div class="va-footer-content">
-          <span>{{ azienda.ragione_sociale|default:'' }}</span>
-          {% if azienda.partita_iva %}<span class="muted">·</span><span class="muted">P.IVA {{ azienda.partita_iva }}</span>{% endif %}
-          {% if azienda.email %}<span class="muted">·</span><span class="muted">{{ azienda.email }}</span>{% endif %}
-          {% if azienda.telefono %}<span class="muted">·</span><span class="muted">{{ azienda.telefono }}</span>{% endif %}
-        </div>
-        <div class="va-page-num">Pag. <span class="tabular">1</span></div>
+  {% if show_totals and totals %}
+    {% if doc_kind == 'offerta' %}
+      {% include 'documenti/pdf/_chiusura.html' with con_iva=show_iva etichetta_totale='Totale offerta' %}
+    {% elif doc_kind == 'ordine' %}
+      {% include 'documenti/pdf/_chiusura.html' with con_iva=show_iva etichetta_totale='Totale ordine' %}
+    {% elif doc_kind == 'nota_credito' %}
+      {% include 'documenti/pdf/_chiusura.html' with con_iva=show_iva etichetta_totale='Totale nota di credito' %}
+    {% else %}
+      {% include 'documenti/pdf/_chiusura.html' with con_iva=show_iva %}
+    {% endif %}
+  {% endif %}
+
+  {% if doc_kind == 'ddt' %}
+    <div class="blocco">
+      <div class="etichetta">Dati del trasporto</div>
+      <div class="riquadro">
+        <table class="campi">
+          <tr>
+            <td><div class="etichetta">Trasporto a cura del</div><div class="campo">{{ documento.cura|default:'—' }}</div></td>
+            <td><div class="etichetta">Vettore</div><div class="campo">{{ documento.vettore|default:'—' }}</div></td>
+            <td><div class="etichetta">Porto</div><div class="campo">{{ documento.porto|default:'—' }}</div></td>
+          </tr>
+        </table>
+        <table class="campi">
+          <tr>
+            <td><div class="etichetta">Aspetto dei beni</div><div class="campo">{{ documento.aspetto_beni|default:'—' }}</div></td>
+            <td><div class="etichetta">Colli</div><div class="campo">{{ documento.numero_palette|default:0 }}</div></td>
+            <td><div class="etichetta">Peso netto / lordo</div><div class="campo">{{ documento.peso_netto|floatformat:"-2g" }} / {{ documento.peso_lordo|floatformat:"-2g" }} kg</div></td>
+          </tr>
+        </table>
+        {% if documento.destinazione_merce %}
+          <table class="campi">
+            <tr>
+              <td>
+                <div class="etichetta">Luogo di destinazione</div>
+                <div class="campo">{{ documento.destinazione_merce.indirizzo|default:'' }}{% if documento.destinazione_merce.cap or documento.destinazione_merce.comune %}, {{ documento.destinazione_merce.cap|default:'' }} {{ documento.destinazione_merce.comune|default:'' }}{% endif %}{% if documento.destinazione_merce.provincia %} ({{ documento.destinazione_merce.provincia }}){% endif %}</div>
+              </td>
+            </tr>
+          </table>
+        {% endif %}
       </div>
-      {% if azienda.contenuto_footer %}
-        <div class="va-footer-content muted" style="margin-top: 4px;">{{ azienda.contenuto_footer }}</div>
-      {% endif %}
-    </footer>
-  </div>
-</div>
-</body>
-</html>
+    </div>
+  {% endif %}
+
+  {% if doc_kind == 'offerta' or doc_kind == 'ordine' %}
+    {% include 'documenti/pdf/_pagamento.html' with forma=documento.forme_pagamento conto=documento.conto_corrente %}
+  {% endif %}
+
+  {% if documento.note %}
+    <div class="blocco">
+      <div class="etichetta">Note</div>
+      <div class="note">{{ documento.note|linebreaksbr }}</div>
+    </div>
+  {% endif %}
+
+  {% if doc_kind == 'ddt' %}
+    <table class="firme">
+      <tr>
+        <td><div class="etichetta">Firma del conducente</div><div class="firma-spazio"></div></td>
+        <td><div class="etichetta">Firma del vettore</div><div class="firma-spazio"></div></td>
+        <td><div class="etichetta">Firma del destinatario</div><div class="firma-spazio"></div></td>
+      </tr>
+    </table>
+  {% elif doc_kind == 'offerta' %}
+    <table class="firme">
+      <tr>
+        <td></td>
+        <td><div class="etichetta">Data</div><div class="firma-spazio"></div></td>
+        <td><div class="etichetta">Per accettazione · timbro e firma</div><div class="firma-spazio"></div></td>
+      </tr>
+    </table>
+  {% endif %}
+{% endblock %}

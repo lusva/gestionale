@@ -1,0 +1,68 @@
+{% load humanize %}
+<div id="agenda-results">
+  {% if status_message %}<p class="agenda-status" role="status">{% icon 'check' size=15 %} {{ status_message }}</p>{% endif %}
+  <div class="agenda-kpis">
+    <a class="kpi" href="{% querystring stato='da_fare' periodo=None page=None %}">
+      <span class="kpi-label">Da portare a termine</span>
+      <span class="kpi-value">{{ stats.aperte|intcomma }}</span>
+      <span class="agenda-kpi-note">Attività aperte</span>
+    </a>
+    <a class="kpi {% if stats.scadute %}agenda-kpi-urgent{% endif %}" href="{% querystring stato='da_fare' periodo='scadute' page=None %}">
+      <span class="kpi-label">Scadute</span>
+      <span class="kpi-value">{{ stats.scadute|intcomma }}</span>
+      <span class="agenda-kpi-note">Da recuperare</span>
+    </a>
+    <a class="kpi" href="{% querystring stato='da_fare' periodo='oggi' page=None %}">
+      <span class="kpi-label">In agenda oggi</span>
+      <span class="kpi-value">{{ stats.oggi|intcomma }}</span>
+      <span class="agenda-kpi-note">Ancora da completare</span>
+    </a>
+    <a class="kpi" href="{% querystring stato='da_fare' periodo='settimana' page=None %}">
+      <span class="kpi-label">Prossimi 7 giorni</span>
+      <span class="kpi-value">{{ stats.settimana|intcomma }}</span>
+      <span class="agenda-kpi-note">Da oggi, incluse le attività di oggi</span>
+    </a>
+  </div>
+  <p class="agenda-summary-note">Riepilogo delle attività aperte{% if owner_attivo %} assegnate a te{% endif %}{% if search_query or tipo_attivo %}, con ricerca e tipo selezionati{% endif %}.</p>
+
+  <div class="card agenda-table-card">
+    <div class="agenda-table-header">
+      <h2>{% if stato_attivo == 'completate' %}Attività completate{% elif stato_attivo == 'tutte' %}Tutte le attività{% else %}Attività da fare{% endif %}{% if periodo_attivo == 'scadute' %} · Scadute{% elif periodo_attivo == 'oggi' %} · Oggi{% elif periodo_attivo == 'settimana' %} · Prossimi 7 giorni{% endif %}</h2>
+      <span>{{ paginator.count|intcomma }} risultat{{ paginator.count|pluralize:'o,i' }}</span>
+    </div>
+    {% if attivita_list %}
+      <div class="tbl-scroll">
+        <table class="tbl agenda-table">
+          <thead>
+            <tr><th scope="col"><span class="agenda-sr-only">Completamento</span></th><th scope="col">Attività</th><th scope="col">Cliente</th><th scope="col">Quando</th><th scope="col">Assegnatario</th>{% if can_edit %}<th scope="col"><span class="agenda-sr-only">Azioni</span></th>{% endif %}</tr>
+          </thead>
+          <tbody>{% for a in attivita_list %}{% include 'attivita/_row.html' %}{% endfor %}</tbody>
+        </table>
+      </div>
+    {% else %}
+      <div class="empty agenda-empty">
+        <div class="ico">{% icon 'calendar' size=24 %}</div>
+        {% if has_filters %}
+          <h3>Nessuna attività con questi filtri</h3>
+          <p>Prova un altro periodo oppure amplia la ricerca.</p>
+          <a href="{% url 'attivita:list' %}" class="btn btn-ghost">Azzera filtri</a>
+        {% else %}
+          <h3>Nessuna attività da fare</h3>
+          <p>Pianifica il prossimo contatto per dare continuità alle tue trattative.</p>
+          {% if can_edit %}<a href="{% url 'attivita:create' %}" class="btn btn-brand">{% icon 'plus' size=14 %} Pianifica un’attività</a>{% endif %}
+          <a href="{% querystring stato='completate' page=None %}" class="btn btn-ghost">Vedi le completate</a>
+        {% endif %}
+      </div>
+    {% endif %}
+    {% if is_paginated %}
+      <nav class="agenda-pagination" aria-label="Pagine attività">
+        <span>{{ page_obj.start_index }}–{{ page_obj.end_index }} di {{ paginator.count|intcomma }}</span>
+        <div class="pager">
+          {% if page_obj.has_previous %}<a href="{% querystring page=page_obj.previous_page_number %}" aria-label="Pagina precedente">«</a>{% else %}<span aria-hidden="true">«</span>{% endif %}
+          <span class="current" aria-current="page">{{ page_obj.number }}</span>
+          {% if page_obj.has_next %}<a href="{% querystring page=page_obj.next_page_number %}" aria-label="Pagina successiva">»</a>{% else %}<span aria-hidden="true">»</span>{% endif %}
+        </div>
+      </nav>
+    {% endif %}
+  </div>
+</div>

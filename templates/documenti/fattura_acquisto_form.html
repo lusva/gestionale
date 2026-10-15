@@ -1,0 +1,153 @@
+{% extends 'base.html' %}
+
+{% block title %}{% if is_create %}Nuova fattura di acquisto{% else %}Fattura acquisto {{ fattura.numero }}/{{ fattura.anno }}{% endif %}{% endblock %}
+{% block breadcrumb %}
+  <span class="sep">{% icon 'chevronRight' size=14 %}</span>
+  <a href="{% url 'documenti:fattura_acquisto_list' %}" style="color: inherit; text-decoration: none;">Fatture acquisto</a>
+  <span class="sep">{% icon 'chevronRight' size=14 %}</span>
+  <span class="current">{% if is_create %}Nuova{% else %}{{ fattura.numero }}/{{ fattura.anno }}{% endif %}</span>
+{% endblock %}
+
+{% block content %}
+<form method="post" enctype="multipart/form-data" class="page" id="doc-form" data-documento data-salva-rapido data-avvisa-modifiche>
+  {% csrf_token %}
+  {% if fattura.pk %}<input type="hidden" name="documento_pk" value="{{ fattura.pk }}">{% endif %}
+  <div class="page-header">
+    <div>
+      <h1 class="page-title">{% if is_create %}Nuova fattura di acquisto{% else %}Fattura acquisto {{ fattura.numero }}/{{ fattura.anno }}{% endif %}</h1>
+      <p class="page-subtitle">
+        Per le fatture che non arrivano dal SDI (cartacee, fornitori esteri). {% if is_create %}Il numero di protocollo si assegna al salvataggio.{% endif %}
+        · <kbd data-tasto-mod>⌘</kbd>&nbsp;<kbd>S</kbd> per salvare
+      </p>
+    </div>
+    <div style="display: flex; gap: 8px;">
+      <a href="{% if is_create %}{% url 'documenti:fattura_acquisto_list' %}{% else %}{% url 'documenti:fattura_acquisto_detail' fattura.pk %}{% endif %}" class="btn btn-ghost">Annulla</a>
+      <button type="submit" class="btn btn-brand">{% icon 'check' size=14 %} Salva</button>
+    </div>
+  </div>
+
+  {% if form.non_field_errors or righe_formset.non_form_errors or scadenze_formset.non_form_errors %}
+    <div class="callout warn mb-24">
+      <div class="ico">{% icon 'x' size=14 %}</div>
+      <div>{{ form.non_field_errors }}{{ righe_formset.non_form_errors }}{{ scadenze_formset.non_form_errors }}</div>
+    </div>
+  {% endif %}
+
+  <div class="layout-documento">
+    <div class="flex-col gap-16">
+
+      <div class="card" style="padding: 24px;">
+        <div class="section-title">Fattura ricevuta</div>
+        <div class="grid grid-2" style="gap: 16px;">
+          <div class="field" style="grid-column: 1 / -1;">
+            <label for="{{ form.fornitore.id_for_label }}">Fornitore *</label>
+            {{ form.fornitore }}
+            {{ form.fornitore.errors }}
+            <div class="text-sm text-muted" style="margin-top: 4px;">Non c'è? <a href="{% url 'anagrafiche:fornitore_create' %}" target="_blank">Crealo</a> e ricarica l'elenco.</div>
+          </div>
+          <div class="field">
+            <label for="{{ form.numero_fornitore.id_for_label }}">Numero della fattura *</label>
+            {{ form.numero_fornitore }}
+            {{ form.numero_fornitore.errors }}
+          </div>
+          <div class="field">
+            <label for="{{ form.data_fornitore.id_for_label }}">Data della fattura *</label>
+            {{ form.data_fornitore }}
+            {{ form.data_fornitore.errors }}
+          </div>
+          <div class="field">
+            <label for="{{ form.tipo_documento.id_for_label }}">Tipo documento</label>
+            {{ form.tipo_documento }}
+            {{ form.tipo_documento.errors }}
+          </div>
+          <div class="field">
+            <label for="{{ form.forme_pagamento.id_for_label }}">Forma di pagamento</label>
+            {{ form.forme_pagamento }}
+            {{ form.forme_pagamento.errors }}
+          </div>
+          <div class="field">
+            <label for="{{ form.data_registrazione.id_for_label }}">Data di registrazione</label>
+            {{ form.data_registrazione }}
+            {{ form.data_registrazione.errors }}
+            <div class="text-sm text-muted" style="margin-top: 4px;">Conta per la liquidazione IVA.</div>
+          </div>
+          <div class="field">
+            <label for="{{ form.stato.id_for_label }}">Stato</label>
+            {{ form.stato }}
+            {{ form.stato.errors }}
+            <div class="text-sm text-muted" style="margin-top: 4px;">Solo le confermate contano in IVA e costi.</div>
+          </div>
+        </div>
+      </div>
+
+      {% include 'documenti/_righe_acquisto_formset.html' %}
+
+      <div class="card" style="padding: 24px;">
+        <div class="grid grid-2" style="gap: 16px;">
+          <div class="field">
+            <label for="{{ form.note.id_for_label }}">Note</label>
+            {{ form.note }}
+            {{ form.note.errors }}
+          </div>
+          <div class="field">
+            <label for="{{ form.allegato.id_for_label }}">PDF o scansione della fattura</label>
+            {{ form.allegato }}
+            {{ form.allegato.errors }}
+            <div class="text-sm text-muted" style="margin-top: 4px;">PDF o immagine, massimo 20 MB. Lo vede solo chi può vedere i documenti.</div>
+          </div>
+        </div>
+
+        {% if scadenze_formset %}
+          <details class="altre-opzioni" data-formset="scadenze" {% if scadenze_formset.total_error_count %}open{% endif %}>
+            <summary>{% icon 'chevronRight' size=12 %} Scadenze personalizzate — di solito si calcolano dalla forma di pagamento</summary>
+            {{ scadenze_formset.management_form }}
+            <div class="tbl-scroll">
+              <table class="tbl" style="margin-top: 12px; min-width: 560px;">
+                <thead>
+                  <tr><th style="width: 150px;">Data</th><th style="width: 130px;">Importo</th><th>Modalità</th><th>IBAN</th><th style="width: 40px;"></th></tr>
+                </thead>
+                <tbody data-formset-righe>
+                  {% for sf in scadenze_formset %}
+                    <tr data-form-row>
+                      {% for hidden in sf.hidden_fields %}{{ hidden }}{% endfor %}
+                      <td>{{ sf.data_scadenza }}{{ sf.data_scadenza.errors }}</td>
+                      <td>{{ sf.importo }}{{ sf.importo.errors }}</td>
+                      <td>{{ sf.modalita_pagamento }}</td>
+                      <td>{{ sf.iban }}{{ sf.iban.errors }}</td>
+                      <td>
+                        {% if sf.DELETE %}<span hidden>{{ sf.DELETE }}</span>{% endif %}
+                        <button type="button" class="btn-icon" data-formset-rimuovi title="Togli la scadenza" aria-label="Togli la scadenza">{% icon 'trash' size=14 %}</button>
+                      </td>
+                    </tr>
+                  {% endfor %}
+                </tbody>
+              </table>
+            </div>
+            {% with ef=scadenze_formset.empty_form %}
+              <template data-formset-modello><tr data-form-row>{% for hidden in ef.hidden_fields %}{{ hidden }}{% endfor %}<td>{{ ef.data_scadenza }}</td><td>{{ ef.importo }}</td><td>{{ ef.modalita_pagamento }}</td><td>{{ ef.iban }}</td><td><span hidden>{{ ef.DELETE }}</span><button type="button" class="btn-icon" data-formset-rimuovi title="Togli la scadenza" aria-label="Togli la scadenza">{% icon 'trash' size=14 %}</button></td></tr></template>
+            {% endwith %}
+            <button type="button" class="btn btn-ghost aggiungi-riga" data-formset-aggiungi>{% icon 'plus' size=14 %} Aggiungi scadenza</button>
+          </details>
+        {% elif scadenze_bloccate %}
+          <div class="text-sm text-muted" style="margin-top: 16px;">{{ scadenze_bloccate }} Le gestisci dal dettaglio della fattura.</div>
+        {% endif %}
+      </div>
+    </div>
+
+    <div class="flex-col gap-16">
+      <div class="card riepilogo" style="padding: 18px;">
+        <div style="font: 600 14px var(--font-display); margin-bottom: 8px;">Riepilogo</div>
+        <div id="riepilogo-documento"
+             hx-post="{% url 'documenti:fattura_acquisto_anteprima' %}"
+             hx-trigger="load, riepilogo from:body"
+             hx-include="#doc-form" hx-swap="innerHTML" hx-sync="this:replace">
+          <div class="riepilogo-nota">Calcolo dei totali…</div>
+        </div>
+        <button type="submit" class="btn btn-brand" style="width: 100%; justify-content: center; margin-top: 16px;">
+          {% icon 'check' size=14 %} Salva fattura
+        </button>
+      </div>
+    </div>
+  </div>
+</form>
+{% endblock %}

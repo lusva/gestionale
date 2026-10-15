@@ -1,0 +1,208 @@
+{% extends 'settings/_settings_base.html' %}
+
+{% block title %}Impostazioni · Intestazione documenti{% endblock %}
+
+{% block settings_content %}
+<form method="post" enctype="multipart/form-data" class="flex-col gap-16">
+  {% csrf_token %}
+
+  <div class="card" style="padding: 24px;">
+    <div class="flex-between mb-16" style="gap: 16px;">
+      <div>
+        <div style="font: 600 16px var(--font-display);">Intestazione documenti</div>
+        <div class="doc-hint" style="font-size: 13px;">
+          Logo, dati e colore che compaiono su fatture, offerte, ordini, DDT e note di credito.
+          Solo gli amministratori possono modificarli.
+        </div>
+      </div>
+      <button type="submit" class="btn btn-brand">{% icon 'check' size=14 %} Salva</button>
+    </div>
+
+    {% if form.errors %}
+      <div class="callout warn mb-16">
+        <div class="ico">{% icon 'alert' size=14 %}</div>
+        <div>Controlla i campi evidenziati.{{ form.non_field_errors }}</div>
+      </div>
+    {% endif %}
+
+    <div class="section-title">Logo</div>
+    <div class="logo-uploader mb-16"
+         x-data="{ preview: '{% if azienda.logo %}{{ azienda.logo|logo_ridotto:400 }}{% endif %}' }">
+      <label class="logo-preview" title="Carica o cambia il logo">
+        <template x-if="preview"><img :src="preview" alt="Logo" /></template>
+        <template x-if="!preview">
+          <div class="placeholder">{% icon 'upload' size=20 %}<span>Logo</span></div>
+        </template>
+        <input type="file" name="{{ form.logo.html_name }}" id="{{ form.logo.id_for_label }}"
+               accept="image/png,image/jpeg,image/webp"
+               @change="const f = $event.target.files[0]; if (f) preview = URL.createObjectURL(f);" />
+      </label>
+      <div class="logo-meta">
+        <div class="doc-hint">
+          PNG, JPG o WebP. Meglio un PNG con fondo trasparente; il margine vuoto attorno
+          al disegno si toglie da solo e un fondo crema diventa bianco.
+        </div>
+        {% if azienda.logo %}
+          <label class="checkbox-inline" style="margin-top: 8px;">
+            {{ form.rimuovi_logo }} <span>{{ form.rimuovi_logo.label }}</span>
+          </label>
+          <div class="doc-hint">{{ form.rimuovi_logo.help_text }}</div>
+        {% endif %}
+        {{ form.logo.errors }}
+      </div>
+    </div>
+
+    <div class="section-title">Dati dell'azienda</div>
+    <div class="grid grid-2 mb-16" style="gap: 16px;">
+      <div class="field" style="grid-column: 1 / -1;">
+        <label for="{{ form.ragione_sociale.id_for_label }}">Ragione sociale</label>
+        {{ form.ragione_sociale }}{{ form.ragione_sociale.errors }}
+      </div>
+      <div class="field" style="grid-column: 1 / -1;">
+        <label for="{{ form.indirizzo_legale.id_for_label }}">Indirizzo della sede legale</label>
+        {{ form.indirizzo_legale }}{{ form.indirizzo_legale.errors }}
+      </div>
+      <div class="field">
+        <label for="{{ form.comune_legale.id_for_label }}">Comune</label>
+        {{ form.comune_legale }}{{ form.comune_legale.errors }}
+      </div>
+      <div class="grid grid-2" style="gap: 16px;">
+        <div class="field">
+          <label for="{{ form.cap_legale.id_for_label }}">CAP</label>
+          {{ form.cap_legale }}{{ form.cap_legale.errors }}
+        </div>
+        <div class="field">
+          <label for="{{ form.prov_legale.id_for_label }}">Provincia</label>
+          {{ form.prov_legale }}{{ form.prov_legale.errors }}
+        </div>
+      </div>
+      <div class="field">
+        <label for="{{ form.partita_iva.id_for_label }}">Partita IVA</label>
+        {{ form.partita_iva }}{{ form.partita_iva.errors }}
+      </div>
+      <div class="field">
+        <label for="{{ form.codice_fiscale.id_for_label }}">Codice fiscale</label>
+        {{ form.codice_fiscale }}{{ form.codice_fiscale.errors }}
+      </div>
+      <div class="field">
+        <label for="{{ form.email.id_for_label }}">Email</label>
+        {{ form.email }}{{ form.email.errors }}
+      </div>
+      <div class="field">
+        <label for="{{ form.telefono.id_for_label }}">Telefono</label>
+        {{ form.telefono }}{{ form.telefono.errors }}
+      </div>
+      <div class="field" style="grid-column: 1 / -1;">
+        <label for="{{ form.sito_web.id_for_label }}">Sito web</label>
+        {{ form.sito_web }}{{ form.sito_web.errors }}
+      </div>
+    </div>
+
+    <div class="section-title">Righe sotto la ragione sociale</div>
+    <div class="field mb-16">
+      <textarea name="{{ form.intestazione_documenti.html_name }}" id="{{ form.intestazione_documenti.id_for_label }}"
+                class="textarea" rows="4"
+                placeholder="{{ azienda.righe_intestazione_automatiche|join:'&#10;' }}">{{ form.intestazione_documenti.value|default:'' }}</textarea>
+      <div class="doc-hint">
+        Lascia vuoto per comporle in automatico dai dati qui sopra (come nel testo in grigio).
+        Scrivile tu se vuoi un'intestazione diversa: ogni riga del campo è una riga del documento.
+      </div>
+      {{ form.intestazione_documenti.errors }}
+    </div>
+
+    <div class="section-title">Piè di pagina</div>
+    <div class="grid grid-2" style="gap: 16px;">
+      <div class="field">
+        <label for="{{ form.rea.id_for_label }}">Numero REA</label>
+        {{ form.rea }}{{ form.rea.errors }}
+      </div>
+      <div class="field">
+        <label for="{{ form.capitale_sociale.id_for_label }}">Capitale sociale</label>
+        {{ form.capitale_sociale }}{{ form.capitale_sociale.errors }}
+      </div>
+      <div class="field" style="grid-column: 1 / -1;">
+        <label for="{{ form.contenuto_footer.id_for_label }}">Testo aggiuntivo</label>
+        {{ form.contenuto_footer }}{{ form.contenuto_footer.errors }}
+        <div class="doc-hint">
+          In fondo a ogni pagina ci sono già ragione sociale, sede, P.IVA, REA e capitale sociale.
+          Qui puoi aggiungere altro, per esempio i riferimenti per l'assistenza.
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card" style="padding: 24px;"
+       x-data="{ colore: '{{ form.colore_documenti.value|default:'#5b21b6' }}' }">
+    <div class="section-title">Colore</div>
+    <div class="doc-colori">
+      <input type="color" name="{{ form.colore_documenti.html_name }}" id="{{ form.colore_documenti.id_for_label }}"
+             class="doc-colore-input" x-model="colore" aria-label="Colore dei documenti" />
+      <span class="mono doc-colore-codice" x-text="colore"></span>
+      <span class="doc-campioni" role="group" aria-label="Colori suggeriti">
+        {% for c, nome in colori_suggeriti %}
+          <button type="button" class="doc-campione" style="background: {{ c }};" title="{{ nome }}"
+                  aria-label="{{ nome }}" @click="colore = '{{ c }}'"
+                  :class="{ 'attivo': colore === '{{ c }}' }"></button>
+        {% endfor %}
+      </span>
+    </div>
+    <div class="doc-hint" style="margin-top: 8px;">
+      Colore del titolo, dei filetti e del riquadro del totale. Il testo nel riquadro diventa scuro
+      da solo se scegli un colore chiaro.
+    </div>
+    {{ form.colore_documenti.errors }}
+  </div>
+
+  <div style="display: flex; justify-content: flex-end;">
+    <button type="submit" class="btn btn-brand">{% icon 'check' size=14 %} Salva</button>
+  </div>
+
+  <div class="card" style="padding: 24px;"
+       x-data="{ tipo: 'fattura', base: '{% url 'settings:documenti_anteprima' %}' }">
+    <div class="flex-between mb-16" style="gap: 16px;">
+      <div>
+        <div style="font: 600 16px var(--font-display);">Anteprima</div>
+        <div class="doc-hint" style="font-size: 13px;">
+          Un documento di esempio con le impostazioni salvate: dopo una modifica, salva per aggiornarla.
+        </div>
+      </div>
+      <a class="btn btn-ghost" :href="base + '?tipo=' + tipo" target="_blank" rel="noopener">
+        {% icon 'eye' size=14 %} Apri il PDF
+      </a>
+    </div>
+    <div class="tabs mb-16" role="tablist">
+      {% for chiave, etichetta in tipi_anteprima.items %}
+        <button type="button" class="tab" role="tab" :class="{ 'active': tipo === '{{ chiave }}' }"
+                :aria-selected="tipo === '{{ chiave }}'" @click="tipo = '{{ chiave }}'">{{ etichetta }}</button>
+      {% endfor %}
+    </div>
+    <iframe class="doc-anteprima" title="Anteprima del documento"
+            src="{% url 'settings:documenti_anteprima' %}?tipo=fattura#view=FitH"
+            :src="base + '?tipo=' + tipo + '#view=FitH'"></iframe>
+  </div>
+</form>
+
+<style>
+  .doc-hint { font: 12px/1.5 var(--font-body); color: var(--ink-3); margin-top: 4px; }
+  .doc-colori { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+  .doc-colore-input {
+    width: 44px; height: 36px; padding: 2px;
+    border: 1px solid var(--border); border-radius: var(--r-md);
+    background: var(--surface); cursor: pointer;
+  }
+  .doc-colore-codice { font-size: 13px; color: var(--ink-2); min-width: 64px; }
+  .doc-campioni { display: inline-flex; gap: 8px; }
+  .doc-campione {
+    width: 24px; height: 24px; border-radius: 50%;
+    border: 2px solid var(--surface); box-shadow: 0 0 0 1px var(--border);
+    cursor: pointer; padding: 0;
+  }
+  .doc-campione.attivo { box-shadow: 0 0 0 2px var(--ink); }
+  .doc-anteprima {
+    width: 100%; height: 760px;
+    border: 1px solid var(--border); border-radius: var(--r-md);
+    background: var(--surface-2);
+  }
+  @media (max-width: 900px) { .doc-anteprima { height: 520px; } }
+</style>
+{% endblock %}

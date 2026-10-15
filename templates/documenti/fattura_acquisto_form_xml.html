@@ -1,0 +1,94 @@
+{% extends 'base.html' %}
+
+{% block title %}Fattura acquisto {{ fattura.numero }}/{{ fattura.anno }}{% endblock %}
+{% block breadcrumb %}
+  <span class="sep">{% icon 'chevronRight' size=14 %}</span>
+  <a href="{% url 'documenti:fattura_acquisto_list' %}" style="color: inherit; text-decoration: none;">Fatture acquisto</a>
+  <span class="sep">{% icon 'chevronRight' size=14 %}</span>
+  <span class="current">{{ fattura.numero }}/{{ fattura.anno }}</span>
+{% endblock %}
+
+{% block content %}
+<form method="post" enctype="multipart/form-data" class="page" data-salva-rapido data-avvisa-modifiche style="max-width: 1100px;">
+  {% csrf_token %}
+  <div class="page-header">
+    <div>
+      <h1 class="page-title">Fattura acquisto {{ fattura.numero }}/{{ fattura.anno }}</h1>
+      <p class="page-subtitle">
+        {{ fattura.fornitore|default:'—' }} · n. <strong>{{ fattura.numero_fornitore|default:'—' }}</strong>
+        del {{ fattura.data_fornitore|date:'d/m/Y'|default:'—' }} · {{ fattura.tipo_documento }}
+      </p>
+    </div>
+    <div style="display: flex; gap: 8px;">
+      <a href="{% url 'documenti:fattura_acquisto_detail' fattura.pk %}" class="btn btn-ghost">Annulla</a>
+      <button type="submit" class="btn btn-brand">{% icon 'check' size=14 %} Salva</button>
+    </div>
+  </div>
+
+  <div class="callout mb-16">
+    <div class="ico">{% icon 'lock' size=14 %}</div>
+    <div style="font: 13px/1.5 var(--font-body); color: var(--ink-2);">
+      Importata dall'XML ricevuto: importi, righe e scadenze fanno fede al documento e non si cambiano.
+      Qui scegli le categorie di costo, lo stato, la data di registrazione, le note e l'allegato.
+    </div>
+  </div>
+
+  {% if form.non_field_errors or categorie_formset.non_form_errors %}
+    <div class="callout warn mb-16"><div class="ico">{% icon 'x' size=14 %}</div><div>{{ form.non_field_errors }}{{ categorie_formset.non_form_errors }}</div></div>
+  {% endif %}
+
+  <div class="card" style="padding: 24px; margin-bottom: 16px;">
+    <div class="grid grid-2" style="gap: 16px;">
+      <div class="field">
+        <label for="{{ form.stato.id_for_label }}">Stato</label>
+        {{ form.stato }}{{ form.stato.errors }}
+      </div>
+      <div class="field">
+        <label for="{{ form.data_registrazione.id_for_label }}">Data di registrazione</label>
+        {{ form.data_registrazione }}{{ form.data_registrazione.errors }}
+      </div>
+      <div class="field">
+        <label for="{{ form.note.id_for_label }}">Note</label>
+        {{ form.note }}{{ form.note.errors }}
+      </div>
+      <div class="field">
+        <label for="{{ form.allegato.id_for_label }}">PDF o scansione della fattura</label>
+        {{ form.allegato }}{{ form.allegato.errors }}
+      </div>
+    </div>
+  </div>
+
+  <div class="card" style="padding: 24px;">
+    <div class="section-title">Righe e categorie di costo</div>
+    {{ categorie_formset.management_form }}
+    <div class="tbl-scroll">
+      <table class="tbl" style="min-width: 640px;">
+        <thead>
+          <tr>
+            <th style="width: 36px;">#</th>
+            <th>Descrizione</th>
+            <th style="text-align: right; width: 120px;">Imponibile</th>
+            <th style="width: 70px;">IVA</th>
+            <th style="width: 260px;">Categoria di costo</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for cf in categorie_formset %}
+            {% with r=cf.instance %}
+              <tr>
+                <td class="mono">{% for hidden in cf.hidden_fields %}{{ hidden }}{% endfor %}{{ r.numero_riga|default:forloop.counter }}</td>
+                <td style="font-size: 13px;">{{ r.descrizione|default:'—' }}</td>
+                <td class="mono" style="text-align: right;">{{ r.imponibile|euro:2 }}</td>
+                <td>{% if r.aliquota_iva %}{{ r.aliquota_iva.aliquota|floatformat:'-2' }}%{% else %}—{% endif %}</td>
+                <td>{{ cf.categoria_costo }}{{ cf.categoria_costo.errors }}</td>
+              </tr>
+            {% endwith %}
+          {% empty %}
+            <tr><td colspan="5" style="text-align: center; color: var(--ink-4); padding: 16px;">Nessuna riga</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</form>
+{% endblock %}

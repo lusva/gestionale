@@ -1,0 +1,31 @@
+{% comment %}
+  Dati della palette comandi (static/js/app.js → palette): l'URL della
+  ricerca rapida e le azioni che l'utente può fare (core_settings/menu.py:
+  AZIONI_PALETTE). Le pagine le prende dalla sidebar. Più l'aiuto delle
+  scorciatoie da tastiera («?»).
+{% endcomment %}
+{% if user.is_authenticated %}
+<div id="palette-dati" hidden data-url="{% url 'search:rapida' %}" data-cerca-url="{% url 'search:cerca' %}"></div>
+{% azioni_palette as azioni %}
+{{ azioni|json_script:'palette-azioni' }}
+
+<dialog class="dialogo" id="dialogo-tasti" aria-labelledby="dialogo-tasti-titolo">
+  <div class="dialogo-testa">
+    <h2 id="dialogo-tasti-titolo">Scorciatoie da tastiera</h2>
+    <p>Per fare le cose più comuni senza mouse.</p>
+  </div>
+  <div class="dialogo-corpo">
+    <div class="tasti">
+      <span><kbd data-tasto-mod>⌘</kbd> <kbd>K</kbd> oppure <kbd>/</kbd></span><span>Cerca clienti, fatture, fornitori o vai a una pagina</span>
+      <span><kbd data-tasto-mod>⌘</kbd> <kbd>S</kbd></span><span>Salva il documento o la scheda aperta</span>
+      <span><kbd>N</kbd></span><span>Nuovo (fattura, cliente…) nella lista aperta</span>
+      <span><kbd>Invio</kbd></span><span>Nell'ultima riga di un documento: aggiunge una riga</span>
+      <span><kbd>Esc</kbd></span><span>Chiude finestre e menu</span>
+      <span><kbd>?</kbd></span><span>Mostra questo aiuto</span>
+    </div>
+  </div>
+  <div class="dialogo-piede">
+    <button type="button" class="btn btn-ghost" data-chiudi-dialogo>Chiudi</button>
+  </div>
+</dialog>
+{% endif %}

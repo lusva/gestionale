@@ -1,0 +1,33 @@
+{% comment %}
+  Finestra per inviare la fattura (o un sollecito) per email: destinatario,
+  oggetto e testo precompilati e modificabili. POST a fattura_invia_email.
+{% endcomment %}
+<dialog class="dialogo" id="{{ id }}" aria-labelledby="{{ id }}-titolo">
+  <form method="post" action="{% url 'documenti:fattura_invia_email' fattura.pk %}">
+    {% csrf_token %}
+    <input type="hidden" name="tipo" value="{{ tipo }}">
+    <div class="dialogo-testa">
+      <h2 id="{{ id }}-titolo">{{ titolo }}</h2>
+      <p>{{ sottotitolo }}</p>
+    </div>
+    <div class="dialogo-corpo">
+      <div class="field">
+        <label for="{{ id }}-a">A</label>
+        <input class="input" type="email" multiple id="{{ id }}-a" name="to" value="{{ email.destinatario }}" required
+               placeholder="indirizzo@cliente.it (più indirizzi separati da virgola)">
+      </div>
+      <div class="field">
+        <label for="{{ id }}-oggetto">Oggetto</label>
+        <input class="input" id="{{ id }}-oggetto" name="subject" value="{{ oggetto }}" required maxlength="200">
+      </div>
+      <div class="field">
+        <label for="{{ id }}-testo">Messaggio</label>
+        <textarea class="textarea" id="{{ id }}-testo" name="body" rows="10" required>{{ testo }}</textarea>
+      </div>
+    </div>
+    <div class="dialogo-piede">
+      <button type="button" class="btn btn-ghost" data-chiudi-dialogo>Annulla</button>
+      <button type="submit" class="btn btn-brand">{% icon 'mail' size=14 %} Invia</button>
+    </div>
+  </form>
+</dialog>

@@ -1,0 +1,4 @@
+<a href="{{ v.url }}" class="nav-item{% if v.attiva %} active{% endif %}"{% if v.attiva %} aria-current="page"{% endif %}{% if v.gruppo %} data-gruppo="{{ v.gruppo }}"{% endif %}>
+  {% icon v.icona size=16 %}<span>{{ v.etichetta }}</span>
+  {% if v.conteggio %}<span class="count">{{ v.conteggio }}</span>{% endif %}
+</a>

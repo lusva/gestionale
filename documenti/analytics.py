@@ -26,16 +26,16 @@ from .models import (
 @login_required
 @require_perm('documenti.vedi')
 def scadenziario_attivo(request):
-    """Scadenze fatture cliente aperte (pagata=False). Aging buckets."""
+    """Scadenze fatture cliente con un residuo da incassare. Aging buckets
+    sul residuo (un incasso parziale riduce il credito)."""
     from django.utils.timezone import now
 
+    from .models import crediti_aperti
+
     oggi = now().date()
-    qs = (
-        ScadenzaFattura.objects
-        .select_related('fattura__cliente')
-        .filter(fattura__pagata=False)
-        .order_by('data')
-    )
+    qs = crediti_aperti(
+        ScadenzaFattura.objects.select_related('fattura__cliente'),
+    ).order_by('data')
 
     cliente_id = request.GET.get('cliente')
     if cliente_id and cliente_id.isdigit():
@@ -47,9 +47,11 @@ def scadenziario_attivo(request):
     for s in qs:
         giorni = (s.data - oggi).days
         bucket = 'scadute' if giorni < 0 else ('in_scadenza_30' if giorni <= 30 else 'oltre_30')
-        buckets[bucket] += s.importo
-        buckets['totale'] += s.importo
-        scadenze_rows.append({'scadenza': s, 'giorni': giorni, 'bucket': bucket})
+        residuo = Decimal(s.residuo_db).quantize(Decimal('0.01'))
+        buckets[bucket] += residuo
+        buckets['totale'] += residuo
+        scadenze_rows.append({'scadenza': s, 'giorni': giorni, 'bucket': bucket, 'residuo': residuo,
+                              'incassato': Decimal(s.incassato_db).quantize(Decimal('0.01'))})
 
     from clienti.models import Cliente
     ctx = {
@@ -70,11 +72,13 @@ def scadenziario_passivo(request):
     from django.utils.timezone import now
 
     oggi = now().date()
-    qs = (
+    from .models import scadenze_acquisto_con_residuo
+    qs = scadenze_acquisto_con_residuo(
         ScadenzaFatturaAcquisto.objects
         .select_related('fattura__fornitore')
+        .prefetch_related('pagamenti')
         .order_by('data_scadenza')
-    )
+    ).filter(residuo_db__gt=0)
 
     fornitore_id = request.GET.get('fornitore')
     if fornitore_id and fornitore_id.isdigit():
@@ -84,9 +88,7 @@ def scadenziario_passivo(request):
     buckets = {'scadute': Decimal('0'), 'in_scadenza_30': Decimal('0'),
                'oltre_30': Decimal('0'), 'totale_residuo': Decimal('0')}
     for s in qs:
-        residuo = s.importo_residuo
-        if residuo <= 0:
-            continue
+        residuo = Decimal(s.residuo_db).quantize(Decimal('0.01'))
         giorni = (s.data_scadenza - oggi).days
         bucket = 'scadute' if giorni < 0 else ('in_scadenza_30' if giorni <= 30 else 'oltre_30')
         buckets[bucket] += residuo

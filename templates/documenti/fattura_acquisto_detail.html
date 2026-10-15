@@ -19,12 +19,28 @@
         · rif. <strong>{{ fattura.numero_fornitore|default:'—' }}</strong>
         del {{ fattura.data_fornitore|date:'d/m/Y'|default:'—' }}
         · {{ fattura.tipo_documento }}
+        {% if not fattura.da_xml %}· <span class="badge badge-neutral">Inserita a mano</span>{% endif %}
       </p>
     </div>
-    <div style="display: flex; gap: 8px;">
+    <div style="display: flex; gap: 8px; flex-wrap: wrap;">
       {% if fattura.xml_originale %}
         <a href="{{ fattura.xml_originale.url }}" target="_blank" class="btn btn-ghost">
           {% icon 'download' size=14 %} XML originale
+        </a>
+      {% endif %}
+      {% if fattura.allegato %}
+        <a href="{{ fattura.allegato.url }}" target="_blank" class="btn btn-ghost">
+          {% icon 'doc' size=14 %} PDF / scansione
+        </a>
+      {% endif %}
+      {% if user_perms_map|get_item:'documenti.modifica' %}
+        <a href="{% url 'documenti:fattura_acquisto_update' fattura.pk %}" class="btn btn-ghost">
+          {% icon 'edit' size=14 %} {% if fattura.da_xml %}Categorie e note{% else %}Modifica{% endif %}
+        </a>
+      {% endif %}
+      {% if user_perms_map|get_item:'documenti.elimina' and eliminabile %}
+        <a href="{% url 'documenti:fattura_acquisto_delete' fattura.pk %}" class="btn btn-ghost" style="color: var(--danger);">
+          {% icon 'trash' size=14 %} Elimina
         </a>
       {% endif %}
       {% if user_perms_map|get_item:'documenti.modifica' %}
@@ -48,7 +64,7 @@
     </div>
   </div>
 
-  <div class="grid" style="grid-template-columns: 1fr 320px; gap: 24px;">
+  <div class="layout-documento">
     <div class="flex-col gap-16">
 
       <div class="card" style="padding: 24px;">
@@ -82,10 +98,10 @@
                 </td>
                 <td>{{ r.um|default:'—' }}</td>
                 <td class="mono" style="text-align: right;">{{ r.quantita }}</td>
-                <td class="mono" style="text-align: right;">{{ r.prezzo_unitario|euro:4 }}</td>
+                <td class="mono" style="text-align: right; white-space: nowrap;">{{ r.prezzo_unitario|euro:4 }}</td>
                 <td class="mono" style="text-align: right;">{% if r.sconto_percentuale %}{{ r.sconto_percentuale }}%{% else %}—{% endif %}</td>
                 <td>{% if r.aliquota_iva %}{{ r.aliquota_iva.aliquota }}%{% else %}—{% endif %}</td>
-                <td class="mono" style="text-align: right; font-weight: 500;">{{ r.imponibile|euro:2 }}</td>
+                <td class="mono" style="text-align: right; font-weight: 500; white-space: nowrap;">{{ r.imponibile|euro:2 }}</td>
               </tr>
             {% empty %}
               <tr><td colspan="9" style="text-align: center; color: var(--ink-4); padding: 16px;">Nessuna riga</td></tr>

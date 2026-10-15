@@ -16,6 +16,7 @@ Convenzioni:
 from decimal import Decimal
 
 from django.core.exceptions import ValidationError
+from django.core.validators import MaxValueValidator, MinValueValidator
 from django.db import models, transaction
 from django.db.models.signals import post_delete, post_save
 from django.dispatch import receiver
@@ -265,43 +266,9 @@ class TestataDdt(TestataDocumento):
         constraints = [_vincolo_numero('ddt')]
 
 
-class TestataFattura(TestataDocumento):
-    class TipoDocumento(models.TextChoices):
-        TD01 = 'TD01', 'TD01 - Fattura'
-        TD02 = 'TD02', 'TD02 - Acconto/anticipo su fattura'
-        TD03 = 'TD03', 'TD03 - Acconto/anticipo su parcella'
-        TD05 = 'TD05', 'TD05 - Nota di debito'
-        TD06 = 'TD06', 'TD06 - Parcella'
-        TD16 = 'TD16', 'TD16 - Integrazione reverse charge interno'
-        TD17 = 'TD17', 'TD17 - Integrazione/autofattura servizi estero'
-        TD18 = 'TD18', 'TD18 - Integrazione acquisto beni intra-UE'
-        TD19 = 'TD19', 'TD19 - Integrazione/autofattura acquisto beni'
-        TD20 = 'TD20', 'TD20 - Autofattura denuncia'
-        TD21 = 'TD21', 'TD21 - Autofattura per splafonamento'
-        TD22 = 'TD22', 'TD22 - Estrazione beni Deposito IVA'
-        TD23 = 'TD23', 'TD23 - Estrazione beni Deposito IVA con vers. IVA'
-        TD24 = 'TD24', 'TD24 - Fattura differita art.21 c.4 lett.a'
-        TD25 = 'TD25', 'TD25 - Fattura differita art.21 c.4 lett.b (triangolari interne)'
-        TD26 = 'TD26', 'TD26 - Cessione beni ammortizzabili'
-        TD27 = 'TD27', 'TD27 - Autoconsumo o cessioni gratuite'
-
-    tipo_documento = models.CharField(
-        max_length=10,
-        choices=TipoDocumento.choices,
-        default=TipoDocumento.TD24,
-    )
-    sezionale = models.CharField(
-        max_length=10, blank=True, default='',
-        help_text="Sezionale di numerazione (es. 'A' per immediate, 'B' per "
-                  "differite). Lasciare vuoto per progressivo unico.",
-    )
-    NUMERAZIONE_PER_SEZIONALE = True
-
-    nota_credito_collegata = models.ManyToManyField(
-        'TestataNotaCredito', blank=True, related_name='fatture_origine',
-    )
-    pagata = models.BooleanField(default=False)
-    data_pagamento = models.DateField(null=True, blank=True)
+class DocumentoSdi(models.Model):
+    """Campi e stato dell'invio al Sistema di Interscambio, comuni a fatture
+    e note di credito (``invio.invia_al_sdi``, ``sdi_pull``)."""
 
     # Stato SDI: ciclo di vita di una fattura inviata al Sistema di Interscambio.
     # Aggiornato manualmente dall'invio (``inviata``) e automaticamente dalla
@@ -351,6 +318,63 @@ class TestataFattura(TestataDocumento):
         return (self.sdi_stato != self.SdiStato.NON_INVIATA
                 and self.sdi_stato not in self.SDI_STATI_REINVIO)
 
+    class Meta:
+        abstract = True
+
+
+class TestataFattura(DocumentoSdi, TestataDocumento):
+    class TipoDocumento(models.TextChoices):
+        TD01 = 'TD01', 'TD01 - Fattura'
+        TD02 = 'TD02', 'TD02 - Acconto/anticipo su fattura'
+        TD03 = 'TD03', 'TD03 - Acconto/anticipo su parcella'
+        TD05 = 'TD05', 'TD05 - Nota di debito'
+        TD06 = 'TD06', 'TD06 - Parcella'
+        TD16 = 'TD16', 'TD16 - Integrazione reverse charge interno'
+        TD17 = 'TD17', 'TD17 - Integrazione/autofattura servizi estero'
+        TD18 = 'TD18', 'TD18 - Integrazione acquisto beni intra-UE'
+        TD19 = 'TD19', 'TD19 - Integrazione/autofattura acquisto beni'
+        TD20 = 'TD20', 'TD20 - Autofattura denuncia'
+        TD21 = 'TD21', 'TD21 - Autofattura per splafonamento'
+        TD22 = 'TD22', 'TD22 - Estrazione beni Deposito IVA'
+        TD23 = 'TD23', 'TD23 - Estrazione beni Deposito IVA con vers. IVA'
+        TD24 = 'TD24', 'TD24 - Fattura differita art.21 c.4 lett.a'
+        TD25 = 'TD25', 'TD25 - Fattura differita art.21 c.4 lett.b (triangolari interne)'
+        TD26 = 'TD26', 'TD26 - Cessione beni ammortizzabili'
+        TD27 = 'TD27', 'TD27 - Autoconsumo o cessioni gratuite'
+
+    tipo_documento = models.CharField(
+        max_length=10,
+        choices=TipoDocumento.choices,
+        default=TipoDocumento.TD24,
+    )
+    sezionale = models.CharField(
+        max_length=10, blank=True, default='',
+        help_text="Sezionale di numerazione (es. 'A' per immediate, 'B' per "
+                  "differite). Lasciare vuoto per progressivo unico.",
+    )
+    NUMERAZIONE_PER_SEZIONALE = True
+
+    # titolo in testa al PDF secondo il tipo documento (gli altri: «Fattura»)
+    _TITOLI_STAMPA = {
+        'TD02': 'Fattura di acconto',
+        'TD03': 'Parcella di acconto',
+        'TD05': 'Nota di debito',
+        'TD06': 'Parcella',
+        'TD16': 'Integrazione fattura',
+        'TD17': 'Autofattura', 'TD18': 'Autofattura', 'TD19': 'Autofattura',
+        'TD20': 'Autofattura', 'TD21': 'Autofattura', 'TD27': 'Autofattura',
+        'TD24': 'Fattura differita', 'TD25': 'Fattura differita',
+    }
+
+    @property
+    def titolo_stampa(self):
+        return self._TITOLI_STAMPA.get(self.tipo_documento, 'Fattura')
+
+    nota_credito_collegata = models.ManyToManyField(
+        'TestataNotaCredito', blank=True, related_name='fatture_origine',
+    )
+    pagata = models.BooleanField(default=False)
+    data_pagamento = models.DateField(null=True, blank=True)
 
     def __str__(self):
         sez = f'{self.sezionale}/' if self.sezionale else ''
@@ -363,7 +387,7 @@ class TestataFattura(TestataDocumento):
         constraints = [_vincolo_numero('fattura', con_sezionale=True)]
 
 
-class TestataNotaCredito(TestataDocumento):
+class TestataNotaCredito(DocumentoSdi, TestataDocumento):
     class TipoDocumento(models.TextChoices):
         TD04 = 'TD04', 'TD04 - Nota di credito'
         TD08 = 'TD08', 'TD08 - Nota di credito semplificata'
@@ -379,6 +403,10 @@ class TestataNotaCredito(TestataDocumento):
     )
 
     NUMERAZIONE_PER_SEZIONALE = True
+    # Le note nuove propongono un sezionale proprio: nel <Numero> della
+    # FatturaPA «NC/1/2026», mai confondibile con la fattura 1/2026.
+    SEZIONALE_PREDEFINITO = 'NC'
+    titolo_stampa = 'Nota di credito'
 
 
     def __str__(self):
@@ -463,7 +491,16 @@ class TestataFatturaAcquisto(TestataDocumento):
     xml_originale = models.FileField(
         upload_to='fatture_acquisto_xml/', blank=True, null=True,
     )
+    # PDF o scansione della fattura ricevuta (cartacea, fornitore estero…):
+    # si scarica solo con documenti.vedi (gestionale/media_views.py).
+    allegato = models.FileField(
+        upload_to='fatture_acquisto_allegati/', blank=True, null=True,
+    )
 
+    @property
+    def da_xml(self) -> bool:
+        """Importata da FatturaPA: importi e righe fanno fede all'XML."""
+        return bool(self.xml_originale)
 
     def __str__(self):
         return (
@@ -655,13 +692,33 @@ class RigaFatturaAcquisto(models.Model):
 
 
 class ScadenzaFattura(models.Model):
-    """Scadenza di una fattura cliente (FK a TestataFattura)."""
+    """Scadenza di una fattura cliente (FK a TestataFattura). Gli incassi,
+    anche parziali, sono ``IncassoScadenza``: il credito aperto è il
+    residuo, non l'importo."""
 
     fattura = models.ForeignKey(
         TestataFattura, on_delete=models.CASCADE, related_name='scadenze',
     )
     data = models.DateField()
     importo = models.DecimalField(max_digits=10, decimal_places=2)
+
+    @property
+    def importo_incassato(self):
+        # .all(): usa gli incassi già caricati con prefetch_related
+        return sum((i.importo for i in self.incassi.all()), Decimal('0'))
+
+    @property
+    def importo_residuo(self):
+        return self.importo - self.importo_incassato
+
+    @property
+    def stato(self):
+        incassato = self.importo_incassato
+        if incassato <= 0:
+            return 'aperta'
+        if incassato >= self.importo:
+            return 'incassata'
+        return 'parziale'
 
     def __str__(self):
         return f'Fatt. {self.fattura.numero}/{self.fattura.anno} - {self.data} - {self.importo}'
@@ -734,6 +791,23 @@ class ScadenzaFatturaAcquisto(models.Model):
         verbose_name_plural = 'Scadenze fattura acquisto'
 
 
+def scadenze_acquisto_con_residuo(qs=None):
+    """Le scadenze di acquisto con ``pagato_db`` e ``residuo_db`` calcolati
+    dal database: una query sola, invece delle proprietà ``importo_pagato`` /
+    ``importo_residuo`` che ne fanno una per scadenza."""
+    from django.db.models import DecimalField, ExpressionWrapper, F, OuterRef, Subquery, Sum, Value
+    from django.db.models.functions import Coalesce
+
+    qs = ScadenzaFatturaAcquisto.objects.all() if qs is None else qs
+    importo = DecimalField(max_digits=12, decimal_places=2)
+    pagato = (PagamentoScadenzaAcquisto.objects.filter(scadenza=OuterRef('pk'))
+              .order_by().values('scadenza').annotate(t=Sum('importo')).values('t'))
+    return qs.annotate(
+        pagato_db=Coalesce(Subquery(pagato, output_field=importo), Value(Decimal('0')),
+                           output_field=importo),
+    ).annotate(residuo_db=ExpressionWrapper(F('importo') - F('pagato_db'), output_field=importo))
+
+
 class PagamentoScadenzaAcquisto(models.Model):
     scadenza = models.ForeignKey(
         ScadenzaFatturaAcquisto, on_delete=models.CASCADE,
@@ -756,6 +830,87 @@ class PagamentoScadenzaAcquisto(models.Model):
         ordering = ['-data_pagamento']
         verbose_name = 'Pagamento scadenza acquisto'
         verbose_name_plural = 'Pagamenti scadenze acquisto'
+
+
+class IncassoScadenza(models.Model):
+    """Un incasso (anche parziale) su una scadenza di una fattura cliente.
+    I signal tengono ``TestataFattura.pagata`` / ``data_pagamento`` allineati:
+    pagata quando tutte le scadenze hanno residuo zero, alla data
+    dell'ultimo incasso."""
+
+    scadenza = models.ForeignKey(ScadenzaFattura, on_delete=models.CASCADE, related_name='incassi')
+    data = models.DateField(default=localdate)
+    importo = models.DecimalField(max_digits=10, decimal_places=2)
+    modalita = models.CharField(
+        max_length=10, choices=ScadenzaFatturaAcquisto.ModalitaPagamento.choices,
+        default=ScadenzaFatturaAcquisto.ModalitaPagamento.MP05, blank=True, null=True,
+    )
+    note = models.TextField(blank=True, default='')
+    # compensazione con una nota di credito che storna la fattura: nasce e
+    # sparisce con la nota (``servizi.storna_crediti``), non si tocca a mano
+    nota_credito = models.ForeignKey(
+        TestataNotaCredito, on_delete=models.CASCADE, blank=True, null=True,
+        related_name='compensazioni',
+    )
+    creato_il = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['data', 'pk']
+        verbose_name = 'Incasso'
+        verbose_name_plural = 'Incassi'
+        constraints = [
+            models.CheckConstraint(condition=models.Q(importo__gt=0), name='documenti_incasso_positivo'),
+        ]
+
+    def __str__(self):
+        return f'{self.data} - {self.importo}'
+
+
+def scadenze_fattura_con_residuo(qs=None):
+    """Le scadenze delle fatture cliente con ``incassato_db`` e ``residuo_db``
+    calcolati dal database (gemella di ``scadenze_acquisto_con_residuo``):
+    una query sola per scadenziario, cashflow, «Da fare», solleciti."""
+    from django.db.models import DecimalField, ExpressionWrapper, F, OuterRef, Subquery, Sum, Value
+    from django.db.models.functions import Coalesce
+
+    qs = ScadenzaFattura.objects.all() if qs is None else qs
+    importo = DecimalField(max_digits=12, decimal_places=2)
+    incassato = (IncassoScadenza.objects.filter(scadenza=OuterRef('pk'))
+                 .order_by().values('scadenza').annotate(t=Sum('importo')).values('t'))
+    return qs.annotate(
+        incassato_db=Coalesce(Subquery(incassato, output_field=importo), Value(Decimal('0')),
+                              output_field=importo),
+    ).annotate(residuo_db=ExpressionWrapper(F('importo') - F('incassato_db'), output_field=importo))
+
+
+def crediti_aperti(qs=None):
+    """Le scadenze ancora da incassare (residuo > 0) di fatture non pagate:
+    la base di ogni conto dei crediti."""
+    qs = ScadenzaFattura.objects.all() if qs is None else qs
+    return scadenze_fattura_con_residuo(qs.filter(fattura__pagata=False)).filter(residuo_db__gt=0)
+
+
+def con_incassi(qs):
+    """Le fatture con ``incassato_tot``, ``residuo_tot`` (sulle scadenze) e
+    ``prima_scadenza``: la prima rata ancora da incassare, o la prima in
+    assoluto se è tutto incassato. Sottoquery: niente query per riga."""
+    from django.db.models import DecimalField, ExpressionWrapper, F, OuterRef, Subquery, Sum, Value
+    from django.db.models.functions import Coalesce
+
+    importo = DecimalField(max_digits=12, decimal_places=2)
+    zero = Value(Decimal('0'))
+    incassato = (IncassoScadenza.objects.filter(scadenza__fattura=OuterRef('pk')).order_by()
+                 .values('scadenza__fattura').annotate(t=Sum('importo')).values('t'))
+    scadenze = (ScadenzaFattura.objects.filter(fattura=OuterRef('pk')).order_by()
+                .values('fattura').annotate(t=Sum('importo')).values('t'))
+    prima_aperta = (crediti_aperti(ScadenzaFattura.objects.filter(fattura=OuterRef('pk')))
+                    .order_by('data').values('data')[:1])
+    prima = ScadenzaFattura.objects.filter(fattura=OuterRef('pk')).order_by('data').values('data')[:1]
+    return qs.annotate(
+        incassato_tot=Coalesce(Subquery(incassato, output_field=importo), zero, output_field=importo),
+        scadenze_tot=Coalesce(Subquery(scadenze, output_field=importo), zero, output_field=importo),
+        prima_scadenza=Coalesce(Subquery(prima_aperta), Subquery(prima)),
+    ).annotate(residuo_tot=ExpressionWrapper(F('scadenze_tot') - F('incassato_tot'), output_field=importo))
 
 
 # ---------------------------------------------------------------------------
@@ -844,26 +999,44 @@ def _propaga_riga(sender, instance, **kwargs):
         _recalc_imponibile(testata)
 
 
+_CENTESIMO = Decimal('0.01')
+
+
+def totali_acquisto(righe) -> dict:
+    """Imponibile, IVA e totale di una fattura di acquisto dalle sue righe
+    (anche non salvate: la usa l'anteprima del form). Come il riepilogo
+    FatturaPA: imponibile di riga al centesimo, IVA calcolata per aliquota
+    sul totale di ciascuna e arrotondata una volta sola."""
+    gruppi: dict = {}
+    for r in righe:
+        imponibile = Decimal(str(r.prezzo_unitario or 0)) * Decimal(str(r.quantita or 0))
+        if r.sconto_percentuale:
+            imponibile *= Decimal('1') - Decimal(str(r.sconto_percentuale)) / Decimal('100')
+        iva = r.aliquota_iva
+        chiave = (iva.aliquota, iva.natura or '') if iva is not None else (Decimal('0'), '')
+        gruppi[chiave] = gruppi.get(chiave, Decimal('0')) + imponibile.quantize(_CENTESIMO)
+    dettaglio = []
+    for (aliquota, natura), imponibile in sorted(gruppi.items(), key=lambda g: -g[0][0]):
+        imposta = (imponibile * aliquota / Decimal('100')).quantize(_CENTESIMO)
+        dettaglio.append({'aliquota': aliquota, 'natura': natura,
+                          'imponibile': imponibile, 'imposta': imposta})
+    imponibile = sum((d['imponibile'] for d in dettaglio), Decimal('0.00'))
+    imposta = sum((d['imposta'] for d in dettaglio), Decimal('0.00'))
+    return {'imponibile': imponibile, 'imposta': imposta, 'imposta_totale': imposta,
+            'totale': imponibile + imposta, 'iva_dettaglio': dettaglio}
+
+
 @receiver(post_save, sender=TestataFatturaAcquisto)
 def _recalc_fattura_acquisto(sender, instance, **kwargs):
-    imponibile = Decimal('0.00')
-    imposta = Decimal('0.00')
-    for row in instance.righe.all():
-        row_imponibile = Decimal(str(row.prezzo_unitario)) * Decimal(str(row.quantita))
-        if row.sconto_percentuale:
-            row_imponibile *= (
-                Decimal('1') - Decimal(str(row.sconto_percentuale)) / Decimal('100')
-            )
-        imponibile += row_imponibile
-        if row.aliquota_iva:
-            imposta += row_imponibile * row.aliquota_iva.aliquota / Decimal('100')
-    valori = {'imponibile': imponibile, 'imposta': imposta}
-    # Una fattura importata da XML porta il suo ImportoTotaleDocumento (che
-    # può includere cassa, bollo, arrotondamenti…): quello resta, lo si
-    # ricalcola solo per le fatture inserite a mano o senza totale nell'XML.
-    if not instance.xml_originale or instance.totale_documento is None:
-        valori['totale_documento'] = imponibile + imposta
-    TestataFatturaAcquisto.objects.filter(pk=instance.pk).update(**valori)
+    # Una fattura importata da XML porta i suoi importi (che possono
+    # includere cassa, bollo, arrotondamenti…): li scrive l'import e restano.
+    # Cambiarne stato o categorie di costo non deve toccarli.
+    if instance.xml_originale:
+        return
+    t = totali_acquisto(instance.righe.select_related('aliquota_iva'))
+    TestataFatturaAcquisto.objects.filter(pk=instance.pk).update(
+        imponibile=t['imponibile'], imposta=t['imposta'], totale_documento=t['totale'],
+    )
 
 
 @receiver([post_save, post_delete], sender=RigaFatturaAcquisto)
@@ -896,6 +1069,28 @@ def _recalc_stato_pagamento_fattura_acquisto(fattura):
         TestataFatturaAcquisto.objects.filter(pk=fattura.pk).update(
             pagata=False, data_pagamento=None,
         )
+
+
+def ricalcola_incasso_fattura(fattura_id) -> None:
+    """``pagata`` e ``data_pagamento`` dagli incassi: pagata se tutte le
+    scadenze hanno residuo zero, alla data dell'ultimo incasso. Le fatture
+    senza scadenze tengono il flag messo a mano."""
+    scadenze = list(ScadenzaFattura.objects.filter(fattura_id=fattura_id).prefetch_related('incassi'))
+    if not scadenze:
+        return
+    if all(s.importo_residuo <= 0 for s in scadenze):
+        ultimo = max((i.data for s in scadenze for i in s.incassi.all()), default=None)
+        TestataFattura.objects.filter(pk=fattura_id).update(pagata=True, data_pagamento=ultimo)
+    else:
+        TestataFattura.objects.filter(pk=fattura_id).update(pagata=False, data_pagamento=None)
+
+
+@receiver([post_save, post_delete], sender=IncassoScadenza)
+def _propaga_incasso(sender, instance, **kwargs):
+    fattura_id = ScadenzaFattura.objects.filter(pk=instance.scadenza_id).values_list(
+        'fattura_id', flat=True).first()
+    if fattura_id is not None:      # None: scadenza (o fattura) cancellata insieme
+        ricalcola_incasso_fattura(fattura_id)
 
 
 @receiver([post_save, post_delete], sender=PagamentoScadenzaAcquisto)
@@ -933,8 +1128,14 @@ class MessaggioSdi(models.Model):
         AT = 'AT', 'AT - Attestazione trasmissione'
         ALTRO = 'altro', 'Altro / non classificato'
 
+    # il documento del messaggio: una fattura o una nota di credito
     fattura = models.ForeignKey(
         TestataFattura, on_delete=models.CASCADE, related_name='messaggi_sdi',
+        blank=True, null=True,
+    )
+    nota_credito = models.ForeignKey(
+        TestataNotaCredito, on_delete=models.CASCADE, related_name='messaggi_sdi',
+        blank=True, null=True,
     )
     tipo = models.CharField(max_length=20, choices=Tipo.choices)
     timestamp = models.DateTimeField(auto_now_add=True)
@@ -954,9 +1155,20 @@ class MessaggioSdi(models.Model):
         ordering = ['-timestamp']
         verbose_name = 'Messaggio SDI'
         verbose_name_plural = 'Messaggi SDI'
+        constraints = [
+            models.CheckConstraint(
+                condition=(models.Q(fattura__isnull=False, nota_credito__isnull=True)
+                           | models.Q(fattura__isnull=True, nota_credito__isnull=False)),
+                name='documenti_messaggiosdi_un_documento',
+            ),
+        ]
+
+    @property
+    def documento(self):
+        return self.fattura if self.fattura_id else self.nota_credito
 
     def __str__(self):
-        return f'{self.fattura} — {self.tipo} ({self.timestamp:%d/%m/%Y})'
+        return f'{self.documento} — {self.tipo} ({self.timestamp:%d/%m/%Y})'
 
 
 class MessaggioPecElaborato(models.Model):
@@ -979,3 +1191,118 @@ class MessaggioPecElaborato(models.Model):
 
     def __str__(self):
         return self.chiave
+
+
+# ---------------------------------------------------------------------------
+# Fatture ricorrenti (canoni): modello, righe, emissioni
+# ---------------------------------------------------------------------------
+
+
+def _periodicita_choices():
+    from cashflow.models import Periodicita
+    return Periodicita.choices
+
+
+class FatturaRicorrente(models.Model):
+    """Una fattura che si ripete (canone di assistenza, noleggio…): ogni
+    periodo ne nasce una vera, datata il giorno in cui si emette. La logica
+    è in ``documenti/ricorrenti.py``; le emette il comando
+    ``genera_fatture_ricorrenti`` (timer ogni mattina) o il pulsante «Emetti
+    ora»."""
+
+    class Competenza(models.TextChoices):
+        CORRENTE = 'corrente', 'Periodo corrente (in anticipo)'
+        PRECEDENTE = 'precedente', 'Periodo precedente (a consuntivo)'
+
+    nome = models.CharField(max_length=200, help_text='Es. «Canone assistenza JANUS».')
+    cliente = models.ForeignKey('clienti.Cliente', on_delete=models.PROTECT,
+                                related_name='fatture_ricorrenti')
+    attiva = models.BooleanField(default=True)
+    periodicita = models.CharField(max_length=20, choices=_periodicita_choices, default='mensile')
+    giorno_emissione = models.PositiveSmallIntegerField(
+        default=1, validators=[MinValueValidator(1), MaxValueValidator(31)],
+        help_text='1–31: nei mesi più corti si emette l\'ultimo giorno (31 = sempre a fine mese).',
+    )
+    data_inizio = models.DateField(default=localdate)
+    data_fine = models.DateField(blank=True, null=True)
+    tipo_documento = models.CharField(max_length=10, choices=TestataFattura.TipoDocumento.choices,
+                                      default=TestataFattura.TipoDocumento.TD01)
+    sezionale = models.CharField(max_length=10, blank=True, default='')
+    forme_pagamento = models.ForeignKey('anagrafiche.FormePagamento', on_delete=models.SET_NULL,
+                                        blank=True, null=True, related_name='+')
+    conto_corrente = models.ForeignKey('anagrafiche.ContoCorrente', on_delete=models.SET_NULL,
+                                       blank=True, null=True, related_name='+')
+    note = models.TextField(blank=True, default='', help_text='Note in fattura (con i segnaposto).')
+    competenza = models.CharField(max_length=20, choices=Competenza.choices,
+                                  default=Competenza.CORRENTE)
+    invia_sdi = models.BooleanField(default=False)
+    invia_email = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-attiva', 'nome']
+        verbose_name = 'Fattura ricorrente'
+        verbose_name_plural = 'Fatture ricorrenti'
+
+    def __str__(self):
+        return self.nome
+
+
+class RigaFatturaRicorrente(models.Model):
+    """Riga del modello: stessi campi di ``RigaDocumento``, così il form usa
+    le stesse righe (e lo stesso JS) delle fatture."""
+
+    ricorrenza = models.ForeignKey(FatturaRicorrente, on_delete=models.CASCADE, related_name='righe')
+    numero_riga = models.PositiveIntegerField(default=0, blank=True, null=True)
+    articolo = models.ForeignKey('anagrafiche.Articolo', on_delete=models.SET_NULL,
+                                 blank=True, null=True, related_name='+')
+    descrizione_libera = models.TextField(max_length=1000, blank=True, null=True)
+    quantita = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal('1'))
+    um = models.CharField(max_length=10, blank=True, null=True, choices=RigaDocumento.UM.choices)
+    importo_unitario = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal('0'))
+    iva = models.ForeignKey('anagrafiche.PosizioneIva', on_delete=models.PROTECT,
+                            blank=True, null=True, related_name='+')
+
+    class Meta:
+        ordering = ['numero_riga', 'id']
+        verbose_name = 'Riga fattura ricorrente'
+        verbose_name_plural = 'Righe fatture ricorrenti'
+
+    def __str__(self):
+        return f'{self.ricorrenza_id} - {(self.descrizione_libera or "")[:40]}'
+
+
+class EmissioneRicorrente(models.Model):
+    """Un periodo di una ricorrenza: emesso (con la fattura) o non riuscito
+    (con l'errore, si riprova alla run successiva). Il vincolo su
+    (ricorrenza, periodo) è la garanzia che un periodo non si fatturi mai
+    due volte."""
+
+    class Esito(models.TextChoices):
+        EMESSA = 'emessa', 'Emessa'
+        ERRORE = 'errore', 'Non riuscita'
+        SALTATA = 'saltata', 'Saltata (ricorrenza sospesa)'
+
+    ricorrenza = models.ForeignKey(FatturaRicorrente, on_delete=models.CASCADE, related_name='emissioni')
+    periodo = models.DateField(help_text='Data prevista di emissione del periodo.')
+    fattura = models.ForeignKey(TestataFattura, on_delete=models.SET_NULL, blank=True, null=True,
+                                related_name='emissioni_ricorrenti')
+    esito = models.CharField(max_length=10, choices=Esito.choices)
+    errore = models.TextField(blank=True, default='')
+    # esito dell'invio automatico (SDI, email), se previsto dalla ricorrenza
+    invio = models.TextField(blank=True, default='')
+    creata_il = models.DateTimeField(auto_now_add=True)
+    aggiornata_il = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-periodo']
+        verbose_name = 'Emissione ricorrente'
+        verbose_name_plural = 'Emissioni ricorrenti'
+        constraints = [
+            models.UniqueConstraint(fields=['ricorrenza', 'periodo'],
+                                    name='documenti_emissione_ricorrente_unica'),
+        ]
+
+    def __str__(self):
+        return f'{self.ricorrenza} — {self.periodo:%d/%m/%Y} ({self.esito})'

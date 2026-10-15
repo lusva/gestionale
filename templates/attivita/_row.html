@@ -1,24 +1,28 @@
-{# Partial for HTMX toggle of a single row #}
-<tr id="attivita-{{ a.pk }}">
-  <td>
-    <form hx-post="{% url 'attivita:toggle' a.pk %}" hx-target="#attivita-{{ a.pk }}" hx-swap="outerHTML">
-      {% csrf_token %}
-      <button type="submit" class="btn-icon" style="color: {% if a.completata %}var(--success){% else %}var(--ink-4){% endif %};">
-        {% if a.completata %}{% icon 'check' size=16 %}{% else %}<span style="width:14px;height:14px;border-radius:50%;border:1.5px solid currentColor;display:inline-block"></span>{% endif %}
-      </button>
-    </form>
+<tr id="attivita-{{ a.pk }}" class="{% if a.completata %}agenda-completed{% elif a.data < now %}agenda-overdue{% endif %}">
+  <td class="agenda-check-cell">
+    {% if can_edit %}
+      <form method="post" action="{% url 'attivita:toggle' a.pk %}" hx-post="{% url 'attivita:toggle' a.pk %}{% if list_query %}?{{ list_query }}{% endif %}" hx-target="#agenda-results" hx-swap="outerHTML" hx-disabled-elt="find button">
+        {% csrf_token %}
+        <input type="hidden" name="next" value="{{ return_url }}" />
+        <button type="submit" class="btn-icon agenda-check {% if a.completata %}is-done{% endif %}" aria-label="{% if a.completata %}Riapri{% else %}Completa{% endif %}: {{ a.titolo }}" title="{% if a.completata %}Riapri attività{% else %}Segna come completata{% endif %}">
+          {% if a.completata %}{% icon 'check' size=18 %}{% else %}<span class="agenda-check-circle" aria-hidden="true"></span>{% endif %}
+        </button>
+      </form>
+    {% else %}
+      <span class="agenda-check {% if a.completata %}is-done{% endif %}" title="{% if a.completata %}Completata{% else %}Da fare{% endif %}">{% if a.completata %}{% icon 'check' size=18 %}{% else %}<span class="agenda-check-circle" aria-hidden="true"></span>{% endif %}<span class="agenda-sr-only">{% if a.completata %}Completata{% else %}Da fare{% endif %}</span></span>
+    {% endif %}
   </td>
-  <td>
-    <div style="display: flex; align-items: center; gap: 8px;">
-      <span style="color: {{ a.color }};">{% icon a.icon size=14 %}</span>
-      <span style="{% if a.completata %}text-decoration: line-through; color: var(--ink-3);{% endif %}">{{ a.titolo }}</span>
-    </div>
+  <td class="agenda-title-cell">
+    <a class="agenda-title" href="{{ a.get_absolute_url }}">{{ a.titolo }}</a>
+    <div class="agenda-meta"><span style="color: {{ a.color }};">{% icon a.icon size=13 %}</span> {{ a.get_tipo_display }}{% if a.opportunita %}<span aria-hidden="true">·</span> <a href="{{ a.opportunita.get_absolute_url }}">{{ a.opportunita.titolo|truncatechars:38 }}</a>{% endif %}</div>
   </td>
-  <td>{% if a.cliente %}<a href="{{ a.cliente.get_absolute_url }}" style="color: inherit;">{{ a.cliente.ragione_sociale|truncatechars:30 }}</a>{% else %}—{% endif %}</td>
-  <td>{{ a.get_tipo_display }}</td>
-  <td>{{ a.data|date:'d M Y H:i' }}</td>
-  <td>
-    {% if a.owner %}{% with p=a.owner.profile %}{% avatar p.iniziali|default:a.owner.username|slice:':2' 'sm' 'brand' %}{% endwith %}{% else %}—{% endif %}
+  <td>{% if a.cliente %}<a class="agenda-client" href="{{ a.cliente.get_absolute_url }}">{{ a.cliente.ragione_sociale|truncatechars:32 }}</a>{% else %}<span class="agenda-muted">Nessun cliente</span>{% endif %}</td>
+  <td class="agenda-date">
+    <time datetime="{{ a.data|date:'c' }}">{{ a.data|date:'d M Y' }} <strong>{{ a.data|date:'H:i' }}</strong></time>
+    <div class="agenda-meta">{% if a.completata %}<span class="agenda-done-label">Completata</span>{% elif a.data < now %}<span class="agenda-overdue-label">Scaduta</span>{% elif a.data|date:'Y-m-d' == today|date:'Y-m-d' %}<span>Oggi</span>{% endif %}{% if a.durata_minuti %}<span>{{ a.durata_minuti }} min</span>{% endif %}</div>
   </td>
-  <td></td>
+  <td>{% if a.owner %}<div class="agenda-owner">{% avatar a.owner.profile.iniziali|default:a.owner.username|slice:':2' 'sm' 'brand' %}<span>{{ a.owner.get_full_name|default:a.owner.username }}</span></div>{% else %}<span class="agenda-muted">Da assegnare</span>{% endif %}</td>
+  {% if can_edit %}
+    <td><div class="agenda-row-actions"><a class="btn-icon" href="{% url 'attivita:update' a.pk %}" aria-label="Modifica: {{ a.titolo }}" title="Modifica attività">{% icon 'edit' size=15 %}</a><a class="btn-icon" href="{% url 'attivita:delete' a.pk %}" aria-label="Elimina: {{ a.titolo }}" title="Elimina attività">{% icon 'trash' size=15 %}</a></div></td>
+  {% endif %}
 </tr>

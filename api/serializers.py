@@ -147,6 +147,8 @@ def fattura_v2(f, *, dettaglio=False, valori=None):
         d['forma_pagamento'] = str(f.forme_pagamento) if f.forme_pagamento_id else None
         d['note'] = f.note or ''
         d['righe'] = [riga_to_dict(r) for r in f.righe.select_related('iva', 'articolo')]
-        d['scadenze'] = [{'data': s.data.isoformat(), 'importo': _importo(s.importo)}
-                         for s in f.scadenze.all()]
+        d['scadenze'] = [{'data': s.data.isoformat(), 'importo': _importo(s.importo),
+                          'incassato': _importo(s.importo_incassato),
+                          'residuo': _importo(s.importo_residuo)}
+                         for s in f.scadenze.prefetch_related('incassi')]
     return d

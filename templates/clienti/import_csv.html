@@ -1,147 +1,268 @@
 {% extends 'base.html' %}
+{% load static humanize %}
 
-{% block title %}Importa clienti · CSV{% endblock %}
-{% block crumb_current %}Importa CSV{% endblock %}
+{% block title %}Importa clienti da CSV{% endblock %}
+{% block crumb_current %}Importa clienti{% endblock %}
+{% block extra_css %}<link rel="stylesheet" href="{% static 'css/import-clienti.css' %}" />{% endblock %}
 
 {% block content %}
-<div class="page">
+<div class="page csv-import">
   <div class="page-header">
     <div>
       <h1 class="page-title">Importa clienti da CSV</h1>
-      <p class="page-subtitle">
-        {% if step == 2 %}Passo 2 di 2 · Mappa le colonne
-        {% elif done %}Completato
-        {% else %}Passo 1 di 2 · Carica il file{% endif %}
-      </p>
+      <p class="page-subtitle">{% if done %}Importazione completata. Qui trovi il risultato per tutte le righe del file.{% else %}Carica il file, collega le colonne e controlla le modifiche prima di importare.{% endif %}</p>
     </div>
-    <a href="{% url 'clienti:list' %}" class="btn btn-ghost">{% icon 'chevronLeft' size=14 %} Torna alla lista</a>
+    <a href="{% url 'clienti:list' %}" class="btn btn-ghost">{% icon 'chevronLeft' size=14 %} Torna ai clienti</a>
   </div>
 
-  {# -------- Step 1: Upload -------- #}
-  {% if not step and not done %}
-    <form method="post" enctype="multipart/form-data" class="card" style="padding:24px; max-width:720px;">
-      {% csrf_token %}
-      <div class="field">
-        <label>File CSV *</label>
-        <input class="input" type="file" name="file" accept=".csv,text/csv" required />
-        <div style="font: 11px var(--font-body); color: var(--ink-3); margin-top:4px;">
-          Supporta UTF-8 o Latin-1, separatore auto-rilevato (<span class="mono">,</span> / <span class="mono">;</span> / tab).
+  <ol class="csv-steps" aria-label="Passi dell’importazione">
+    <li class="{% if done or step == 2 or step == 3 %}is-complete{% else %}is-current{% endif %}" {% if not step and not done %}aria-current="step"{% endif %}>
+      <span class="csv-step-number" aria-hidden="true">{% if done or step == 2 or step == 3 %}{% icon 'check' size=16 %}{% else %}1{% endif %}</span>
+      <span>Carica il file</span>
+    </li>
+    <li class="{% if done or step == 3 %}is-complete{% elif step == 2 %}is-current{% endif %}" {% if step == 2 %}aria-current="step"{% endif %}>
+      <span class="csv-step-number" aria-hidden="true">{% if done or step == 3 %}{% icon 'check' size=16 %}{% else %}2{% endif %}</span>
+      <span>Collega le colonne</span>
+    </li>
+    <li class="{% if done %}is-complete{% elif step == 3 %}is-current{% endif %}" {% if step == 3 %}aria-current="step"{% endif %}>
+      <span class="csv-step-number" aria-hidden="true">{% if done %}{% icon 'check' size=16 %}{% else %}3{% endif %}</span>
+      <span>Controlla e importa</span>
+    </li>
+  </ol>
+
+  {% if done %}
+    <section class="card csv-panel" aria-labelledby="csv-done-title">
+      <div class="csv-section-heading">
+        <div>
+          <h2 id="csv-done-title">Risultato dell’importazione</h2>
+          {% if filename %}<p class="csv-file-name">{{ filename }}</p>{% endif %}
+        </div>
+        <span class="csv-result-icon" aria-hidden="true">{% icon 'check' size=22 %}</span>
+      </div>
+      <dl class="csv-counts csv-counts-done">
+        <div class="csv-count-create"><dt>Clienti creati</dt><dd>{{ created|default:0|intcomma }}</dd></div>
+        <div class="csv-count-update"><dt>Clienti aggiornati</dt><dd>{{ updated|default:0|intcomma }}</dd></div>
+        <div><dt>Righe invariate</dt><dd>{{ unchanged|default:0|intcomma }}</dd></div>
+        <div class="csv-count-error"><dt>Righe scartate</dt><dd>{{ skipped|default:0|intcomma }}</dd></div>
+      </dl>
+      {% if skipped %}
+        <div class="csv-notice csv-notice-warning">
+          {% icon 'alert' size=18 %}
+          <p>Le righe scartate non sono state importate. Correggile nel file prima di caricarle di nuovo.</p>
+        </div>
+      {% endif %}
+      {% if errors %}
+        <div class="csv-error-summary">
+          <h3>Righe da correggere</h3>
+          <p>Prime {{ errors|length }} segnalazioni{% if error_overflow %} su {{ errors|length|add:error_overflow }}{% endif %}.</p>
+          <ul>{% for lineno, err in errors %}<li><strong>Riga {{ lineno }}:</strong> {{ err }}</li>{% endfor %}</ul>
+        </div>
+      {% endif %}
+      <div class="csv-actions">
+        <a href="{% url 'clienti:list' %}" class="btn btn-brand">Vai ai clienti</a>
+        <a href="{% url 'clienti:import_csv' %}" class="btn btn-ghost">Importa un altro file</a>
+      </div>
+    </section>
+
+  {% elif step == 3 %}
+    {% with import_count=plan.counts.create|add:plan.counts.update %}
+      <section class="card csv-panel" aria-labelledby="csv-review-title">
+        <div class="csv-section-heading">
+          <div>
+            <h2 id="csv-review-title">Controlla cosa cambierà</h2>
+            <p class="csv-file-name">{{ filename }}</p>
+            <p>{{ row_count|intcomma }} rig{{ row_count|pluralize:'a,he' }} nel file, esclusa l’intestazione. L’importazione partirà solo dopo la tua conferma.</p>
+          </div>
+        </div>
+        <div class="csv-counts" aria-label="Riepilogo delle righe nel file">
+          <a class="csv-count-create {% if preview_action == 'create' %}is-selected{% endif %}" href="{% querystring fase='anteprima' azione='create' page=None %}" {% if preview_action == 'create' %}aria-current="page"{% endif %}><span>Da creare</span><strong>{{ plan.counts.create|intcomma }}</strong><span class="csv-count-caption">Nuovi clienti</span></a>
+          <a class="csv-count-update {% if preview_action == 'update' %}is-selected{% endif %}" href="{% querystring fase='anteprima' azione='update' page=None %}" {% if preview_action == 'update' %}aria-current="page"{% endif %}><span>Da aggiornare</span><strong>{{ plan.counts.update|intcomma }}</strong><span class="csv-count-caption">Clienti già presenti</span></a>
+          <a class="{% if preview_action == 'unchanged' %}is-selected{% endif %}" href="{% querystring fase='anteprima' azione='unchanged' page=None %}" {% if preview_action == 'unchanged' %}aria-current="page"{% endif %}><span>Invariate</span><strong>{{ plan.counts.unchanged|intcomma }}</strong><span class="csv-count-caption">Dati già allineati</span></a>
+          <a class="csv-count-error {% if preview_action == 'error' %}is-selected{% endif %}" href="{% querystring fase='anteprima' azione='error' page=None %}" {% if preview_action == 'error' %}aria-current="page"{% endif %}><span>Con errori</span><strong>{{ plan.counts.error|intcomma }}</strong><span class="csv-count-caption">Righe da correggere</span></a>
+        </div>
+        {% if plan.counts.error %}
+          <div class="csv-notice csv-notice-warning">
+            {% icon 'alert' size=18 %}
+            <p><strong>{{ plan.counts.error }} rig{{ plan.counts.error|pluralize:'a,he' }} con errori {% if plan.counts.error == 1 %}sarà scartata{% else %}saranno scartate{% endif %}.</strong> {% if can_import %}Puoi importare le righe valide oppure correggere il file e caricarlo di nuovo.{% else %}Correggi le segnalazioni e carica di nuovo il file, oppure rivedi le colonne collegate.{% endif %}</p>
+          </div>
+        {% endif %}
+        <p class="csv-help">La partita IVA identifica i clienti già presenti. I valori vuoti nel file non cancellano i dati esistenti. Le righe invariate non richiedono aggiornamenti.</p>
+      </section>
+
+      <section class="card csv-preview-card" aria-labelledby="csv-preview-title">
+        <div class="csv-preview-heading">
+          <div>
+            <h2 id="csv-preview-title">{% if preview_action == 'error' %}Righe con errori{% elif preview_action == 'create' %}Clienti da creare{% elif preview_action == 'update' %}Clienti da aggiornare{% elif preview_action == 'unchanged' %}Righe invariate{% else %}Tutte le righe{% endif %}</h2>
+            <p>{{ preview_page.paginator.count|intcomma }} rig{{ preview_page.paginator.count|pluralize:'a,he' }}{% if preview_action %} in questa vista{% endif %} · i numeri di riga corrispondono al file CSV.</p>
+          </div>
+          {% if preview_action %}<a class="btn btn-ghost btn-sm" href="{% querystring fase='anteprima' azione=None page=None %}">Mostra tutte</a>{% endif %}
+        </div>
+        {% if preview_rows_plan %}
+          <div class="csv-table-scroll" tabindex="0" role="region" aria-label="Anteprima delle modifiche ai clienti">
+            <table class="tbl csv-plan-table">
+              <thead><tr><th scope="col">Riga</th><th scope="col">Cliente</th><th scope="col">Esito previsto</th><th scope="col">Dettaglio</th></tr></thead>
+              <tbody>
+                {% for row in preview_rows_plan %}
+                  <tr class="csv-plan-row csv-plan-{{ row.action }}">
+                    <th scope="row" class="csv-line-number">{{ row.line }}</th>
+                    <td class="csv-client-cell"><strong>{{ row.name|default:'Nome mancante' }}</strong><span class="csv-vat">{{ row.vat|default:'Partita IVA mancante' }}</span></td>
+                    <td>
+                      {% if row.action == 'create' %}<span class="csv-status csv-status-create">{% icon 'plus' size=13 %} Da creare</span>
+                      {% elif row.action == 'update' %}<span class="csv-status csv-status-update">{% icon 'edit' size=13 %} Da aggiornare</span>
+                      {% elif row.action == 'unchanged' %}<span class="csv-status">{% icon 'check' size=13 %} Invariata</span>
+                      {% else %}<span class="csv-status csv-status-error">{% icon 'alert' size=13 %} Da correggere</span>{% endif %}
+                    </td>
+                    <td class="csv-detail-cell">
+                      {% if row.error %}<p class="csv-row-error">{{ row.error }}</p>
+                      {% elif row.changes %}
+                        <details class="csv-changes">
+                          <summary>{% if row.action == 'create' %}Vedi i dati del nuovo cliente{% else %}Vedi {{ row.changes|length }} modific{{ row.changes|length|pluralize:'a,he' }}{% endif %}</summary>
+                          <div class="csv-change-list">
+                            {% for change in row.changes %}
+                              <div class="csv-change">
+                                <h3>{{ change.label }}</h3>
+                                <dl>
+                                  {% if row.action == 'update' %}<div><dt>Prima</dt><dd>{% if change.before == '' or change.before == None %}<span class="csv-empty-value">Vuoto</span>{% else %}{{ change.before }}{% endif %}</dd></div>{% endif %}
+                                  <div class="csv-change-after"><dt>{% if row.action == 'create' %}Valore da importare{% else %}Dopo{% endif %}</dt><dd>{% if change.after == '' or change.after == None %}<span class="csv-empty-value">Vuoto</span>{% else %}{{ change.after }}{% endif %}</dd></div>
+                                </dl>
+                              </div>
+                            {% endfor %}
+                          </div>
+                        </details>
+                      {% elif row.action == 'unchanged' %}<span class="csv-muted">I dati coincidono con quelli già presenti.</span>
+                      {% else %}<span class="csv-muted">Nuovo cliente pronto per l’importazione.</span>{% endif %}
+                    </td>
+                  </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        {% else %}
+          <div class="csv-empty"><h3>Nessuna riga in questa vista</h3><p>Seleziona un altro esito oppure mostra tutte le righe del file.</p><a class="btn btn-ghost" href="{% querystring fase='anteprima' azione=None page=None %}">Mostra tutte le righe</a></div>
+        {% endif %}
+        {% if preview_page.has_other_pages %}
+          <nav class="csv-pagination" aria-label="Pagine dell’anteprima">
+            <span>{{ preview_page.start_index }}–{{ preview_page.end_index }} di {{ preview_page.paginator.count|intcomma }} righe</span>
+            <div class="pager">
+              {% if preview_page.has_previous %}<a href="{% querystring fase='anteprima' azione=preview_action page=preview_page.previous_page_number %}" aria-label="Pagina precedente">«</a>{% else %}<span aria-hidden="true">«</span>{% endif %}
+              <span class="current" aria-current="page">{{ preview_page.number }} / {{ preview_page.paginator.num_pages }}</span>
+              {% if preview_page.has_next %}<a href="{% querystring fase='anteprima' azione=preview_action page=preview_page.next_page_number %}" aria-label="Pagina successiva">»</a>{% else %}<span aria-hidden="true">»</span>{% endif %}
+            </div>
+          </nav>
+        {% endif %}
+      </section>
+
+      <div class="card csv-confirm-panel">
+        <div>
+          {% if preview_stale %}
+            <h2>Anteprima da aggiornare</h2>
+            <p>I dati dei clienti sono cambiati dopo il controllo del file. Scegli «Rivedi le colonne», poi «Controlla le modifiche» per generare una nuova anteprima prima di importare.</p>
+          {% elif can_import %}
+            <h2>Pronto per importare {{ import_count }} rig{{ import_count|pluralize:'a,he' }}?</h2>
+            <p>{{ plan.counts.create }} nuov{{ plan.counts.create|pluralize:'o,i' }} client{{ plan.counts.create|pluralize:'e,i' }} e {{ plan.counts.update }} aggiornament{{ plan.counts.update|pluralize:'o,i' }}. La conferma riguarda tutte le righe valide del file, anche quelle nelle altre pagine o nascoste dal filtro.</p>
+          {% else %}
+            <h2>Nessuna modifica da importare</h2>
+            <p>{% if plan.counts.error %}Le righe con errori devono essere corrette. Le altre contengono dati già presenti.{% else %}I dati del file sono già presenti: non è necessario aggiornare i clienti.{% endif %}</p>
+          {% endif %}
+        </div>
+        <div class="csv-actions">
+          <form method="post" action="{% url 'clienti:import_csv' %}">
+            {% csrf_token %}<input type="hidden" name="step" value="mapping" /><input type="hidden" name="upload_token" value="{{ upload_token }}" />
+            <button type="submit" class="btn {% if preview_stale %}btn-brand{% else %}btn-ghost{% endif %}">{% icon 'chevronLeft' size=14 %} Rivedi le colonne</button>
+          </form>
+          {% if can_import %}
+            <form method="post" action="{% url 'clienti:import_csv' %}">
+              {% csrf_token %}<input type="hidden" name="step" value="3" /><input type="hidden" name="upload_token" value="{{ upload_token }}" /><input type="hidden" name="preview_token" value="{{ preview_token }}" />
+              <button type="submit" class="btn btn-brand">{% icon 'check' size=14 %} Importa {{ import_count }} rig{{ import_count|pluralize:'a,he' }}</button>
+            </form>
+          {% elif not preview_stale %}<a href="{% url 'clienti:import_csv' %}" class="btn btn-brand">Carica un altro file</a>{% endif %}
         </div>
       </div>
+    {% endwith %}
 
-      <div style="margin-top:18px;">
-        <div style="font: 500 12px var(--font-body); color: var(--ink-2); margin-bottom:6px;">Campi disponibili (nel passo successivo potrai mapparli alle tue colonne):</div>
-        <div style="display:flex; flex-wrap:wrap; gap:4px;">
-          {% for h in csv_headers %}
-            <code class="mono" style="background:var(--surface-2); padding:3px 8px; border-radius:4px; font-size:11px;">{{ h }}</code>
-          {% endfor %}
-        </div>
-        <div style="font: 11px var(--font-body); color: var(--ink-3); margin-top:8px;">
-          <strong>Obbligatori:</strong> <code class="mono">ragione_sociale</code>, <code class="mono">partita_iva</code>.
-          Upsert per <code class="mono">partita_iva</code>.
-        </div>
-      </div>
-
-      <div style="display:flex; justify-content:flex-end; gap:8px; margin-top:22px;">
-        <a href="{% url 'clienti:list' %}" class="btn btn-ghost">Annulla</a>
-        <button type="submit" class="btn btn-brand">{% icon 'upload' size=14 %} Avanti</button>
-      </div>
-    </form>
-  {% endif %}
-
-  {# -------- Step 2: Mapping -------- #}
-  {% if step == 2 %}
-    <form method="post" class="card" style="padding:24px;">
+  {% elif step == 2 %}
+    <form method="post" action="{% url 'clienti:import_csv' %}" class="card csv-panel">
       {% csrf_token %}
       <input type="hidden" name="step" value="2" />
-
-      <div class="flex-between mb-16">
+      <input type="hidden" name="upload_token" value="{{ upload_token }}" />
+      <div class="csv-section-heading">
         <div>
-          <div style="font: 600 15px var(--font-display);">{{ filename }}</div>
-          <div style="font: 12px var(--font-body); color: var(--ink-3);">{{ row_count }} righe da importare (esclusa intestazione)</div>
+          <h2>Collega le colonne del file ai dati dei clienti</h2>
+          <p class="csv-file-name">{{ filename }}</p>
+          <p>{{ row_count|intcomma }} rig{{ row_count|pluralize:'a,he' }} da controllare, esclusa l’intestazione.</p>
         </div>
-        <a href="{% url 'clienti:import_csv' %}" class="btn btn-subtle" style="height:32px;">{% icon 'upload' size=13 %} Cambia file</a>
+        <a href="{% url 'clienti:import_csv' %}" class="btn btn-ghost btn-sm">{% icon 'upload' size=14 %} Cambia file</a>
       </div>
-
-      <div style="font: 600 13px var(--font-display); margin-bottom:8px;">Mappa le colonne</div>
-      <div style="font: 12px var(--font-body); color: var(--ink-3); margin-bottom:12px;">
-        Abbiamo pre-compilato le corrispondenze che riconosciamo. Imposta "— Ignora —" per le colonne che non vuoi importare.
-      </div>
-
-      <table class="tbl" style="margin-bottom:20px;">
-        <thead>
-          <tr>
-            <th>Colonna CSV</th>
-            <th>Campo cliente</th>
-            <th>Esempi</th>
-          </tr>
-        </thead>
-        <tbody>
-          {% for h in source_headers %}
-            <tr>
-              <td style="font-family: var(--font-mono); font-size:12px;">{{ h }}</td>
-              <td>
-                <select class="select" name="map__{{ h }}" style="height:30px; font-size:12px;">
-                  <option value="">— Ignora —</option>
-                  {% for key, label in target_labels.items %}
-                    <option value="{{ key }}" {% if mapping|get_item:h == key %}selected{% endif %}>{{ label }}</option>
-                  {% endfor %}
-                </select>
-              </td>
-              <td style="font-size:11px; color:var(--ink-3);">
-                {% for row in preview_rows|slice:':2' %}
-                  <div style="white-space:nowrap; max-width:220px; overflow:hidden; text-overflow:ellipsis;">
-                    {{ row|index:forloop.parentloop.counter0|default:'—' }}
-                  </div>
-                {% endfor %}
-              </td>
-            </tr>
-          {% endfor %}
-        </tbody>
-      </table>
-
-      <div style="font: 600 13px var(--font-display); margin-bottom:8px;">Anteprima dati</div>
-      <div style="overflow-x:auto; margin-bottom:20px;">
-        <table class="tbl" style="font-size:11px;">
-          <thead>
-            <tr>{% for h in source_headers %}<th>{{ h }}</th>{% endfor %}</tr>
-          </thead>
+      <p class="csv-help" id="csv-mapping-help">Abbiamo già collegato le colonne riconosciute. Controlla gli abbinamenti e scegli «Ignora questa colonna» per i dati che non vuoi importare. <strong>Ragione sociale e Partita IVA sono obbligatori.</strong> Ogni campo cliente può essere collegato a una sola colonna.</p>
+      <p class="csv-help">Per i clienti esteri, collega anche la colonna <strong>Nazione</strong> con la sigla di due lettere, per esempio FR o DE. Senza questo valore la partita IVA viene verificata come italiana.</p>
+      <div class="csv-table-scroll" tabindex="0" role="region" aria-label="Collegamento delle colonne">
+        <table class="tbl csv-mapping-table">
+          <thead><tr><th scope="col">Colonna nel file</th><th scope="col">Campo cliente</th><th scope="col">Esempi dal file</th></tr></thead>
           <tbody>
-            {% for row in preview_rows %}
-              <tr>{% for cell in row %}<td style="white-space:nowrap; max-width:180px; overflow:hidden; text-overflow:ellipsis;">{{ cell }}</td>{% endfor %}</tr>
+            {% for h in source_headers %}
+              <tr>
+                <th scope="row"><label for="csv-map-{{ forloop.counter }}">{{ h }}</label></th>
+                <td>
+                  <select class="select" name="map__{{ h }}" id="csv-map-{{ forloop.counter }}" aria-describedby="csv-mapping-help">
+                    <option value="">Ignora questa colonna</option>
+                    {% for key, label in target_labels.items %}<option value="{{ key }}" {% if mapping|get_item:h == key %}selected{% endif %}>{{ label }}</option>{% endfor %}
+                  </select>
+                </td>
+                <td class="csv-example-values">{% for row in preview_rows|slice:':2' %}<div>{{ row|index:forloop.parentloop.counter0|default:'—' }}</div>{% endfor %}</td>
+              </tr>
             {% endfor %}
           </tbody>
         </table>
       </div>
-
-      <div style="display:flex; justify-content:flex-end; gap:8px;">
-        <a href="{% url 'clienti:import_csv' %}" class="btn btn-ghost">Annulla</a>
-        <button type="submit" class="btn btn-brand">{% icon 'check' size=14 %} Conferma e importa</button>
+      <details class="csv-source-preview">
+        <summary>Mostra le prime {{ preview_rows|length }} righe del file</summary>
+        <div class="csv-table-scroll" tabindex="0" role="region" aria-label="Prime righe del file caricato">
+          <table class="tbl csv-source-table">
+            <thead><tr>{% for h in source_headers %}<th scope="col">{{ h }}</th>{% endfor %}</tr></thead>
+            <tbody>{% for row in preview_rows %}<tr>{% for cell in row %}<td>{{ cell|default:'—' }}</td>{% endfor %}</tr>{% endfor %}</tbody>
+          </table>
+        </div>
+      </details>
+      <div class="csv-form-footer">
+        <p>Nel prossimo passo vedrai nuovi clienti, aggiornamenti ed eventuali errori. Non viene ancora salvata alcuna modifica.</p>
+        <div class="csv-actions">
+          <a href="{% url 'clienti:list' %}" class="btn btn-ghost">Annulla</a>
+          <button type="submit" class="btn btn-brand">Controlla le modifiche {% icon 'chevronRight' size=14 %}</button>
+        </div>
       </div>
     </form>
-  {% endif %}
 
-  {# -------- Riepilogo -------- #}
-  {% if done %}
-    <div class="card" style="padding:20px; margin-bottom:16px; border-left:3px solid var(--success);">
-      <div style="font: 600 15px var(--font-display); margin-bottom:8px;">Riepilogo import</div>
-      <div style="display:flex; gap:24px; font: 13px var(--font-body);">
-        <div><span style="color:var(--success); font-weight:600;">{{ created }}</span> creati</div>
-        <div><span style="color:var(--info); font-weight:600;">{{ updated }}</span> aggiornati</div>
-        <div><span style="color:var(--danger); font-weight:600;">{{ skipped }}</span> scartati</div>
-      </div>
-      {% if errors %}
-        <div style="margin-top:14px; font: 500 12px var(--font-body); color: var(--ink-2);">Righe con errori (prime {{ errors|length }}{% if error_overflow %} di {{ errors|length|add:error_overflow }}{% endif %}):</div>
-        <ul style="margin: 6px 0 0 18px; font: 12px var(--font-mono); color: var(--ink-3);">
-          {% for lineno, err in errors %}
-            <li>riga {{ lineno }}: {{ err }}</li>
-          {% endfor %}
-        </ul>
-      {% endif %}
-      <div style="margin-top:18px; display:flex; gap:8px;">
-        <a href="{% url 'clienti:list' %}" class="btn btn-brand">Vai ai clienti</a>
-        <a href="{% url 'clienti:import_csv' %}" class="btn btn-ghost">Importa un altro file</a>
-      </div>
+  {% else %}
+    <div class="csv-upload-layout">
+      <form method="post" action="{% url 'clienti:import_csv' %}" enctype="multipart/form-data" class="card csv-panel">
+        {% csrf_token %}
+        <div class="csv-section-heading"><div><h2>Scegli il file da importare</h2><p>Puoi aggiungere nuovi clienti e aggiornare quelli già presenti con un unico file.</p></div></div>
+        <div class="csv-file-input">
+          <span class="csv-upload-icon" aria-hidden="true">{% icon 'upload' size=26 %}</span>
+          <div class="field">
+            <label for="csv-file">File CSV *</label>
+            <input class="input" id="csv-file" type="file" name="file" accept=".csv,text/csv" aria-describedby="csv-file-help csv-file-limits" required />
+          </div>
+          <p id="csv-file-limits"><strong>Massimo 2 MB e 2.000 righe di dati.</strong></p>
+          <p id="csv-file-help">La prima riga deve contenere i nomi delle colonne. Sono riconosciuti i separatori virgola, punto e virgola e tabulazione.</p>
+        </div>
+        <div class="csv-form-footer">
+          <p>Il caricamento prepara l’anteprima. Potrai controllare tutto prima di importare.</p>
+          <div class="csv-actions"><a href="{% url 'clienti:list' %}" class="btn btn-ghost">Annulla</a><button type="submit" class="btn btn-brand">Collega le colonne {% icon 'chevronRight' size=14 %}</button></div>
+        </div>
+      </form>
+      <aside class="card csv-panel csv-upload-guide" aria-labelledby="csv-guide-title">
+        <h2 id="csv-guide-title">Prepara il file in pochi passi</h2>
+        <ol>
+          <li>Inserisci <strong>Ragione sociale</strong> e <strong>Partita IVA</strong> per ogni cliente: sono i dati obbligatori per questa importazione.</li>
+          <li>Aggiungi le altre informazioni che vuoi importare, come indirizzo, città, settore e note.</li>
+          <li>Per i clienti esteri, aggiungi <strong>Nazione</strong> con la sigla di due lettere (per esempio FR o DE). Il valore predefinito è IT.</li>
+          <li>Salva il foglio come CSV. Le colonne possono avere i nomi che usi già: le collegherai al prossimo passo.</li>
+        </ol>
+        <a href="{% url 'clienti:import_csv' %}?esempio=1" class="btn btn-ghost" download>{% icon 'download' size=14 %} Scarica il CSV di esempio</a>
+        <p class="csv-help">La partita IVA permette di riconoscere i clienti già presenti e aggiornare i loro dati.</p>
+        <details class="csv-available-fields"><summary>Dati che puoi importare</summary><ul>{% for key, label in target_labels.items %}<li>{{ label }}</li>{% endfor %}</ul><p class="csv-help">Sono supportati i file con codifica UTF-8 o Latin-1.</p></details>
+      </aside>
     </div>
   {% endif %}
 </div>

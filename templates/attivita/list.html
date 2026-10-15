@@ -1,94 +1,54 @@
 {% extends 'base.html' %}
-{% load humanize %}
+{% load static %}
 
-{% block title %}Attività{% endblock %}
+{% block title %}Agenda attività{% endblock %}
 {% block crumb_current %}Attività{% endblock %}
+{% block extra_css %}<link rel="stylesheet" href="{% static 'css/attivita.css' %}" />{% endblock %}
 
 {% block content %}
-<div class="page">
+<div class="page agenda-page">
   <div class="page-header">
     <div>
-      <h1 class="page-title">Attività</h1>
-      <p class="page-subtitle">{{ paginator.count|intcomma }} attività totali · gestisci chiamate, email, meeting e task</p>
+      <h1 class="page-title">Agenda attività</h1>
+      <p class="page-subtitle">Chiamate, incontri e prossimi passi. Le attività aperte più urgenti vengono prima.</p>
     </div>
-    <a href="{% url 'attivita:create' %}" class="btn btn-brand">{% icon 'plus' size=14 %} Nuova attività</a>
+    {% if can_edit %}<a href="{% url 'attivita:create' %}" class="btn btn-brand">{% icon 'plus' size=14 %} Nuova attività</a>{% endif %}
   </div>
 
-  <form method="get" class="filters">
-    <label class="filter-chip {% if stato_attivo == 'tutte' or not stato_attivo %}active{% endif %}">
-      <input type="radio" name="stato" value="tutte" onchange="this.form.submit()" style="display: none;" {% if stato_attivo == 'tutte' or not stato_attivo %}checked{% endif %} />
-      <a href="?tipo={{ tipo_attivo }}" style="text-decoration: none; color: inherit;">Tutte</a>
-    </label>
-    <a href="?stato=da_fare&tipo={{ tipo_attivo }}" class="filter-chip {% if stato_attivo == 'da_fare' %}active{% endif %}">Da fare</a>
-    <a href="?stato=completate&tipo={{ tipo_attivo }}" class="filter-chip {% if stato_attivo == 'completate' %}active{% endif %}">Completate</a>
-
-    <div style="width: 1px; height: 22px; background: var(--border); margin: 0 6px;"></div>
-
-    <a href="?stato={{ stato_attivo }}" class="filter-chip {% if not tipo_attivo %}active{% endif %}">Tutti i tipi</a>
-    {% for val, label in tipi_choices %}
-      <a href="?stato={{ stato_attivo }}&tipo={{ val }}" class="filter-chip {% if tipo_attivo == val %}active{% endif %}">{{ label }}</a>
-    {% endfor %}
-
-    <div style="margin-left: auto; font: 12px var(--font-body); color: var(--ink-3);">
-      {{ page_obj.start_index|default:0 }}–{{ page_obj.end_index|default:0 }} di {{ paginator.count|intcomma }}
-    </div>
-  </form>
-
-  <div class="card" style="border-top-left-radius: 0; border-top-right-radius: 0; overflow: hidden;">
-    <table class="tbl">
-      <thead>
-        <tr><th style="width: 36px;"></th><th>Titolo</th><th>Cliente</th><th>Tipo</th><th>Data</th><th>Owner</th><th style="width: 40px;"></th></tr>
-      </thead>
-      <tbody>
-        {% for a in attivita_list %}
-          <tr id="attivita-{{ a.pk }}">
-            <td>
-              <form hx-post="{% url 'attivita:toggle' a.pk %}" hx-target="#attivita-{{ a.pk }}" hx-swap="outerHTML">
-                {% csrf_token %}
-                <button type="submit" class="btn-icon" style="color: {% if a.completata %}var(--success){% else %}var(--ink-4){% endif %};">
-                  {% if a.completata %}{% icon 'check' size=16 %}{% else %}<span style="width:14px;height:14px;border-radius:50%;border:1.5px solid currentColor;display:inline-block"></span>{% endif %}
-                </button>
-              </form>
-            </td>
-            <td>
-              <div style="display: flex; align-items: center; gap: 8px;">
-                <span style="color: {{ a.color }};">{% icon a.icon size=14 %}</span>
-                <span style="{% if a.completata %}text-decoration: line-through; color: var(--ink-3);{% endif %}">{{ a.titolo }}</span>
-              </div>
-            </td>
-            <td>{% if a.cliente %}<a href="{{ a.cliente.get_absolute_url }}" style="color: inherit;">{{ a.cliente.ragione_sociale|truncatechars:30 }}</a>{% else %}—{% endif %}</td>
-            <td>{{ a.get_tipo_display }}</td>
-            <td>{{ a.data|date:'d M Y H:i' }}</td>
-            <td>
-              {% if a.owner %}{% with p=a.owner.profile %}{% avatar p.iniziali|default:a.owner.username|slice:':2' 'sm' 'brand' %}{% endwith %}{% else %}—{% endif %}
-            </td>
-            <td>
-              <div x-data="{ open: false }" style="position: relative;">
-                <button type="button" class="btn-icon" @click="open = !open">{% icon 'more' size=14 %}</button>
-                <div class="menu" x-show="open" @click.outside="open = false" x-cloak>
-                  <a href="{% url 'attivita:update' a.pk %}">{% icon 'edit' size=13 %} Modifica</a>
-                  <div class="sep"></div>
-                  <a href="{% url 'attivita:delete' a.pk %}" class="danger">{% icon 'trash' size=13 %} Elimina</a>
-                </div>
-              </div>
-            </td>
-          </tr>
-        {% empty %}
-          <tr><td colspan="7"><div class="empty"><div class="ico">{% icon 'calendar' size=20 %}</div>Nessuna attività</div></td></tr>
-        {% endfor %}
-      </tbody>
-    </table>
-
-    {% if is_paginated %}
-      <div style="display: flex; justify-content: space-between; align-items: center; padding: 12px 16px; border-top: 1px solid var(--border); background: var(--surface-2);">
-        <div style="font: 12px var(--font-body); color: var(--ink-3);">{{ page_obj.start_index }}–{{ page_obj.end_index }} di {{ paginator.count|intcomma }}</div>
-        <div class="pager">
-          {% if page_obj.has_previous %}<a href="?page={{ page_obj.previous_page_number }}">«</a>{% else %}<span>«</span>{% endif %}
-          <span class="current">{{ page_obj.number }}</span>
-          {% if page_obj.has_next %}<a href="?page={{ page_obj.next_page_number }}">»</a>{% else %}<span>»</span>{% endif %}
-        </div>
+  <section class="card agenda-filters" aria-label="Filtri attività">
+    <nav class="agenda-periods" aria-label="Periodo">
+      <a href="{% querystring periodo=None page=None %}" class="filter-chip {% if not periodo_attivo %}active{% endif %}" {% if not periodo_attivo %}aria-current="page"{% endif %}>Tutte le date</a>
+      <a href="{% querystring periodo='scadute' stato='da_fare' page=None %}" class="filter-chip {% if periodo_attivo == 'scadute' %}active{% endif %}" {% if periodo_attivo == 'scadute' %}aria-current="page"{% endif %}>Scadute</a>
+      <a href="{% querystring periodo='oggi' page=None %}" class="filter-chip {% if periodo_attivo == 'oggi' %}active{% endif %}" {% if periodo_attivo == 'oggi' %}aria-current="page"{% endif %}>Oggi</a>
+      <a href="{% querystring periodo='settimana' page=None %}" class="filter-chip {% if periodo_attivo == 'settimana' %}active{% endif %}" {% if periodo_attivo == 'settimana' %}aria-current="page"{% endif %}>Prossimi 7 giorni</a>
+    </nav>
+    <form method="get" action="{% url 'attivita:list' %}" class="agenda-filter-form" role="search">
+      {% if periodo_attivo %}<input type="hidden" name="periodo" value="{{ periodo_attivo }}" />{% endif %}
+      <div class="field agenda-search">
+        <label for="agenda-q">Cerca attività</label>
+        <input id="agenda-q" class="input" type="search" name="q" value="{{ search_query }}" placeholder="Titolo, cliente o opportunità" maxlength="200" />
       </div>
-    {% endif %}
-  </div>
+      <div class="field">
+        <label for="agenda-stato">Stato</label>
+        <select id="agenda-stato" class="select" name="stato">
+          <option value="da_fare" {% if stato_attivo == 'da_fare' %}selected{% endif %}>Da fare</option>
+          <option value="completate" {% if stato_attivo == 'completate' %}selected{% endif %}>Completate</option>
+          <option value="tutte" {% if stato_attivo == 'tutte' %}selected{% endif %}>Tutte</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="agenda-tipo">Tipo</label>
+        <select id="agenda-tipo" class="select" name="tipo">
+          <option value="">Tutti i tipi</option>
+          {% for val, label in tipi_choices %}<option value="{{ val }}" {% if tipo_attivo == val %}selected{% endif %}>{{ label }}</option>{% endfor %}
+        </select>
+      </div>
+      <label class="agenda-mine"><input type="checkbox" name="owner" value="me" {% if owner_attivo %}checked{% endif %} /> Solo le mie</label>
+      <button type="submit" class="btn btn-brand">{% icon 'search' size=14 %} Applica</button>
+      {% if has_filters %}<a href="{% url 'attivita:list' %}" class="btn btn-ghost">Azzera filtri</a>{% endif %}
+    </form>
+  </section>
+
+  {% include 'attivita/_results.html' %}
 </div>
 {% endblock %}
