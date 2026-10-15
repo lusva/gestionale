@@ -26,6 +26,7 @@ jobs:
             certbot plugins --authenticators --installers | grep -q nginx
             nginx_conf=/etc/nginx/sites-available/gestionale.aigislab.ai
             backup_dir=$(mktemp -d /root/gestionale-https-XXXXXXXX)
+            cp -a /etc/nginx "$backup_dir/nginx"
             cp -a "$nginx_conf" "$backup_dir/vhost.conf"
             rollback_nginx() {
               cp -a "$backup_dir/vhost.conf" "$nginx_conf"
