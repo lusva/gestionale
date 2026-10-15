@@ -1,0 +1,40 @@
+{% extends 'base.html' %}
+{% block title %}Configura la tua azienda{% endblock %}
+{% block extra_css %}
+<style>
+  .company-setup { max-width: 720px; margin: 48px auto; padding: 0 20px; }
+  .company-setup .card { padding: 28px; }
+  .company-setup h1 { font: 600 28px var(--font-display); margin: 0 0 12px; }
+  .company-setup-intro { color: var(--ink-3); margin-bottom: 24px; line-height: 1.6; }
+  .company-setup .grid { gap: 18px; }
+  .company-setup .company-name { grid-column: 1 / -1; }
+  .company-setup .errorlist { color: var(--danger, #b42318); margin: 6px 0 0; padding-left: 18px; font-size: 13px; }
+  .company-setup-exit { margin-top: 16px; text-align: center; }
+  @media (max-width: 600px) { .company-setup { margin: 24px auto; } .company-setup .grid { grid-template-columns: 1fr; } }
+</style>
+{% endblock %}
+{% block body %}
+<main class="company-setup" id="main-content">
+  <form method="post" class="card">
+    {% csrf_token %}
+    <h1>Configura la tua azienda</h1>
+    <p class="company-setup-intro">Benvenuto! Inserisci il nome della tua azienda per iniziare.
+      Gli altri dati sono facoltativi: potrai completarli o modificarli dall’anagrafica azienda.</p>
+    {% if form.non_field_errors %}<div role="alert">{{ form.non_field_errors }}</div>{% endif %}
+    <div class="grid grid-2">
+      {% for field in form %}
+        <div class="field{% if field.name == 'ragione_sociale' %} company-name{% endif %}">
+          <label for="{{ field.id_for_label }}">{{ field.label }}{% if field.field.required %} *{% endif %}</label>
+          {{ field }}
+          {% if field.errors %}<div role="alert">{{ field.errors }}</div>{% endif %}
+        </div>
+      {% endfor %}
+    </div>
+    <button type="submit" class="btn btn-brand" style="margin-top: 24px;">Salva e accedi al gestionale</button>
+  </form>
+  <form method="post" action="{% url 'accounts:logout' %}" class="company-setup-exit">
+    {% csrf_token %}
+    <button type="submit" class="btn btn-ghost">Esci dall’account</button>
+  </form>
+</main>
+{% endblock %}

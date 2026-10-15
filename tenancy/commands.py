@@ -19,12 +19,12 @@ class AziendeCommand(BaseCommand):
 
     def handle(self, *args, **options):
         azienda_id = options.pop('azienda', None)
-        aziende = Azienda.objects.filter(attiva=True).order_by('pk')
+        aziende = Azienda.objects.filter(attiva=True, configurata=True).order_by('pk')
         if azienda_id is not None:
             aziende = aziende.filter(pk=azienda_id)
         aziende = list(aziende)
         if azienda_id is not None and not aziende:
-            raise CommandError('Azienda inesistente o disattivata.')
+            raise CommandError('Azienda inesistente, disattivata o ancora da configurare.')
         errori = []
         for azienda in aziende:
             self.stdout.write(f'Azienda {azienda.pk}: {azienda.nome}')

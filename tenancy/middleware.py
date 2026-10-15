@@ -1,4 +1,7 @@
+from django.conf import settings
 from django.http import HttpResponseForbidden
+from django.shortcuts import redirect
+from django.urls import reverse
 
 from .context import azienda_context
 
@@ -13,16 +16,29 @@ class AziendaMiddleware:
         # Authenticate membership without the previous request's company scope.
         with azienda_context(None):
             azienda_id = None
+            da_configurare = False
             if request.user.is_authenticated:
                 profile = Profile.all_objects.select_related('azienda').filter(
                     user_id=request.user.pk,
                 ).first()
                 if profile is not None and profile.azienda.attiva and profile.stato != StatoUtente.SOSPESO:
                     azienda_id = profile.azienda_id
+                    da_configurare = not profile.azienda.configurata
                 elif not request.path.startswith(('/accounts/logout/', '/api/', '/mcp')):
                     return HttpResponseForbidden('Nessuna azienda attiva associata al tuo account.')
             request.azienda_id = azienda_id
             with azienda_context(azienda_id):
+                if da_configurare:
+                    allowed = {reverse('accounts:configura_azienda'), reverse('accounts:logout')}
+                    # Bearer authentication checks its own company, which can
+                    # differ from the session. No business page can skip setup.
+                    api = request.path.startswith('/api/') or request.path in {'/mcp', '/mcp/'}
+                    static_prefix = '/' + settings.STATIC_URL.lstrip('/')
+                    if request.path not in allowed and not api and not request.path.startswith(static_prefix):
+                        response = redirect('accounts:configura_azienda')
+                        if request.headers.get('HX-Request') == 'true':
+                            response['HX-Redirect'] = reverse('accounts:configura_azienda')
+                        return response
                 response = self.get_response(request)
                 # A streaming generator can run after middleware unwinds.
                 if getattr(response, 'streaming', False):

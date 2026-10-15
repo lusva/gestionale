@@ -160,7 +160,38 @@ operazioni server esplicite. I nuovi endpoint e comandi devono preservare questo
 confine e usare `azienda_context()` quando operano fuori da una richiesta.
 
 Le migrazioni creano l'azienda iniziale con **ID 1** e assegnano a questa i dati e
-gli utenti già presenti. Per aggiungere un'azienda vuota con un amministratore:
+gli utenti già presenti. Per creare da interfaccia un nuovo utente che inserirà
+da sé i dati della propria azienda:
+
+1. Accedere a `/admin/` con un **superuser Django**.
+2. Aprire **Utenti → Aggiungi utente** e inserire username e password.
+3. Selezionare **Nuova azienda — configurazione al primo accesso** nel campo
+   **Azienda** e salvare.
+4. Comunicare le credenziali all'utente, che accederà dal normale login del sito.
+
+L'account viene creato come amministratore della nuova azienda, senza accesso
+all'amministrazione Django. Dopo il salvataggio si torna alla pagina di aggiunta:
+il nuovo utente non compare nell'elenco dell'azienda del gestore, perché
+appartiene a un'altra azienda. L'opzione predefinita **Stessa azienda dell’amministratore** continua
+a creare colleghi nella stessa azienda; solo i superuser possono scegliere una
+nuova azienda. Non vengono inviate email automaticamente.
+
+In alternativa, dal server si può omettere il nome azienda nel comando:
+
+```bash
+python manage.py crea_azienda --username nuovo-admin --email nuovo-admin@example.test
+```
+
+Entrambe le modalità preparano un'azienda vuota e separata. Al primo accesso l'utente vede
+**Configura la tua azienda**: deve inserire il nome o la ragione sociale; partita
+IVA, codice fiscale, sede e contatti sono facoltativi e completabili in seguito.
+Fino al salvataggio il gestionale rimanda a questa pagina e i token API/MCP
+non consentono l'accesso. Dopo il salvataggio si apre la dashboard della nuova
+azienda. Non è una registrazione pubblica: l'account iniziale viene creato
+dal gestore del sito.
+
+Per aggiungere invece un'azienda già nominata con un amministratore, senza la
+configurazione obbligatoria al primo accesso:
 
 ```bash
 python manage.py crea_azienda "Azienda B" --username admin-b --email admin-b@example.test
@@ -183,7 +214,8 @@ dal comando. Le password demo note restano adatte soltanto ad ambienti di prova.
 I comandi operativi `sdi_pull`, `sdi_verifica`, `genera_fatture_ricorrenti`,
 `invia_promemoria_scadenze` e `allinea_registrazione_acquisti` accettano
 `--azienda ID`. Senza questo parametro elaborano separatamente **tutte le aziende
-attive**, così i timer esistenti continuano a funzionare. I richiami dal sito
+attive e configurate**, così i timer esistenti continuano a funzionare senza
+elaborare quelle ancora in attesa del primo accesso. I richiami dal sito
 passano sempre l'azienda della sessione. Le configurazioni PEC, SDI, webhook e
 fatturazione vanno completate per ciascuna azienda prima di usarne le integrazioni.
 
@@ -203,7 +235,7 @@ in produzione.
 Verifica dell'isolamento con database di test separato:
 
 ```bash
-python manage.py test tenancy accounts.tests
+python manage.py test tenancy accounts
 ```
 
 ## Import / Export CSV clienti

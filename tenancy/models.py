@@ -14,6 +14,7 @@ from .context import current_azienda_id
 class Azienda(models.Model):
     nome = models.CharField(max_length=200)
     attiva = models.BooleanField(default=True)
+    configurata = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:

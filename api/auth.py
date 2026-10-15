@@ -24,7 +24,8 @@ def azienda_token_valida(tok) -> bool:
     """Un token non segue l'utente quando viene trasferito a un'altra azienda."""
     profile = getattr(tok.user, 'profile', None)
     return bool(profile and profile.stato != 'sospeso'
-                and profile.azienda_id == tok.azienda_id and tok.azienda.attiva)
+                and profile.azienda_id == tok.azienda_id and tok.azienda.attiva
+                and tok.azienda.configurata)
 
 
 @contextmanager
