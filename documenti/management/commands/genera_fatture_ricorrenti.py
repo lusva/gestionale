@@ -18,21 +18,23 @@ from __future__ import annotations
 
 from datetime import date
 
-from django.core.management.base import BaseCommand, CommandError
+from django.core.management.base import CommandError
+from tenancy.commands import AziendeCommand
 from django.utils.timezone import localdate
 
 from documenti import ricorrenti
 from documenti.models import EmissioneRicorrente, FatturaRicorrente
 
 
-class Command(BaseCommand):
+class Command(AziendeCommand):
     help = 'Emette le fatture ricorrenti dei periodi arrivati a scadenza.'
 
     def add_arguments(self, parser):
+        super().add_arguments(parser)
         parser.add_argument('--dry-run', action='store_true')
         parser.add_argument('--data', help='giorno di emissione (AAAA-MM-GG), di norma oggi')
 
-    def handle(self, *args, dry_run=False, data=None, **opts):
+    def handle_azienda(self, *args, dry_run=False, data=None, **opts):
         try:
             oggi = date.fromisoformat(data) if data else localdate()
         except ValueError:

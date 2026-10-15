@@ -1,47 +1,92 @@
-"""File caricati che non devono essere pubblici.
+"""Tutti i media richiedono login, azienda proprietaria e permesso del ruolo.
 
-``/media/<cartella>/…`` per le cartelle di ``PROTETTI`` passa da Django:
-serve il login e il permesso del ruolo. In produzione Django risponde solo
-con ``X-Accel-Redirect`` e il file lo spedisce nginx da una location
-``internal`` (``settings.MEDIA_PROTETTI_ACCEL``); in sviluppo ``FileResponse``.
-Le altre cartelle di media (logo, avatar) restano pubbliche.
+La proprietà è verificata sui record, anche per i file senza prefisso creati
+prima della separazione per azienda. I certificati non sono mai scaricabili.
+Nginx può spedire il file solo dopo l'autorizzazione, via X-Accel-Redirect.
 """
 import mimetypes
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from urllib.parse import quote
 
+from django.apps import apps
 from django.conf import settings
 from django.contrib.auth.decorators import login_required
 from django.core.exceptions import PermissionDenied
 from django.http import FileResponse, Http404, HttpResponse
 
 from accounts.permissions import has_perm
+from tenancy.context import current_azienda_id
 
-# cartella (upload_to) → permesso che serve per scaricare. None = mai via web
-# (il .p12 della firma digitale contiene la chiave privata).
-PROTETTI = {
-    'certificati': None,
-    'rimborsi_km': 'cashflow.vedi',
-    'fatture_acquisto_xml': 'documenti.vedi',
-    'fatture_acquisto_allegati': 'documenti.vedi',
+
+# cartella → (modello, campo, permesso). I certificati sono esclusi.
+MEDIA_FIELDS = {
+    'rimborsi_km': ('cashflow.RimborsoChilometrico', 'allegato', 'cashflow.vedi'),
+    'fatture_acquisto_xml': ('documenti.TestataFatturaAcquisto', 'xml_originale', 'documenti.vedi'),
+    'fatture_acquisto_allegati': ('documenti.TestataFatturaAcquisto', 'allegato', 'documenti.vedi'),
+    'anagrafica': ('anagrafiche.AnagraficaAzienda', 'logo', ''),
+    'avatars': ('accounts.Profile', 'avatar', ''),
 }
-CARTELLE_REGEX = '|'.join(PROTETTI)
+
+
+def _cartella(nome, azienda_id):
+    """Rifiuta percorsi ambigui e prefissi di altre aziende."""
+    if not nome or '\\' in nome or nome.startswith('/'):
+        return None
+    parts = PurePosixPath(nome).parts
+    if '..' in parts or '/'.join(parts) != nome:
+        return None
+    if parts[0] == 'aziende':
+        if len(parts) < 4 or parts[1] != str(azienda_id):
+            return None
+        parts = parts[2:]
+    return parts[0] if len(parts) >= 2 else None
+
+
+def file_appartiene_azienda(nome, azienda_id):
+    """True soltanto per file referenziati dall'azienda o copie del suo logo."""
+    if azienda_id is None:
+        return False
+    cartella = _cartella(nome, azienda_id)
+    spec = MEDIA_FIELDS.get(cartella)
+    if spec is None:
+        return False
+    model_label, field, _perm = spec
+    model = apps.get_model(model_label)
+    # Il filtro è esplicito anche quando il manager è già limitato dal contesto.
+    records = model._default_manager.filter(azienda_id=azienda_id)
+    if records.filter(**{field: nome}).exists():
+        return True
+    if cartella != 'anagrafica':
+        return False
+    from anagrafiche.logo import (
+        LATO_ANTEPRIMA, LATO_PDF, LATO_SIDEBAR, _nome_copia, _origine,
+    )
+    for record in records.exclude(logo='').exclude(logo__isnull=True):
+        origine = _origine(record.logo)
+        if origine is None:
+            continue
+        for lato in (LATO_SIDEBAR, LATO_ANTEPRIMA, LATO_PDF):
+            try:
+                if nome == _nome_copia(origine, lato, azienda_id=azienda_id):
+                    return True
+            except (OSError, ValueError):
+                continue
+    return False
 
 
 @login_required
-def media_protetto(request, cartella, percorso):
-    if cartella not in PROTETTI:
+def media_protetto(request, percorso):
+    azienda_id = current_azienda_id()
+    if not file_appartiene_azienda(percorso, azienda_id):
         raise Http404
-    perm = PROTETTI[cartella]
-    if perm is None:
-        raise Http404
-    if not has_perm(request.user, perm):
+    perm = MEDIA_FIELDS[_cartella(percorso, azienda_id)][2]
+    if perm and not has_perm(request.user, perm):
         raise PermissionDenied
-    base = (Path(settings.MEDIA_ROOT) / cartella).resolve()
+    base = Path(settings.MEDIA_ROOT).resolve()
     file = (base / percorso).resolve()
     if base not in file.parents or not file.is_file():
         raise Http404
-    relativo = file.relative_to(Path(settings.MEDIA_ROOT).resolve()).as_posix()
+    relativo = file.relative_to(base).as_posix()
     accel = getattr(settings, 'MEDIA_PROTETTI_ACCEL', '')
     if accel:
         risposta = HttpResponse()

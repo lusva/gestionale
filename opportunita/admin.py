@@ -1,10 +1,11 @@
 from django.contrib import admin
+from tenancy.admin import TenantAdminMixin
 
 from .models import Opportunita
 
 
 @admin.register(Opportunita)
-class OpportunitaAdmin(admin.ModelAdmin):
+class OpportunitaAdmin(TenantAdminMixin, admin.ModelAdmin):
     list_display = ('titolo', 'cliente', 'valore', 'stadio', 'probabilita', 'chiusura_prevista', 'owner')
     list_filter = ('stadio', 'owner')
     search_fields = ('titolo', 'cliente__ragione_sociale')

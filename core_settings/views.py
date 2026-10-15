@@ -17,6 +17,7 @@ from django.views.decorators.http import require_POST
 
 from accounts.models import Profile, Ruolo, StatoUtente
 from accounts.permissions import require_perm
+from accounts.tenancy import utenti_azienda
 from api.models import ApiToken, Webhook, WebhookEvento
 from audit.models import AuditLog, Azione
 from audit.utils import log as registra_audit
@@ -99,7 +100,7 @@ def _base_context(request, active):
 
 @login_required
 def utenti(request):
-    users = User.objects.select_related('profile').order_by('-is_active', 'first_name', 'last_name')
+    users = utenti_azienda().select_related('profile').order_by('-is_active', 'first_name', 'last_name')
     org = Organizzazione.current()
     active_count = users.filter(is_active=True).count()
     ctx = _base_context(request, 'utenti')
@@ -164,7 +165,7 @@ def cambia_ruolo(request, pk):
 @require_perm('utenti.gestisci')
 @require_POST
 def utente_toggle_attivo(request, pk):
-    user = get_object_or_404(User.objects.select_related('profile'), pk=pk)
+    user = get_object_or_404(utenti_azienda().select_related('profile'), pk=pk)
     if user.pk == request.user.pk:
         messages.error(request, 'Non puoi modificare lo stato del tuo account.')
         return _user_row_response(request, user)
@@ -180,7 +181,7 @@ def utente_toggle_attivo(request, pk):
 def utente_elimina(request, pk):
     if not request.user.is_superuser:
         return HttpResponseForbidden('Solo il superuser può eliminare utenti.')
-    user = get_object_or_404(User, pk=pk)
+    user = get_object_or_404(utenti_azienda(), pk=pk)
     if user.pk == request.user.pk:
         messages.error(request, 'Non puoi eliminare il tuo stesso account.')
         return _user_row_response(request, user)
@@ -209,10 +210,10 @@ def invita_utente(request):
 
         if not email:
             messages.error(request, 'Email obbligatoria')
-        elif User.objects.filter(email__iexact=email).exists():
-            messages.error(request, 'Utente già presente con questa email')
-        elif User.objects.filter(username__iexact=email).exists():
-            messages.error(request, 'Esiste già un utente con questo username')
+        elif (User.objects.filter(email__iexact=email).exists()
+              or User.objects.filter(username__iexact=email).exists()):
+            # Il login è univoco: non esporre l'appartenenza ad altre aziende.
+            messages.error(request, 'Questo indirizzo non è disponibile per un nuovo account.')
         else:
             password = get_random_string(12)
             user = User.objects.create_user(
@@ -355,40 +356,16 @@ def placeholder(request, titolo):
 
 @login_required
 def backup(request):
-    """Backup completo (database + file): elenco, creazione e download. Solo
-    superuser: dentro ci sono anche password PEC e certificato di firma."""
-    from . import backup as bk
-    ctx = _base_context(request, 'backup')
-    ctx['puo'] = request.user.is_superuser
-    if request.method == 'POST':
-        if not request.user.is_superuser:
-            messages.error(request, 'Solo un superuser può creare i backup.')
-            return redirect('settings:backup')
-        try:
-            file = bk.crea(con_media=request.POST.get('media') != '0')
-        except Exception as exc:  # disco pieno, permessi, database non SQLite…
-            messages.error(request, f'Backup non riuscito: {exc}')
-            return redirect('settings:backup')
-        registra_audit(Azione.EXPORT, request=request, target_type='Backup', target_label=file.name,
-                  meta={'byte': file.stat().st_size})
-        messages.success(request, f'Backup creato: {file.name}. Scaricalo e conservalo al sicuro.')
-        return redirect('settings:backup')
-    ctx['backups'] = bk.elenco() if request.user.is_superuser else []
-    ctx['conserva'] = bk.CONSERVA
-    return render(request, 'settings/backup.html', ctx)
+    """I backup completi sono un'operazione server, fuori dalle aziende web."""
+    if request.method != 'GET':
+        return HttpResponseForbidden('I backup completi sono gestiti esclusivamente dal server.')
+    return render(request, 'settings/backup.html', _base_context(request, 'backup'))
 
 
 @login_required
 def backup_scarica(request, nome):
-    from django.http import FileResponse, Http404
-    from . import backup as bk
-    if not request.user.is_superuser:
-        raise Http404
-    file = bk.percorso(nome)
-    if file is None:
-        raise Http404
-    registra_audit(Azione.EXPORT, request=request, target_type='Backup', target_label=f'Download {nome}')
-    return FileResponse(file.open('rb'), as_attachment=True, filename=nome)
+    from django.http import Http404
+    raise Http404('I backup completi sono gestiti esclusivamente dal server.')
 
 
 @require_perm('impostazioni.modifica')

@@ -1,6 +1,8 @@
 from django.conf import settings
 from django.db import models
 
+from tenancy.models import TenantModel
+
 
 class Azione(models.TextChoices):
     CREATE = 'create', 'Creato'
@@ -13,7 +15,7 @@ class Azione(models.TextChoices):
     EXPORT = 'export', 'Export'
 
 
-class AuditLog(models.Model):
+class AuditLog(TenantModel):
     actor = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.SET_NULL, null=True, blank=True,
@@ -38,6 +40,8 @@ class AuditLog(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
+        base_manager_name = 'objects'
+        default_manager_name = 'objects'
         ordering = ['-created_at']
         indexes = [
             models.Index(fields=['-created_at']),

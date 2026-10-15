@@ -1,4 +1,5 @@
 from django.contrib import admin
+from tenancy.admin import TenantAdminMixin
 
 from .models import (
     RimborsoChilometrico, ScadenzaFiscale, ScadenzaSpesa, SpesaRicorrente,
@@ -28,7 +29,7 @@ class ScadenzaSpesaAdmin(admin.ModelAdmin):
 
 
 @admin.register(RimborsoChilometrico)
-class RimborsoChilometricoAdmin(admin.ModelAdmin):
+class RimborsoChilometricoAdmin(TenantAdminMixin, admin.ModelAdmin):
     list_display = (
         'data', 'amministratore', 'partenza', 'destinazione',
         'km', 'tariffa_km', 'importo', 'stato',

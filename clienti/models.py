@@ -2,6 +2,8 @@ import uuid
 
 from django.conf import settings
 from django.db import models, router, transaction
+
+from tenancy.models import TenantModel
 from django.db.models import Sum
 from django.urls import reverse
 
@@ -19,8 +21,8 @@ class StatoCliente(models.TextChoices):
     INATTIVO = 'inattivo', 'Inattivo'
 
 
-class Tag(models.Model):
-    nome = models.CharField(max_length=50, unique=True)
+class Tag(TenantModel):
+    nome = models.CharField(max_length=50)
     colore = models.CharField(
         max_length=20, default='info',
         choices=[
@@ -33,17 +35,28 @@ class Tag(models.Model):
     )
 
     class Meta:
+        base_manager_name = 'objects'
+        default_manager_name = 'objects'
+        constraints = [
+            models.UniqueConstraint(fields=['azienda', 'nome'], name='clienti_tag_nome_az'),
+        ]
         ordering = ['nome']
 
     def __str__(self):
         return self.nome
 
 
-class Settore(models.Model):
-    nome = models.CharField(max_length=100, unique=True)
-    slug = models.SlugField(max_length=120, unique=True, blank=True)
+class Settore(TenantModel):
+    nome = models.CharField(max_length=100)
+    slug = models.SlugField(max_length=120, blank=True)
 
     class Meta:
+        base_manager_name = 'objects'
+        default_manager_name = 'objects'
+        constraints = [
+            models.UniqueConstraint(fields=['azienda', 'nome'], name='clienti_settore_nome_az'),
+            models.UniqueConstraint(fields=['azienda', 'slug'], name='clienti_settore_slug_az'),
+        ]
         ordering = ['nome']
         verbose_name = 'Settore'
         verbose_name_plural = 'Settori'
@@ -58,7 +71,7 @@ class Settore(models.Model):
         super().save(*args, **kwargs)
 
 
-class Cliente(models.Model):
+class Cliente(TenantModel):
     ragione_sociale = models.CharField(max_length=200)
     tipo = models.CharField(
         max_length=10, choices=TipoCliente.choices, default=TipoCliente.AZIENDA,
@@ -73,7 +86,7 @@ class Cliente(models.Model):
     # Nullable: privati ed esteri possono non averla. Il vincolo unique
     # ammette più NULL; le stringhe vuote vengono salvate come NULL (vedi save).
     partita_iva = models.CharField(
-        max_length=16, unique=True, db_index=True, null=True, blank=True,
+        max_length=16, db_index=True, null=True, blank=True,
     )
     codice_fiscale = models.CharField(max_length=16, blank=True)
     codice_sdi = models.CharField(max_length=7, blank=True)
@@ -141,6 +154,11 @@ class Cliente(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
+        base_manager_name = 'objects'
+        default_manager_name = 'objects'
+        constraints = [
+            models.UniqueConstraint(fields=['azienda', 'partita_iva'], name='clienti_cliente_partita_iva_az'),
+        ]
         ordering = ['ragione_sociale']
         indexes = [
             models.Index(fields=['stato']),
@@ -202,7 +220,7 @@ class Cliente(models.Model):
         return round((vinte / total) * 100)
 
 
-class Contatto(models.Model):
+class Contatto(TenantModel):
     cliente = models.ForeignKey(
         Cliente, on_delete=models.CASCADE, related_name='contatti',
     )
@@ -216,6 +234,8 @@ class Contatto(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
+        base_manager_name = 'objects'
+        default_manager_name = 'objects'
         ordering = ['-primary', 'cognome', 'nome']
 
     def __str__(self):
@@ -253,7 +273,7 @@ class Contatto(models.Model):
             return super().save(*args, **kwargs)
 
 
-class EsitoImportazioneClienti(models.Model):
+class EsitoImportazioneClienti(TenantModel):
     """Ricevuta atomica: lo stesso caricamento viene applicato una sola volta."""
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -261,3 +281,7 @@ class EsitoImportazioneClienti(models.Model):
     fingerprint = models.CharField(max_length=64)
     riepilogo = models.JSONField(default=dict)
     created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        base_manager_name = 'objects'
+        default_manager_name = 'objects'

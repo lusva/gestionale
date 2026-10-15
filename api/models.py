@@ -5,6 +5,8 @@ from datetime import timedelta
 
 from django.conf import settings
 from django.db import models
+
+from tenancy.models import TenantModel
 from django.utils import timezone
 
 # Ogni quanto al massimo si riscrive ``last_used_at``: una scrittura a ogni
@@ -22,7 +24,7 @@ def hash_token(raw: str) -> str:
     return hashlib.sha256((raw or '').encode('utf-8')).hexdigest()
 
 
-class ApiToken(models.Model):
+class ApiToken(TenantModel):
     """Token API (Bearer) associato a un utente.
 
     Nel DB resta solo l'hash SHA-256 del token (``token_hash``) e un
@@ -50,6 +52,8 @@ class ApiToken(models.Model):
     token_in_chiaro: str | None = None
 
     class Meta:
+        base_manager_name = 'objects'
+        default_manager_name = 'objects'
         ordering = ['-created_at']
         verbose_name = 'API token'
         verbose_name_plural = 'API token'
@@ -70,7 +74,9 @@ class ApiToken(models.Model):
         """Il token attivo corrispondente al valore in chiaro, o None."""
         if not raw:
             return None
-        return (cls.objects.select_related('user')
+        # Prima dell'autenticazione non conosciamo ancora l'azienda. Questo
+        # lookup globale è riservato al Bearer; le query dell'endpoint sono scoped.
+        return (cls.all_objects.select_related('user__profile', 'azienda')
                 .filter(token_hash=hash_token(raw), revoked=False).first())
 
     def segna_uso(self):
@@ -81,7 +87,7 @@ class ApiToken(models.Model):
             self.last_used_at = adesso
 
 
-class RichiestaIdempotente(models.Model):
+class RichiestaIdempotente(TenantModel):
     """Risposta già data a una scrittura con header ``Idempotency-Key``.
 
     Un doppio clic o un ritentativo di rete con la stessa chiave ricevono la
@@ -99,8 +105,10 @@ class RichiestaIdempotente(models.Model):
     created_at = models.DateTimeField(auto_now_add=True, db_index=True)
 
     class Meta:
+        base_manager_name = 'objects'
+        default_manager_name = 'objects'
         constraints = [
-            models.UniqueConstraint(fields=['token', 'chiave'], name='richiesta_idempotente_unica'),
+            models.UniqueConstraint(fields=['azienda', 'token', 'chiave'], name='richiesta_idempotente_unica'),
         ]
         verbose_name = 'Richiesta idempotente'
         verbose_name_plural = 'Richieste idempotenti'
@@ -142,7 +150,7 @@ class WebhookEvento(models.TextChoices):
     FATTURA_ACQUISTO_IMPORTATA = 'fattura_acquisto.importata', 'Fattura acquisto importata'
 
 
-class Webhook(models.Model):
+class Webhook(TenantModel):
     """Endpoint esterno che riceve eventi da Gestionale CRM via HTTP POST JSON.
 
     Il delivery parte dopo il commit, in un thread in background (nessuna
@@ -166,6 +174,8 @@ class Webhook(models.Model):
     ultimo_errore = models.TextField(blank=True)
 
     class Meta:
+        base_manager_name = 'objects'
+        default_manager_name = 'objects'
         ordering = ['-created_at']
 
     def __str__(self):

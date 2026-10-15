@@ -17,6 +17,8 @@ from decimal import Decimal
 from django.conf import settings
 from django.core.validators import MaxValueValidator, MinValueValidator
 from django.db import models, transaction
+
+from tenancy.models import TenantModel
 from django.utils import timezone
 
 
@@ -52,7 +54,7 @@ class TipoScadenzaFiscale(models.TextChoices):
     ALTRO = 'altro', 'Altro'
 
 
-class ScadenzaFiscale(models.Model):
+class ScadenzaFiscale(TenantModel):
     """Scadenza fiscale inserita manualmente.
 
     Esempi: liquidazione IVA mensile/trimestrale, F24 acconti, contributi
@@ -79,11 +81,13 @@ class ScadenzaFiscale(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
+        base_manager_name = 'objects'
+        default_manager_name = 'objects'
         ordering = ['data_scadenza']
         verbose_name = 'Scadenza fiscale'
         verbose_name_plural = 'Scadenze fiscali'
         constraints = [
-            models.UniqueConstraint(fields=['periodo_iva'], condition=~models.Q(periodo_iva=''),
+            models.UniqueConstraint(fields=['azienda', 'periodo_iva'], condition=~models.Q(periodo_iva=''),
                                     name='scadenza_fiscale_periodo_iva_unico'),
         ]
 
@@ -130,7 +134,7 @@ _MESI_PER_PERIODO = {
 }
 
 
-class SpesaRicorrente(models.Model):
+class SpesaRicorrente(TenantModel):
     """Template di spesa ricorrente.
 
     Da un template si generano N ``ScadenzaSpesa`` future (vedi
@@ -167,6 +171,8 @@ class SpesaRicorrente(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
+        base_manager_name = 'objects'
+        default_manager_name = 'objects'
         ordering = ['-attiva', 'descrizione']
         verbose_name = 'Spesa ricorrente'
         verbose_name_plural = 'Spese ricorrenti'
@@ -244,7 +250,7 @@ class SpesaRicorrente(models.Model):
         return nuove
 
 
-class ScadenzaSpesa(models.Model):
+class ScadenzaSpesa(TenantModel):
     """Singola scadenza generata da una ``SpesaRicorrente``.
 
     L'importo è copiato dal template alla creazione: se il template cambia
@@ -264,6 +270,8 @@ class ScadenzaSpesa(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
+        base_manager_name = 'objects'
+        default_manager_name = 'objects'
         ordering = ['data_scadenza']
         verbose_name = 'Scadenza spesa ricorrente'
         verbose_name_plural = 'Scadenze spese ricorrenti'
@@ -290,7 +298,7 @@ class StatoRimborso(models.TextChoices):
     PAGATO = 'pagato', 'Pagato'
 
 
-class RimborsoChilometrico(models.Model):
+class RimborsoChilometrico(TenantModel):
     """Rimborso chilometrico per trasferte degli amministratori.
 
     L'importo è ricalcolato al salvataggio come ``km * tariffa_km`` (arrotondato
@@ -344,6 +352,8 @@ class RimborsoChilometrico(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
+        base_manager_name = 'objects'
+        default_manager_name = 'objects'
         ordering = ['-data', '-id']
         verbose_name = 'Rimborso chilometrico'
         verbose_name_plural = 'Rimborsi chilometrici'

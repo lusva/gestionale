@@ -2,7 +2,7 @@ from datetime import timedelta
 from decimal import Decimal
 
 from django.contrib import messages
-from django.contrib.auth import get_user_model
+from accounts.tenancy import utenti_azienda
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.db import transaction
 from django.db.models import OuterRef, Q, Subquery
@@ -128,7 +128,7 @@ class PipelineView(LoginRequiredMixin, TemplateView):
         ctx = super().get_context_data(**kwargs)
         ctx.update(_pipeline_context(self.request.GET, self.request.user))
         ctx['stadi'] = Stadio.choices
-        ctx['pipeline_owners'] = get_user_model().objects.filter(
+        ctx['pipeline_owners'] = utenti_azienda().filter(
             Q(is_active=True) | Q(opportunita_owned__isnull=False),
         ).distinct().order_by('first_name', 'last_name', 'username')
         ctx['active_nav'] = 'opportunita'

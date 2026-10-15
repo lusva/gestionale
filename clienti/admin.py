@@ -1,4 +1,5 @@
 from django.contrib import admin
+from tenancy.admin import TenantAdminMixin
 
 from .models import Cliente, Contatto, Settore, Tag
 
@@ -9,7 +10,7 @@ class ContattoInline(admin.TabularInline):
 
 
 @admin.register(Cliente)
-class ClienteAdmin(admin.ModelAdmin):
+class ClienteAdmin(TenantAdminMixin, admin.ModelAdmin):
     list_display = ('ragione_sociale', 'tipo', 'settore', 'citta', 'stato', 'account_manager')
     list_filter = ('tipo', 'stato', 'settore', 'nazione')
     search_fields = ('ragione_sociale', 'partita_iva', 'codice_fiscale', 'pec')

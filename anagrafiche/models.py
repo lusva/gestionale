@@ -12,6 +12,8 @@ e OneToOne verso FatturazioneElettronica (vedi ``clienti.models.Cliente``).
 """
 from django.core.validators import RegexValidator
 from django.db import models
+
+from tenancy.models import TenantModel
 from django.db.models import Case, Value, When
 
 from .choices import CodiceNazione, ProvinciaItaliana
@@ -23,7 +25,7 @@ from .stile_documenti import COLORE_DOCUMENTI_PREDEFINITO
 # ---------------------------------------------------------------------------
 
 
-class FatturazioneElettronica(models.Model):
+class FatturazioneElettronica(TenantModel):
     sdi = models.CharField(max_length=7, blank=True, default='0000000')
     pec = models.CharField(max_length=100, blank=True, default='')
 
@@ -31,11 +33,13 @@ class FatturazioneElettronica(models.Model):
         return f'{self.sdi} - {self.pec}'
 
     class Meta:
+        base_manager_name = 'objects'
+        default_manager_name = 'objects'
         verbose_name = 'Fatturazione elettronica'
         verbose_name_plural = 'Fatturazione elettronica'
 
 
-class EsigibilitaIva(models.Model):
+class EsigibilitaIva(TenantModel):
     class TipoEsigibilitaIva(models.TextChoices):
         I = 'I', 'Esigibilità immediata'
         D = 'D', 'Esigibilità differita'
@@ -52,10 +56,12 @@ class EsigibilitaIva(models.Model):
         return self.get_tipo_display()
 
     class Meta:
+        base_manager_name = 'objects'
+        default_manager_name = 'objects'
         verbose_name_plural = 'Esigibilità Iva'
 
 
-class PosizioneIva(models.Model):
+class PosizioneIva(TenantModel):
     class EsigibilitaIvaChoice(models.TextChoices):
         I = 'I', 'Esigibilità immediata'
         D = 'D', 'Esigibilità differita'
@@ -107,12 +113,14 @@ class PosizioneIva(models.Model):
         return self.descrizione
 
     class Meta:
+        base_manager_name = 'objects'
+        default_manager_name = 'objects'
         ordering = ['aliquota', 'descrizione']
         verbose_name = 'Posizione IVA'
         verbose_name_plural = 'Posizioni IVA'
 
 
-class CassaPrevidenziale(models.Model):
+class CassaPrevidenziale(TenantModel):
     class TipoCassaPrevidenziale(models.TextChoices):
         TC01 = 'TC01', 'Cassa avvocati e procuratori legali'
         TC02 = 'TC02', 'Cassa dottori commercialisti'
@@ -158,11 +166,13 @@ class CassaPrevidenziale(models.Model):
         return f'{self.tipo} - {self.aliquota_cassa}%'
 
     class Meta:
+        base_manager_name = 'objects'
+        default_manager_name = 'objects'
         verbose_name = 'Cassa previdenziale'
         verbose_name_plural = 'Casse previdenziali'
 
 
-class ProfiloFiscale(models.Model):
+class ProfiloFiscale(TenantModel):
     class RegimeFiscale(models.TextChoices):
         RF01 = 'RF01', 'Ordinario'
         RF02 = 'RF02', 'Contribuenti minimi (L. 244/2007)'
@@ -199,6 +209,8 @@ class ProfiloFiscale(models.Model):
         return self.get_regime_fiscale_display()
 
     class Meta:
+        base_manager_name = 'objects'
+        default_manager_name = 'objects'
         verbose_name = 'Profilo fiscale'
         verbose_name_plural = 'Profili fiscali'
 
@@ -208,7 +220,7 @@ class ProfiloFiscale(models.Model):
 # ---------------------------------------------------------------------------
 
 
-class FormePagamento(models.Model):
+class FormePagamento(TenantModel):
     class ModalitaPagamentoType(models.TextChoices):
         MP01 = 'MP01', 'Contanti'
         MP02 = 'MP02', 'Assegno'
@@ -240,11 +252,13 @@ class FormePagamento(models.Model):
         return self.tipo_pagamento or self.get_modalita_pagamento_display()
 
     class Meta:
+        base_manager_name = 'objects'
+        default_manager_name = 'objects'
         verbose_name = 'Forma di pagamento'
         verbose_name_plural = 'Forme di pagamento'
 
 
-class Scadenza(models.Model):
+class Scadenza(TenantModel):
     """Regola di scadenza (in giorni / % sul totale) per una FormaPagamento."""
 
     numero_giorni = models.IntegerField()
@@ -266,6 +280,8 @@ class Scadenza(models.Model):
         )
 
     class Meta:
+        base_manager_name = 'objects'
+        default_manager_name = 'objects'
         ordering = ['numero_giorni']
         verbose_name_plural = 'Scadenze'
 
@@ -275,7 +291,7 @@ class Scadenza(models.Model):
 # ---------------------------------------------------------------------------
 
 
-class AnagraficaAzienda(models.Model):
+class AnagraficaAzienda(TenantModel):
     """Singola anagrafica dell'azienda titolare del gestionale."""
 
     ragione_sociale = models.CharField(max_length=255, default='')
@@ -293,10 +309,10 @@ class AnagraficaAzienda(models.Model):
     email = models.EmailField(default='')
     telefono = models.CharField(max_length=20, default='')
     partita_iva = models.CharField(
-        max_length=11, blank=True, null=True, unique=True,
+        max_length=11, blank=True, null=True,
     )
     codice_fiscale = models.CharField(
-        max_length=16, blank=True, null=True, unique=True,
+        max_length=16, blank=True, null=True,
     )
     fatturazione_elettronica = models.OneToOneField(
         FatturazioneElettronica,
@@ -481,11 +497,17 @@ class AnagraficaAzienda(models.Model):
         return obj
 
     class Meta:
+        base_manager_name = 'objects'
+        default_manager_name = 'objects'
+        constraints = [
+            models.UniqueConstraint(fields=['azienda', 'partita_iva'], name='anagrafiche_anagraficaazienda_partita_iva_az'),
+            models.UniqueConstraint(fields=['azienda', 'codice_fiscale'], name='anagrafiche_anagraficaazienda_codice_fiscale_az'),
+        ]
         verbose_name = 'Anagrafica azienda'
         verbose_name_plural = 'Anagrafiche azienda'
 
 
-class AbstractAnagrafica(models.Model):
+class AbstractAnagrafica(TenantModel):
     """Base comune per Fornitore, Agente (e storicamente Cliente in pas)."""
 
     ragione_sociale = models.CharField(max_length=255, blank=True, null=True)
@@ -494,10 +516,10 @@ class AbstractAnagrafica(models.Model):
     email = models.EmailField(blank=True, null=True)
     telefono = models.CharField(max_length=20, blank=True, null=True)
     partita_iva = models.CharField(
-        max_length=16, blank=True, null=True, unique=True,
+        max_length=16, blank=True, null=True,
     )
     codice_fiscale = models.CharField(
-        max_length=16, blank=True, null=True, unique=True,
+        max_length=16, blank=True, null=True,
     )
     fatturazione_elettronica = models.OneToOneField(
         FatturazioneElettronica,
@@ -508,6 +530,8 @@ class AbstractAnagrafica(models.Model):
     soft_delete = models.BooleanField(default=False)
 
     class Meta:
+        base_manager_name = 'objects'
+        default_manager_name = 'objects'
         abstract = True
 
 
@@ -524,6 +548,12 @@ class Fornitore(AbstractAnagrafica):
         return f'{self.nome or ""} {self.cognome or ""}'.strip() or 'Fornitore'
 
     class Meta:
+        base_manager_name = 'objects'
+        default_manager_name = 'objects'
+        constraints = [
+            models.UniqueConstraint(fields=['azienda', 'partita_iva'], name='anagrafiche_fornitore_partita_iva_az'),
+            models.UniqueConstraint(fields=['azienda', 'codice_fiscale'], name='anagrafiche_fornitore_codice_fiscale_az'),
+        ]
         verbose_name_plural = 'Fornitori'
         ordering = [
             Case(When(cognome__isnull=True, then=Value(1)), default=Value(0)),
@@ -535,8 +565,8 @@ class Fornitore(AbstractAnagrafica):
         ]
 
 
-class Referente(models.Model):
-    numero = models.PositiveIntegerField(primary_key=True, default=1)
+class Referente(TenantModel):
+    numero = models.PositiveIntegerField(default=1)
     nome = models.CharField(max_length=100, blank=True, default='')
     cognome = models.CharField(max_length=100, blank=True, default='')
 
@@ -544,6 +574,11 @@ class Referente(models.Model):
         return f'{self.numero} - {self.nome} {self.cognome}'.strip()
 
     class Meta:
+        base_manager_name = 'objects'
+        default_manager_name = 'objects'
+        constraints = [
+            models.UniqueConstraint(fields=['azienda', 'numero'], name='anagrafiche_referente_numero_az'),
+        ]
         verbose_name_plural = 'Referenti'
 
 
@@ -557,6 +592,12 @@ class Agente(AbstractAnagrafica):
         return full or self.ragione_sociale or 'Agente'
 
     class Meta:
+        base_manager_name = 'objects'
+        default_manager_name = 'objects'
+        constraints = [
+            models.UniqueConstraint(fields=['azienda', 'partita_iva'], name='anagrafiche_agente_partita_iva_az'),
+            models.UniqueConstraint(fields=['azienda', 'codice_fiscale'], name='anagrafiche_agente_codice_fiscale_az'),
+        ]
         verbose_name_plural = 'Agenti'
 
 
@@ -565,7 +606,7 @@ class Agente(AbstractAnagrafica):
 # ---------------------------------------------------------------------------
 
 
-class Indirizzo(models.Model):
+class Indirizzo(TenantModel):
     indirizzo = models.CharField(max_length=255, blank=True, null=True)
     cap = models.CharField(max_length=5, blank=True, null=True)
     comune = models.CharField(max_length=50, blank=True, null=True)
@@ -599,10 +640,12 @@ class Indirizzo(models.Model):
         return f'{self.indirizzo or ""} {self.comune or ""} {self.provincia or ""}'.strip()
 
     class Meta:
+        base_manager_name = 'objects'
+        default_manager_name = 'objects'
         verbose_name_plural = 'Indirizzi'
 
 
-class ContoCorrente(models.Model):
+class ContoCorrente(TenantModel):
     banca = models.CharField(max_length=150, blank=True, default='')
     intestatario = models.CharField(max_length=150, blank=True, default='')
     iban = models.CharField(max_length=27, default='')
@@ -634,6 +677,8 @@ class ContoCorrente(models.Model):
         return f'{self.banca} — {self.iban}'
 
     class Meta:
+        base_manager_name = 'objects'
+        default_manager_name = 'objects'
         verbose_name = 'Conto corrente'
         verbose_name_plural = 'Conti correnti'
 
@@ -643,7 +688,7 @@ class ContoCorrente(models.Model):
 # ---------------------------------------------------------------------------
 
 
-class Articolo(models.Model):
+class Articolo(TenantModel):
     class UM(models.TextChoices):
         PZ = 'PZ', 'PZ - Pezzi'
         MQ = 'MQ', 'MQ - Metri quadri'
@@ -675,12 +720,14 @@ class Articolo(models.Model):
         return f'{self.codice} - {self.descrizione}'
 
     class Meta:
+        base_manager_name = 'objects'
+        default_manager_name = 'objects'
         ordering = ['codice']
         verbose_name_plural = 'Articoli'
 
 
-class CategoriaCosto(models.Model):
-    codice = models.CharField(max_length=20, unique=True)
+class CategoriaCosto(TenantModel):
+    codice = models.CharField(max_length=20)
     descrizione = models.CharField(max_length=255)
     attiva = models.BooleanField(default=True)
     ordinamento = models.PositiveIntegerField(default=0)
@@ -689,6 +736,11 @@ class CategoriaCosto(models.Model):
         return f'{self.codice} - {self.descrizione}'
 
     class Meta:
+        base_manager_name = 'objects'
+        default_manager_name = 'objects'
+        constraints = [
+            models.UniqueConstraint(fields=['azienda', 'codice'], name='anagrafiche_categoriacosto_codice_az'),
+        ]
         ordering = ['ordinamento', 'codice']
         verbose_name = 'Categoria costo'
         verbose_name_plural = 'Categorie costo'

@@ -1,4 +1,5 @@
 from django import forms
+from accounts.tenancy import utenti_azienda
 
 from .models import Attivita
 
@@ -21,6 +22,7 @@ class AttivitaForm(forms.ModelForm):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        self.fields['owner'].queryset = utenti_azienda()
         # l'etichetta di un'opportunità contiene il cliente: caricato insieme
         self.fields['opportunita'].queryset = (
             self.fields['opportunita'].queryset.select_related('cliente'))

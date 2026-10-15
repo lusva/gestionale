@@ -1,6 +1,7 @@
 """Seed the CRM with demo data that mirrors the design handoff mock.
 
-Usage: `python manage.py seed [--reset] [--force]` (senza --force richiede DEBUG=True)
+Usage: `python manage.py seed [--azienda ID] [--reset] [--force]`
+(senza --force richiede DEBUG=True)
 """
 from __future__ import annotations
 
@@ -14,10 +15,13 @@ from django.db import transaction
 from django.utils import timezone
 
 from accounts.models import Ruolo, StatoUtente
+from accounts.tenancy import utenti_azienda
 from attivita.models import Attivita, TipoAttivita
 from clienti.models import Cliente, Contatto, Settore, StatoCliente, Tag, TipoCliente
 from core_settings.models import Organizzazione
 from opportunita.models import Opportunita, Stadio
+from tenancy.context import azienda_context, current_azienda_id
+from tenancy.models import Azienda
 
 
 USERS = [
@@ -79,7 +83,8 @@ class Command(BaseCommand):
     help = 'Popola il database con dati demo per il gestionale CRM.'
 
     def add_arguments(self, parser):
-        parser.add_argument('--reset', action='store_true', help='Elimina prima tutti i dati CRM (clienti, opp, att, utenti non-admin)')
+        parser.add_argument('--azienda', type=int, default=1, help='ID azienda destinataria dei dati demo (default: 1).')
+        parser.add_argument('--reset', action='store_true', help='Elimina prima i dati CRM e gli utenti non-superuser della sola azienda selezionata')
         parser.add_argument(
             '--force', action='store_true',
             help='Esegui anche con DEBUG=False (ATTENZIONE: crea utenti demo con password nota).',
@@ -95,7 +100,10 @@ class Command(BaseCommand):
             'ATTENZIONE: il seed crea/aggiorna dati e utenti demo con password "demo1234". '
             'Non usarlo su un database di produzione.'
         ))
-        self._seed(**opts)
+        if not Azienda.objects.filter(pk=opts['azienda'], attiva=True).exists():
+            raise CommandError('Azienda inesistente o disattiva. Creala prima con crea_azienda.')
+        with azienda_context(opts['azienda']):
+            self._seed(**opts)
 
     @transaction.atomic
     def _seed(self, **opts):
@@ -106,7 +114,7 @@ class Command(BaseCommand):
             Contatto.objects.all().delete()
             Cliente.objects.all().delete()
             Tag.objects.all().delete()
-            User.objects.exclude(is_superuser=True).delete()
+            utenti_azienda().exclude(is_superuser=True).delete()
 
         # Organization
         org, _ = Organizzazione.objects.get_or_create(defaults={'nome': 'Studio Rossi SRL', 'piano': 'Pro', 'posti_totali': 8})
@@ -121,8 +129,14 @@ class Command(BaseCommand):
         now = timezone.now()
         user_map: dict[str, User] = {}
         for u in USERS:
-            user, created = User.objects.get_or_create(
-                username=u['email'],
+            # La credenziale legacy resta valida per la prima azienda.
+            # Le altre hanno username distinti, senza toccare utenti esterni.
+            username = u['email'] if current_azienda_id() == 1 else f"azienda{current_azienda_id()}.{u['email']}"
+            if User.objects.filter(username=username).exclude(
+                    profile__azienda_id=current_azienda_id()).exists():
+                raise CommandError('Uno username demo appartiene a un’altra azienda: seed annullato.')
+            user, created = utenti_azienda().get_or_create(
+                username=username,
                 defaults={
                     'email': u['email'], 'first_name': u['first'], 'last_name': u['last'],
                     'is_staff': u.get('is_staff', False),
@@ -236,7 +250,7 @@ class Command(BaseCommand):
 
         self.stdout.write(self.style.SUCCESS(
             '\nSeed completato!\n'
-            'Login:   marco@studiorossi.it   (amministratore)\n'
+            f'Login:   {user_map["marco@studiorossi.it"].username}   (amministratore)\n'
             'Password: demo1234\n\n'
             'Superuser: usa `createsuperuser` se preferisci Django admin separato.'
         ))

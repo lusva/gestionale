@@ -12,20 +12,22 @@ prova, ogni file inviato al SDI è una fattura emessa.
 """
 from __future__ import annotations
 
-from django.core.management.base import BaseCommand, CommandError
+from django.core.management.base import CommandError
+from tenancy.commands import AziendeCommand
 
 from documenti.sdi import GIORNI_FINESTRA, verifica_configurazione
 
 
-class Command(BaseCommand):
+class Command(AziendeCommand):
     help = "Verifica la configurazione PEC per il SDI (nessun invio)."
 
     def add_arguments(self, parser):
+        super().add_arguments(parser)
         parser.add_argument('--giorni', type=int, default=GIORNI_FINESTRA)
         parser.add_argument('--timeout', type=int, default=30,
                             help='secondi di attesa per ciascun server')
 
-    def handle(self, *args, **opts):
+    def handle_azienda(self, *args, **opts):
         from anagrafiche.models import AnagraficaAzienda
 
         esiti = verifica_configurazione(

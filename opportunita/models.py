@@ -1,6 +1,8 @@
 from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.db import models
+
+from tenancy.models import TenantModel
 from django.urls import reverse
 from django.utils import timezone
 
@@ -33,7 +35,7 @@ PIPELINE_COLUMNS = [
 ]
 
 
-class Opportunita(models.Model):
+class Opportunita(TenantModel):
     cliente = models.ForeignKey(
         'clienti.Cliente', on_delete=models.CASCADE, related_name='opportunita',
     )
@@ -63,6 +65,8 @@ class Opportunita(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
+        base_manager_name = 'objects'
+        default_manager_name = 'objects'
         verbose_name = 'Opportunità'
         verbose_name_plural = 'Opportunità'
         ordering = ['ordine', '-updated_at']

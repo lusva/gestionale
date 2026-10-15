@@ -15,6 +15,7 @@ from typing import Any
 from django.conf import settings
 
 from .models import AuditLog
+from tenancy.context import azienda_context, current_azienda_id
 
 
 _storage = threading.local()
@@ -83,13 +84,25 @@ def log(
         target_id = str(getattr(target, 'pk', '') or '')
         target_label = str(target)[:200]
 
-    return AuditLog.objects.create(
-        actor=user if (user and getattr(user, 'is_authenticated', False)) else None,
-        actor_label=_actor_label(user)[:150],
-        azione=azione,
-        target_type=target_type[:50],
-        target_id=str(target_id)[:50],
-        target_label=target_label[:200],
-        ip=_client_ip(request),
-        meta=meta or {},
-    )
+    azienda_id = current_azienda_id()
+    # Login happens inside an anonymous request. Attribute its audit event to
+    # the authenticated user's company; failed anonymous attempts have no
+    # company and must not be written into another company's log.
+    if azienda_id is None and user and user.is_authenticated:
+        from accounts.models import Profile
+        azienda_id = Profile.all_objects.filter(user_id=user.pk).values_list(
+            'azienda_id', flat=True,
+        ).first()
+    if azienda_id is None:
+        return None
+    with azienda_context(azienda_id):
+        return AuditLog.objects.create(
+            actor=user if (user and getattr(user, 'is_authenticated', False)) else None,
+            actor_label=_actor_label(user)[:150],
+            azione=azione,
+            target_type=target_type[:50],
+            target_id=str(target_id)[:50],
+            target_label=target_label[:200],
+            ip=_client_ip(request),
+            meta=meta or {},
+        )

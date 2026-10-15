@@ -33,7 +33,7 @@ from accounts.permissions import has_perm
 from documenti.servizi import DatiNonValidi
 
 from . import webhooks
-from .auth import estrai_token
+from .auth import azienda_token_valida, estrai_token, richiesta_token
 from .mcp_tools import REGISTRO
 from .models import ApiToken, RichiestaIdempotente, hash_corpo
 
@@ -57,7 +57,7 @@ class _Annulla(Exception):
 
 def _token(request):
     tok = ApiToken.da_token(estrai_token(request))
-    if tok is None or not tok.user.is_active:
+    if tok is None or not tok.user.is_active or not azienda_token_valida(tok):
         return None
     return tok
 
@@ -194,9 +194,12 @@ def mcp_view(request):
         return JsonResponse({'jsonrpc': '2.0', 'id': None,
                              'error': {'code': -32001, 'message': 'Token mancante o non valido'}},
                             status=401, headers={'WWW-Authenticate': 'Bearer'})
-    tok.segna_uso()
-    # chi agisce, per l'audit e per i documenti (owner di attività, opportunità, rimborsi)
-    request.user = tok.user
+    with richiesta_token(request, tok):
+        return _messaggi(request, tok)
+
+
+def _messaggi(request, tok):
+    """L'intero batch MCP vive nel contesto dell'azienda autenticata."""
     try:
         corpo = json.loads(request.body or b'')
     except (ValueError, UnicodeDecodeError):

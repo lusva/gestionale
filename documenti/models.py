@@ -18,6 +18,8 @@ from decimal import Decimal
 from django.core.exceptions import ValidationError
 from django.core.validators import MaxValueValidator, MinValueValidator
 from django.db import models, transaction
+
+from tenancy.models import TenantModel
 from django.db.models.signals import post_delete, post_save
 from django.dispatch import receiver
 from datetime import datetime
@@ -79,7 +81,7 @@ def _vincolo_numero(nome, con_sezionale=False):
     """Unicità del numero per anno (e sezionale): impedisce numeri doppi
     anche se due salvataggi concorrenti leggono lo stesso ultimo numero."""
     campi = ['anno', 'sezionale', 'numero'] if con_sezionale else ['anno', 'numero']
-    return models.UniqueConstraint(fields=campi, name=f'documenti_{nome}_numero_unico')
+    return models.UniqueConstraint(fields=['azienda', *campi], name=f'documenti_{nome}_numero_unico')
 
 
 def _recalc_imponibile(testata, related_name='righe'):
@@ -95,7 +97,7 @@ def _recalc_imponibile(testata, related_name='righe'):
 # ---------------------------------------------------------------------------
 
 
-class TestataDocumento(models.Model):
+class TestataDocumento(TenantModel):
     numero = models.PositiveIntegerField(editable=False)
     anno = models.PositiveIntegerField(editable=False)
     data_documento = models.DateField(default=localdate, null=True, blank=True)
@@ -165,6 +167,8 @@ class TestataDocumento(models.Model):
             super().save(*args, **kwargs)
 
     class Meta:
+        base_manager_name = 'objects'
+        default_manager_name = 'objects'
         abstract = True
 
 
@@ -194,6 +198,8 @@ class TestataOfferta(TestataDocumento):
         return f'Offerta {self.numero}/{self.anno} - {self.cliente or self.fornitore or ""}'
 
     class Meta:
+        base_manager_name = 'objects'
+        default_manager_name = 'objects'
         ordering = ['-anno', '-numero']
         verbose_name = 'Offerta'
         verbose_name_plural = 'Offerte'
@@ -223,6 +229,8 @@ class TestataOrdine(TestataDocumento):
         return f'Ordine {self.numero}/{self.anno} - {self.cliente or self.fornitore or ""}'
 
     class Meta:
+        base_manager_name = 'objects'
+        default_manager_name = 'objects'
         ordering = ['-anno', '-numero']
         verbose_name = 'Ordine'
         verbose_name_plural = 'Ordini'
@@ -260,13 +268,15 @@ class TestataDdt(TestataDocumento):
         return f'DDT {self.numero}/{self.anno} - {self.cliente or ""}'
 
     class Meta:
+        base_manager_name = 'objects'
+        default_manager_name = 'objects'
         ordering = ['-anno', '-numero']
         verbose_name = 'DDT'
         verbose_name_plural = 'DDT'
         constraints = [_vincolo_numero('ddt')]
 
 
-class DocumentoSdi(models.Model):
+class DocumentoSdi(TenantModel):
     """Campi e stato dell'invio al Sistema di Interscambio, comuni a fatture
     e note di credito (``invio.invia_al_sdi``, ``sdi_pull``)."""
 
@@ -319,6 +329,8 @@ class DocumentoSdi(models.Model):
                 and self.sdi_stato not in self.SDI_STATI_REINVIO)
 
     class Meta:
+        base_manager_name = 'objects'
+        default_manager_name = 'objects'
         abstract = True
 
 
@@ -381,6 +393,8 @@ class TestataFattura(DocumentoSdi, TestataDocumento):
         return f'Fattura {sez}{self.numero}/{self.anno} - {self.cliente or ""}'
 
     class Meta:
+        base_manager_name = 'objects'
+        default_manager_name = 'objects'
         ordering = ['-anno', '-numero']
         verbose_name = 'Fattura'
         verbose_name_plural = 'Fatture'
@@ -414,6 +428,8 @@ class TestataNotaCredito(DocumentoSdi, TestataDocumento):
         return f'Nota Credito {sez}{self.numero}/{self.anno} - {self.cliente or ""}'
 
     class Meta:
+        base_manager_name = 'objects'
+        default_manager_name = 'objects'
         ordering = ['-anno', '-numero']
         verbose_name = 'Nota di credito'
         verbose_name_plural = 'Note di credito'
@@ -436,6 +452,8 @@ class TestataDdtFornitore(TestataDocumento):
         return f'DDT Fornitore {self.numero}/{self.anno} - {self.fornitore or ""}'
 
     class Meta:
+        base_manager_name = 'objects'
+        default_manager_name = 'objects'
         ordering = ['-anno', '-numero']
         verbose_name = 'DDT fornitore'
         verbose_name_plural = 'DDT fornitore'
@@ -509,13 +527,15 @@ class TestataFatturaAcquisto(TestataDocumento):
         )
 
     class Meta:
+        base_manager_name = 'objects'
+        default_manager_name = 'objects'
         ordering = ['-anno', '-numero']
         verbose_name = 'Fattura acquisto'
         verbose_name_plural = 'Fatture acquisto'
         constraints = [
             _vincolo_numero('fattura_acquisto'),
             models.UniqueConstraint(
-                fields=['fornitore', 'numero_fornitore', 'data_fornitore'],
+                fields=['azienda', 'fornitore', 'numero_fornitore', 'data_fornitore'],
                 name='documenti_fattura_acq_unique_per_fornitore',
                 condition=models.Q(numero_fornitore__isnull=False),
             ),
@@ -527,7 +547,7 @@ class TestataFatturaAcquisto(TestataDocumento):
 # ---------------------------------------------------------------------------
 
 
-class RigaDocumento(models.Model):
+class RigaDocumento(TenantModel):
     class UM(models.TextChoices):
         PZ = 'PZ', 'PZ'
         MQ = 'MQ', 'MQ'
@@ -618,6 +638,8 @@ class RigaDocumento(models.Model):
             )
 
     class Meta:
+        base_manager_name = 'objects'
+        default_manager_name = 'objects'
         ordering = ['numero_riga', 'id']
         verbose_name = 'Riga documento'
         verbose_name_plural = 'Righe documento'
@@ -628,7 +650,7 @@ class RigaDocumento(models.Model):
 # ---------------------------------------------------------------------------
 
 
-class RigaFatturaAcquisto(models.Model):
+class RigaFatturaAcquisto(TenantModel):
     class UM(models.TextChoices):
         PZ = 'PZ', 'PZ'
         MQ = 'MQ', 'MQ'
@@ -686,12 +708,14 @@ class RigaFatturaAcquisto(models.Model):
         return f'{self.testata_id} - {(self.descrizione or "")[:40]}'
 
     class Meta:
+        base_manager_name = 'objects'
+        default_manager_name = 'objects'
         ordering = ['numero_riga', 'id']
         verbose_name = 'Riga fattura acquisto'
         verbose_name_plural = 'Righe fattura acquisto'
 
 
-class ScadenzaFattura(models.Model):
+class ScadenzaFattura(TenantModel):
     """Scadenza di una fattura cliente (FK a TestataFattura). Gli incassi,
     anche parziali, sono ``IncassoScadenza``: il credito aperto è il
     residuo, non l'importo."""
@@ -724,12 +748,14 @@ class ScadenzaFattura(models.Model):
         return f'Fatt. {self.fattura.numero}/{self.fattura.anno} - {self.data} - {self.importo}'
 
     class Meta:
+        base_manager_name = 'objects'
+        default_manager_name = 'objects'
         ordering = ['data']
         verbose_name = 'Scadenza fattura'
         verbose_name_plural = 'Scadenze fattura'
 
 
-class ScadenzaFatturaAcquisto(models.Model):
+class ScadenzaFatturaAcquisto(TenantModel):
     class ModalitaPagamento(models.TextChoices):
         MP01 = 'MP01', 'Contanti'
         MP02 = 'MP02', 'Assegno'
@@ -786,6 +812,8 @@ class ScadenzaFatturaAcquisto(models.Model):
         return f'Fatt.acq. {self.fattura.numero}/{self.fattura.anno} - {self.data_scadenza} - {self.importo}'
 
     class Meta:
+        base_manager_name = 'objects'
+        default_manager_name = 'objects'
         ordering = ['data_scadenza']
         verbose_name = 'Scadenza fattura acquisto'
         verbose_name_plural = 'Scadenze fattura acquisto'
@@ -808,7 +836,7 @@ def scadenze_acquisto_con_residuo(qs=None):
     ).annotate(residuo_db=ExpressionWrapper(F('importo') - F('pagato_db'), output_field=importo))
 
 
-class PagamentoScadenzaAcquisto(models.Model):
+class PagamentoScadenzaAcquisto(TenantModel):
     scadenza = models.ForeignKey(
         ScadenzaFatturaAcquisto, on_delete=models.CASCADE,
         related_name='pagamenti',
@@ -827,12 +855,14 @@ class PagamentoScadenzaAcquisto(models.Model):
         return f'{self.data_pagamento} - {self.importo}'
 
     class Meta:
+        base_manager_name = 'objects'
+        default_manager_name = 'objects'
         ordering = ['-data_pagamento']
         verbose_name = 'Pagamento scadenza acquisto'
         verbose_name_plural = 'Pagamenti scadenze acquisto'
 
 
-class IncassoScadenza(models.Model):
+class IncassoScadenza(TenantModel):
     """Un incasso (anche parziale) su una scadenza di una fattura cliente.
     I signal tengono ``TestataFattura.pagata`` / ``data_pagamento`` allineati:
     pagata quando tutte le scadenze hanno residuo zero, alla data
@@ -855,6 +885,8 @@ class IncassoScadenza(models.Model):
     creato_il = models.DateTimeField(auto_now_add=True)
 
     class Meta:
+        base_manager_name = 'objects'
+        default_manager_name = 'objects'
         ordering = ['data', 'pk']
         verbose_name = 'Incasso'
         verbose_name_plural = 'Incassi'
@@ -918,7 +950,7 @@ def con_incassi(qs):
 # ---------------------------------------------------------------------------
 
 
-class AgenteFattura(models.Model):
+class AgenteFattura(TenantModel):
     agente = models.ForeignKey(
         'anagrafiche.Agente', on_delete=models.CASCADE,
     )
@@ -933,6 +965,8 @@ class AgenteFattura(models.Model):
         return f'{self.agente} - {self.fattura} - {self.provvigione}%'
 
     class Meta:
+        base_manager_name = 'objects'
+        default_manager_name = 'objects'
         verbose_name = 'Agente fattura'
         verbose_name_plural = 'Agenti fattura'
         unique_together = [('agente', 'fattura')]
@@ -1107,7 +1141,7 @@ def _propaga_pagamento_scadenza(sender, instance, **kwargs):
 # ---------------------------------------------------------------------------
 
 
-class MessaggioSdi(models.Model):
+class MessaggioSdi(TenantModel):
     """Log dei messaggi scambiati con il Sistema di Interscambio.
 
     Una fattura ne accumula molti: ``invio`` (l'invio effettuato),
@@ -1152,6 +1186,8 @@ class MessaggioSdi(models.Model):
     )
 
     class Meta:
+        base_manager_name = 'objects'
+        default_manager_name = 'objects'
         ordering = ['-timestamp']
         verbose_name = 'Messaggio SDI'
         verbose_name_plural = 'Messaggi SDI'
@@ -1171,7 +1207,7 @@ class MessaggioSdi(models.Model):
         return f'{self.documento} — {self.tipo} ({self.timestamp:%d/%m/%Y})'
 
 
-class MessaggioPecElaborato(models.Model):
+class MessaggioPecElaborato(TenantModel):
     """Email della casella PEC già elaborate da ``sdi_pull``.
 
     La PEC è quella aziendale, letta anche da persone: ``sdi_pull`` non ne
@@ -1181,10 +1217,15 @@ class MessaggioPecElaborato(models.Model):
     rielaborare l'email alla run successiva, se ancora nella finestra.
     """
 
-    chiave = models.CharField(max_length=255, unique=True)
+    chiave = models.CharField(max_length=255)
     elaborato_il = models.DateTimeField(auto_now_add=True)
 
     class Meta:
+        base_manager_name = 'objects'
+        default_manager_name = 'objects'
+        constraints = [
+            models.UniqueConstraint(fields=['azienda', 'chiave'], name='documenti_messaggiopecelaborato_chiave_az'),
+        ]
         ordering = ['-elaborato_il']
         verbose_name = 'Email PEC elaborata'
         verbose_name_plural = 'Email PEC elaborate'
@@ -1203,7 +1244,7 @@ def _periodicita_choices():
     return Periodicita.choices
 
 
-class FatturaRicorrente(models.Model):
+class FatturaRicorrente(TenantModel):
     """Una fattura che si ripete (canone di assistenza, noleggio…): ogni
     periodo ne nasce una vera, datata il giorno in cui si emette. La logica
     è in ``documenti/ricorrenti.py``; le emette il comando
@@ -1241,6 +1282,8 @@ class FatturaRicorrente(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
+        base_manager_name = 'objects'
+        default_manager_name = 'objects'
         ordering = ['-attiva', 'nome']
         verbose_name = 'Fattura ricorrente'
         verbose_name_plural = 'Fatture ricorrenti'
@@ -1249,7 +1292,7 @@ class FatturaRicorrente(models.Model):
         return self.nome
 
 
-class RigaFatturaRicorrente(models.Model):
+class RigaFatturaRicorrente(TenantModel):
     """Riga del modello: stessi campi di ``RigaDocumento``, così il form usa
     le stesse righe (e lo stesso JS) delle fatture."""
 
@@ -1265,6 +1308,8 @@ class RigaFatturaRicorrente(models.Model):
                             blank=True, null=True, related_name='+')
 
     class Meta:
+        base_manager_name = 'objects'
+        default_manager_name = 'objects'
         ordering = ['numero_riga', 'id']
         verbose_name = 'Riga fattura ricorrente'
         verbose_name_plural = 'Righe fatture ricorrenti'
@@ -1273,7 +1318,7 @@ class RigaFatturaRicorrente(models.Model):
         return f'{self.ricorrenza_id} - {(self.descrizione_libera or "")[:40]}'
 
 
-class EmissioneRicorrente(models.Model):
+class EmissioneRicorrente(TenantModel):
     """Un periodo di una ricorrenza: emesso (con la fattura) o non riuscito
     (con l'errore, si riprova alla run successiva). Il vincolo su
     (ricorrenza, periodo) è la garanzia che un periodo non si fatturi mai
@@ -1296,11 +1341,13 @@ class EmissioneRicorrente(models.Model):
     aggiornata_il = models.DateTimeField(auto_now=True)
 
     class Meta:
+        base_manager_name = 'objects'
+        default_manager_name = 'objects'
         ordering = ['-periodo']
         verbose_name = 'Emissione ricorrente'
         verbose_name_plural = 'Emissioni ricorrenti'
         constraints = [
-            models.UniqueConstraint(fields=['ricorrenza', 'periodo'],
+            models.UniqueConstraint(fields=['azienda', 'ricorrenza', 'periodo'],
                                     name='documenti_emissione_ricorrente_unica'),
         ]
 

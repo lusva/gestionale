@@ -32,6 +32,7 @@ from urllib.parse import urlsplit
 from django.conf import settings
 from django.db import close_old_connections, transaction
 from django.utils import timezone
+from tenancy.context import azienda_context, current_azienda_id
 
 from .models import Webhook
 
@@ -119,10 +120,20 @@ def dispatch(evento: str, payload: dict | Callable[[], dict | None]):
     commit avvenuto (se restituisce None l'evento si scarta)."""
     if getattr(_locale, 'sospesi', False):
         return
-    transaction.on_commit(lambda: _dopo_commit(evento, payload))
+    azienda_id = current_azienda_id()
+    if azienda_id is None:
+        return
+    # Il callback può partire quando la richiesta ha già lasciato il proprio
+    # contesto; anche la costruzione differita del payload deve usare l'azienda.
+    transaction.on_commit(lambda: _dopo_commit(evento, payload, azienda_id))
 
 
-def _dopo_commit(evento: str, payload):
+def _dopo_commit(evento: str, payload, azienda_id):
+    with azienda_context(azienda_id):
+        _prepara_consegna(evento, payload, azienda_id)
+
+
+def _prepara_consegna(evento: str, payload, azienda_id):
     try:
         hooks = [h for h in Webhook.objects.filter(attivo=True) if h.accetta(evento)]
         if not hooks:
@@ -134,16 +145,18 @@ def _dopo_commit(evento: str, payload):
     if dati is None:
         return
     if getattr(settings, 'WEBHOOK_IN_BACKGROUND', True):
-        threading.Thread(target=_consegna_tutti, args=(hooks, evento, dati),
+        threading.Thread(target=_consegna_tutti, args=(hooks, evento, dati, azienda_id),
                          name=f'webhook-{evento}', daemon=True).start()
     else:
-        _consegna_tutti(hooks, evento, dati, chiudi_connessioni=False)
+        _consegna_tutti(hooks, evento, dati, azienda_id, chiudi_connessioni=False)
 
 
-def _consegna_tutti(hooks, evento, dati, chiudi_connessioni=True):
+def _consegna_tutti(hooks, evento, dati, azienda_id, chiudi_connessioni=True):
     try:
-        for h in hooks:
-            _deliver(h, evento, dati)
+        with azienda_context(azienda_id):
+            for h in hooks:
+                if h.azienda_id == azienda_id:
+                    _deliver(h, evento, dati)
     finally:
         if chiudi_connessioni:
             close_old_connections()

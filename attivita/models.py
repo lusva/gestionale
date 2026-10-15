@@ -1,5 +1,7 @@
 from django.conf import settings
 from django.db import models
+
+from tenancy.models import TenantModel
 from django.urls import reverse
 
 
@@ -28,7 +30,7 @@ TIPO_COLOR = {
 }
 
 
-class Attivita(models.Model):
+class Attivita(TenantModel):
     cliente = models.ForeignKey(
         'clienti.Cliente', on_delete=models.CASCADE, related_name='attivita',
         null=True, blank=True,
@@ -53,6 +55,8 @@ class Attivita(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
+        base_manager_name = 'objects'
+        default_manager_name = 'objects'
         verbose_name = 'Attività'
         verbose_name_plural = 'Attività'
         ordering = ['-data']

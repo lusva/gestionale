@@ -7,8 +7,10 @@ impostando ``AnagraficaAzienda.modulo_magazzino_attivo = False``.
 """
 from django.db import models
 
+from tenancy.models import TenantModel
 
-class Movimento(models.Model):
+
+class Movimento(TenantModel):
     class Tipo(models.TextChoices):
         CARICO = 'C', 'Carico (DDT fornitore)'
         SCARICO = 'S', 'Scarico (DDT / fattura)'
@@ -39,6 +41,8 @@ class Movimento(models.Model):
         return f'{self.data} {self.tipo} {self.articolo} × {self.quantita}'
 
     class Meta:
+        base_manager_name = 'objects'
+        default_manager_name = 'objects'
         ordering = ['-data', '-id']
         indexes = [
             models.Index(fields=['tipo']),

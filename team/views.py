@@ -9,7 +9,6 @@ import datetime as dt
 from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
-from django.contrib.auth.models import User
 from django.db.models import Count, Q, Sum
 from django.http import Http404
 from django.shortcuts import get_object_or_404, redirect, render
@@ -19,6 +18,8 @@ from django.views.decorators.http import require_POST
 
 from accounts.models import Profile, Ruolo
 from accounts.permissions import has_perm
+from accounts.tenancy import utenti_azienda
+from tenancy.context import current_azienda_id
 from attivita.models import Attivita
 from clienti.models import Cliente
 from opportunita.models import Opportunita, Stadio
@@ -35,11 +36,13 @@ TINTE = 6
 def _membri(utenti):
     """Gli utenti con i numeri delle card. `utenti` è un queryset di User."""
     ora = timezone.now()
-    aperte = Q(attivita_assegnate__completata=False)
+    # I join di aggregazione non invocano il manager delle attività.
+    attivita_azienda = Q(attivita_assegnate__azienda_id=current_azienda_id())
+    aperte = attivita_azienda & Q(attivita_assegnate__completata=False)
     membri = list(
         utenti.filter(profile__isnull=False).select_related('profile').annotate(
             n_aperte=Count('attivita_assegnate', filter=aperte),
-            n_completate=Count('attivita_assegnate', filter=Q(attivita_assegnate__completata=True)),
+            n_completate=Count('attivita_assegnate', filter=attivita_azienda & Q(attivita_assegnate__completata=True)),
             n_ritardo=Count('attivita_assegnate',
                             filter=aperte & Q(attivita_assegnate__data__lt=ora)),
             minuti_7gg=Sum('attivita_assegnate__durata_minuti',
@@ -85,7 +88,7 @@ def _reparti():
 @login_required
 def index(request):
     membri = _membri(
-        User.objects.filter(is_active=True).order_by('first_name', 'last_name', 'username')
+        utenti_azienda().filter(is_active=True).order_by('first_name', 'last_name', 'username')
     )
     gruppi = sorted({m.gruppo for m in membri}, key=str.casefold)
     apri = request.GET.get('membro', '')
@@ -106,7 +109,7 @@ def scheda(request, pk):
     """Il contenuto del pannello laterale; senza HTMX la pagina Team lo apre."""
     if not request.htmx:
         return redirect(f"{reverse('team:index')}?membro={pk}")
-    membri = _membri(User.objects.filter(pk=pk, is_active=True))
+    membri = _membri(utenti_azienda().filter(pk=pk, is_active=True))
     if not membri:
         raise Http404
     m = membri[0]
@@ -127,7 +130,7 @@ def scheda(request, pk):
 @login_required
 @require_POST
 def modifica(request, pk):
-    utente = get_object_or_404(User.objects.select_related('profile'), pk=pk, is_active=True)
+    utente = get_object_or_404(utenti_azienda().select_related('profile'), pk=pk, is_active=True)
     if request.user.pk != utente.pk and not has_perm(request.user, 'utenti.gestisci'):
         messages.error(request, 'Puoi modificare solo la tua scheda.')
         return redirect('team:index')

@@ -33,6 +33,9 @@ jobs:
             git fetch --all --prune
             git reset --hard origin/main
 
+            echo "==> Verifico isolamento media prima di migrare e riavviare"
+            python3 deploy/check_tenant_media.py https://gestionale.aigislab.ai
+
             echo "==> Attivo virtualenv"
             source venv/bin/activate
 
@@ -51,3 +54,6 @@ jobs:
 
             echo "==> Stato servizio"
             systemctl is-active "${{ vars.SERVICE_NAME }}"
+
+            echo "==> Verifica HTTPS e protezione CSRF del login pubblico"
+            python deploy/check_https.py https://gestionale.aigislab.ai

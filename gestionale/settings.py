@@ -83,6 +83,7 @@ INSTALLED_APPS = [
 
     'django_htmx',
 
+    'tenancy',
     'accounts',
     'anagrafiche',
     'clienti',
@@ -106,6 +107,7 @@ MIDDLEWARE = [
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
+    'tenancy.middleware.AziendaMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
     'django_htmx.middleware.HtmxMiddleware',
@@ -177,7 +179,7 @@ STATIC_URL = 'static/'
 STATICFILES_DIRS = [BASE_DIR / 'static']
 STATIC_ROOT = BASE_DIR / 'staticfiles'
 STORAGES = {
-    'default': {'BACKEND': 'django.core.files.storage.FileSystemStorage'},
+    'default': {'BACKEND': 'tenancy.storage.TenantFileSystemStorage'},
     # nomi con hash del contenuto: niente CSS/JS vecchi in cache dopo un deploy
     'staticfiles': {'BACKEND': 'gestionale.storage.StaticConHash'},
 }

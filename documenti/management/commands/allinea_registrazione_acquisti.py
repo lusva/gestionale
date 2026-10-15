@@ -13,21 +13,22 @@ diversa da quella del documento.
 Argomenti:
 - ``--dry-run``: elenca le fatture ma non le modifica
 """
-from django.core.management.base import BaseCommand
+from tenancy.commands import AziendeCommand
 from django.db.models import F
 
 from documenti.models import TestataFatturaAcquisto
 
 
-class Command(BaseCommand):
+class Command(AziendeCommand):
     help = ('Allinea la data di registrazione delle fatture di acquisto '
             'importate da XML alla data del documento.')
 
     def add_arguments(self, parser):
+        super().add_arguments(parser)
         parser.add_argument('--dry-run', action='store_true',
                             help='Elenca le fatture senza modificarle.')
 
-    def handle(self, *args, dry_run=False, **opts):
+    def handle_azienda(self, *args, dry_run=False, **opts):
         qs = (TestataFatturaAcquisto.objects
               .exclude(xml_originale='').exclude(xml_originale__isnull=True)
               .exclude(data_documento__isnull=True)

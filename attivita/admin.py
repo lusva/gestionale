@@ -1,10 +1,11 @@
 from django.contrib import admin
+from tenancy.admin import TenantAdminMixin
 
 from .models import Attivita
 
 
 @admin.register(Attivita)
-class AttivitaAdmin(admin.ModelAdmin):
+class AttivitaAdmin(TenantAdminMixin, admin.ModelAdmin):
     list_display = ('titolo', 'tipo', 'cliente', 'data', 'completata', 'owner')
     list_filter = ('tipo', 'completata', 'owner')
     search_fields = ('titolo', 'cliente__ragione_sociale')

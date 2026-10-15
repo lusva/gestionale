@@ -1,8 +1,10 @@
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
-from django.contrib.auth.models import User
+from django.contrib.auth.models import Group, User
 
 from .models import Profile
+from .tenancy import utenti_azienda
+from .views import AziendaAdminAuthenticationForm
 
 
 class ProfileInline(admin.StackedInline):
@@ -15,6 +17,19 @@ class ProfileInline(admin.StackedInline):
 class UserAdmin(BaseUserAdmin):
     inlines = [ProfileInline]
     list_display = ('username', 'email', 'first_name', 'last_name', 'ruolo', 'stato_profilo', 'is_staff')
+    # Gruppi e permessi Django sono globali: la gestione applicativa usa i
+    # ruoli del profilo, senza esporre o modificare configurazioni condivise.
+    filter_horizontal = ()
+    list_filter = ('is_staff', 'is_superuser', 'is_active')
+    fieldsets = tuple(
+        (title, {**options, 'fields': tuple(
+            field for field in options['fields'] if field not in ('groups', 'user_permissions')
+        )})
+        for title, options in BaseUserAdmin.fieldsets
+    )
+
+    def get_queryset(self, request):
+        return super().get_queryset(request).filter(pk__in=utenti_azienda().values('pk'))
 
     def get_inline_instances(self, request, obj=None):
         # In fase di creazione il Profile viene generato dal signal post_save
@@ -38,3 +53,8 @@ try:
 except admin.sites.NotRegistered:
     pass
 admin.site.register(User, UserAdmin)
+admin.site.login_form = AziendaAdminAuthenticationForm
+try:
+    admin.site.unregister(Group)
+except admin.sites.NotRegistered:
+    pass

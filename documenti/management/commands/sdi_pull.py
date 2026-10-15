@@ -46,7 +46,8 @@ from __future__ import annotations
 import logging
 import re
 
-from django.core.management.base import BaseCommand, CommandError
+from django.core.management.base import CommandError
+from tenancy.commands import AziendeCommand
 from django.db import transaction
 
 from documenti.models import MessaggioSdi, TestataFattura, TestataNotaCredito
@@ -143,15 +144,16 @@ def match_documento(m):
 match_fattura = match_documento
 
 
-class Command(BaseCommand):
+class Command(AziendeCommand):
     help = "Scarica notifiche SDI dalla PEC e le applica alle fatture."
 
     def add_arguments(self, parser):
+        super().add_arguments(parser)
         parser.add_argument('--dry-run', action='store_true')
         parser.add_argument('--limit', type=int, default=200)
         parser.add_argument('--giorni', type=int, default=GIORNI_FINESTRA)
 
-    def handle(self, *args, **opts):
+    def handle_azienda(self, *args, **opts):
         if opts['dry_run']:
             self._esegui(opts)
             return

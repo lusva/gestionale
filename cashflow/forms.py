@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from django import forms
-from django.contrib.auth import get_user_model
+from accounts.tenancy import utenti_azienda
 from django.db.models import Q
 
 from accounts.models import Ruolo
@@ -162,7 +162,6 @@ class RimborsoChilometricoForm(forms.ModelForm):
 
     def __init__(self, *args, request=None, **kwargs):
         super().__init__(*args, **kwargs)
-        User = get_user_model()
         filtro = Q(profile__ruolo=Ruolo.AMMINISTRATORE)
         utente_corrente = getattr(request, 'user', None)
         self.puo_approvare = puo_approvare_rimborsi(utente_corrente)
@@ -171,7 +170,7 @@ class RimborsoChilometricoForm(forms.ModelForm):
         if self.instance and self.instance.amministratore_id:
             filtro = filtro | Q(pk=self.instance.amministratore_id)
         self.fields['amministratore'].queryset = (
-            User.objects.filter(filtro).distinct()
+            utenti_azienda().filter(filtro).distinct()
             .order_by('first_name', 'last_name', 'username')
         )
         self.fields['amministratore'].label_from_instance = (

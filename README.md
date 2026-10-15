@@ -116,7 +116,7 @@ Re-seed: `python manage.py seed --reset` (mantiene i superuser, cancella CRM dat
 ## Comandi utili
 
 ```bash
-python manage.py createsuperuser        # admin separato per /admin/
+python manage.py createsuperuser        # admin per /admin/, associato all'azienda iniziale (ID 1)
 python manage.py makemigrations         # dopo modifiche ai modelli
 python manage.py collectstatic          # deploy
 python manage.py shell_plus             # (se installi django-extensions)
@@ -139,7 +139,72 @@ chiavi della matrice UI (visualizza clienti, elimina clienti, …) ai tre ruoli 
 - **Decoratore per view funzionali:** `@require_perm('clienti.elimina')`
 - **Mixin per CBV:** `class X(PermRequiredMixin, DeleteView): required_perm = 'clienti.elimina'`
 - **Nei template:** `{% if user_perms_map|get_item:'clienti.elimina' %}…{% endif %}`
-- Il superuser bypassa sempre la matrice.
+- Il superuser bypassa la matrice dei ruoli, ma resta limitato ai dati della propria azienda.
+
+## Accesso multi-azienda
+
+Il sito può ospitare più aziende nello stesso database. Ogni utente appartiene a
+**una sola azienda** tramite `Profile.azienda`; username e identità di login
+rimangono globali, quindi aziende diverse devono usare username distinti.
+L'azienda della richiesta è determinata sul server dal profilo autenticato o
+dall'utente del token API/MCP. Il browser non può scegliere un'altra azienda
+inviando un ID nel form, nell'URL o nella richiesta API.
+
+I modelli applicativi ereditano `TenantModel`: il manager `objects` limita le
+query all'azienda corrente e le scritture verificano la coerenza delle relazioni.
+L'isolamento si applica anche a utenti e Team, ricerca, statistiche, documenti,
+allegati, integrazioni e amministrazione Django. Il superuser web vede la propria
+azienda. Questa è una separazione applicativa nell'ORM, non una separazione fisica
+dei database; l'accesso diretto al database e `all_objects` sono riservati a
+operazioni server esplicite. I nuovi endpoint e comandi devono preservare questo
+confine e usare `azienda_context()` quando operano fuori da una richiesta.
+
+Le migrazioni creano l'azienda iniziale con **ID 1** e assegnano a questa i dati e
+gli utenti già presenti. Per aggiungere un'azienda vuota con un amministratore:
+
+```bash
+python manage.py crea_azienda "Azienda B" --username admin-b --email admin-b@example.test
+```
+
+Il comando richiede la password due volte, senza mostrarla, e crea anche
+l'anagrafica e l'organizzazione iniziali. Non invia email e non abilita i flag
+Django `is_staff` o `is_superuser`: il nuovo account ha il ruolo applicativo
+**Amministratore**. Per automazioni è disponibile `--password-env NOME_VARIABILE`;
+la password deve essere già nella variabile indicata, mai negli argomenti del
+comando. Dopo il login l'amministratore può invitare colleghi da **Impostazioni →
+Utenti**: i nuovi utenti vengono associati alla sua azienda.
+
+Per dati dimostrativi usare `python manage.py seed --azienda ID` in sviluppo.
+Il seed senza `--azienda` continua a usare l'azienda 1; `--reset` cancella i dati
+CRM e gli utenti non-superuser della sola azienda selezionata. Le aziende con
+ID maggiore di 1 usano username demo come `azienda2.marco@studiorossi.it`, stampati
+dal comando. Le password demo note restano adatte soltanto ad ambienti di prova.
+
+I comandi operativi `sdi_pull`, `sdi_verifica`, `genera_fatture_ricorrenti`,
+`invia_promemoria_scadenze` e `allinea_registrazione_acquisti` accettano
+`--azienda ID`. Senza questo parametro elaborano separatamente **tutte le aziende
+attive**, così i timer esistenti continuano a funzionare. I richiami dal sito
+passano sempre l'azienda della sessione. Le configurazioni PEC, SDI, webhook e
+fatturazione vanno completate per ciascuna azienda prima di usarne le integrazioni.
+
+I backup completi includono tutte le aziende e sono disponibili solo dal server:
+`python manage.py backup` oppure il timer `deploy/gestionale-backup.timer`.
+Creazione e download via web sono disabilitati anche per il superuser.
+
+**Prima di aprire l'accesso ad aziende diverse in produzione**, applicare le
+migrazioni e aggiornare la configurazione nginx seguendo
+`deploy/nginx-gestionale.conf`: tutto `/media/` deve passare da Django e la
+location `/media-protetti/` deve essere `internal`. Una vecchia configurazione che
+serve direttamente i file aggirerebbe i controlli applicativi. Il controllo
+anonimo dei media nel deploy verifica questa configurazione. L'implementazione
+locale e i test non applicano da soli né il deploy né le migrazioni al database
+in produzione.
+
+Verifica dell'isolamento con database di test separato:
+
+```bash
+python manage.py test tenancy accounts.tests
+```
 
 ## Import / Export CSV clienti
 
@@ -326,9 +391,17 @@ passive arrivano lì.
 - **Fatture di acquisto inserite a mano** — Acquisti › Fatture di acquisto › «Nuova fattura di acquisto» (o <kbd>N</kbd>): per le fatture cartacee e dei fornitori esteri. Righe con sconto, IVA e categoria di costo (proposta dalla riga sopra), riepilogo live, scadenze dalla forma di pagamento (quella abituale si imposta nella scheda del fornitore) e PDF o scansione allegati (`media/fatture_acquisto_allegati/`, solo con il permesso di vedere i documenti). Un numero già registrato per lo stesso fornitore e data viene rifiutato. Le fatture importate dall'XML si aprono in versione ridotta: categorie di costo, stato, data di registrazione, note e allegato; importi e righe restano quelli dell'XML. Si eliminano solo quelle inserite a mano e senza pagamenti.
 - **Scheda cliente** — estratto conto: fatturato, incassato, da incassare, scaduto e l'elenco delle fatture.
 - **Pacchetto per il commercialista** — `/documenti/export-commercialista/`: zip del periodo con gli XML emessi e ricevuti, registro vendite e acquisti in CSV, PDF a richiesta.
-- **Backup** — Impostazioni › Backup (solo superuser) o `python manage.py backup`: database (copia consistente anche in WAL) e file caricati in `backups/`, si tengono gli ultimi 14. Ogni notte: `deploy/gestionale-backup.timer`.
+- **Backup** — Solo dal server con `python manage.py backup`: database (copia consistente anche in WAL) e file caricati di tutte le aziende in `backups/`, si tengono gli ultimi 14. Ogni notte: `deploy/gestionale-backup.timer`. Impostazioni › Backup mostra informazioni, senza creazione o download.
 
 ### Note tecniche e di deploy
+
+- Il login pubblico richiede HTTPS con un certificato valido per
+  `gestionale.aigislab.ai`; HTTP deve redirigere allo stesso indirizzo in HTTPS.
+  Dopo il riavvio, il workflow esegue
+  `python deploy/check_https.py https://gestionale.aigislab.ai`: controlla
+  certificato, redirect, cookie Secure e invio del form con e senza token CSRF.
+  Non usa credenziali e non autentica utenti. Un processo Gunicorn attivo, da solo,
+  non basta a considerare riuscito il deploy.
 
 - **Fatture ricorrenti**: le emette ogni mattina alle 6:00 il comando `genera_fatture_ricorrenti` (idempotente: un periodo non si emette mai due volte). Una volta sul server:
 

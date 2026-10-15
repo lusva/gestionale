@@ -5,7 +5,7 @@ from datetime import timedelta
 from decimal import Decimal
 
 from django.contrib import messages
-from django.contrib.auth import get_user_model
+from accounts.tenancy import utenti_azienda
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.db import transaction
 from django.db.models import Q
@@ -340,12 +340,11 @@ class RimborsoChilometricoListView(LoginRequiredMixin, PermRequiredMixin, ListVi
         ctx['amministratore_sel'] = self.request.GET.get('amministratore', '')
         ctx['q'] = self.request.GET.get('q', '')
         ctx['stati'] = StatoRimborso.choices
-        User = get_user_model()
         filtro = Q(profile__ruolo=Ruolo.AMMINISTRATORE)
         if self.request.user.is_authenticated:
             filtro = filtro | Q(pk=self.request.user.pk)
         ctx['amministratori'] = (
-            User.objects.filter(filtro).distinct()
+            utenti_azienda().filter(filtro).distinct()
             .order_by('first_name', 'last_name', 'username')
         )
         aperti = RimborsoChilometrico.objects.exclude(stato=StatoRimborso.PAGATO)

@@ -23,17 +23,18 @@ from datetime import timedelta
 from decimal import Decimal
 
 from django.core.mail import EmailMessage, send_mail
-from django.core.management.base import BaseCommand
+from tenancy.commands import AziendeCommand
 from django.conf import settings
 from django.utils.timezone import now
 
 from documenti.models import ScadenzaFattura, crediti_aperti
 
 
-class Command(BaseCommand):
+class Command(AziendeCommand):
     help = 'Invia promemoria scadenze fatture cliente per email.'
 
     def add_arguments(self, parser):
+        super().add_arguments(parser)
         parser.add_argument('--giorni', type=int, default=7,
                             help='Finestra in giorni (default 7).')
         parser.add_argument('--dry-run', action='store_true',
@@ -41,7 +42,7 @@ class Command(BaseCommand):
         parser.add_argument('--admin', action='store_true',
                             help='Invia anche un riepilogo a settings.DEFAULT_FROM_EMAIL.')
 
-    def handle(self, *args, **opts):
+    def handle_azienda(self, *args, **opts):
         giorni = opts['giorni']
         dry = opts['dry_run']
         oggi = now().date()

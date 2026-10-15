@@ -1,7 +1,9 @@
 from django.db import models
 
+from tenancy.models import TenantModel
 
-class Organizzazione(models.Model):
+
+class Organizzazione(TenantModel):
     nome = models.CharField(max_length=200, default='Studio Rossi SRL')
     logo = models.ImageField(upload_to='org/', blank=True, null=True)
     piano = models.CharField(max_length=30, default='Pro')
@@ -10,6 +12,8 @@ class Organizzazione(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
+        base_manager_name = 'objects'
+        default_manager_name = 'objects'
         verbose_name = 'Organizzazione'
         verbose_name_plural = 'Organizzazione'
 
@@ -24,13 +28,13 @@ class Organizzazione(models.Model):
         return org
 
 
-class EsecuzioneComando(models.Model):
+class EsecuzioneComando(TenantModel):
     """Ultima esecuzione dei comandi periodici lanciati dai timer systemd
     (``sdi_pull``…). Serve a mostrare nelle impostazioni se girano davvero e,
     con ``in_corso_dal``, a non farne partire due insieme (il timer e il
     pulsante «Controlla ora»). Vedi ``core_settings.esecuzioni``."""
 
-    nome = models.CharField(max_length=60, unique=True)
+    nome = models.CharField(max_length=60)
     in_corso_dal = models.DateTimeField(null=True, blank=True)
     ultimo_avvio = models.DateTimeField(null=True, blank=True)
     ultima_fine = models.DateTimeField(null=True, blank=True)
@@ -38,6 +42,11 @@ class EsecuzioneComando(models.Model):
     riepilogo = models.TextField(blank=True, default='')
 
     class Meta:
+        base_manager_name = 'objects'
+        default_manager_name = 'objects'
+        constraints = [
+            models.UniqueConstraint(fields=['azienda', 'nome'], name='core_settings_esecuzionecomando_nome_az'),
+        ]
         verbose_name = 'Esecuzione comando'
         verbose_name_plural = 'Esecuzioni comandi'
 

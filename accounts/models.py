@@ -1,5 +1,8 @@
 from django.conf import settings
+from django.core.exceptions import PermissionDenied
 from django.db import models
+
+from tenancy.models import TenantModel
 from django.db.models.signals import post_save
 from django.dispatch import receiver
 
@@ -16,7 +19,7 @@ class StatoUtente(models.TextChoices):
     INVITATO = 'invitato', 'Invitato'
 
 
-class Profile(models.Model):
+class Profile(TenantModel):
     user = models.OneToOneField(
         settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE,
@@ -49,6 +52,8 @@ class Profile(models.Model):
     )
 
     class Meta:
+        base_manager_name = 'objects'
+        default_manager_name = 'objects'
         verbose_name = 'Profilo utente'
         verbose_name_plural = 'Profili utenti'
 
@@ -56,6 +61,12 @@ class Profile(models.Model):
         return self.user.get_full_name() or self.user.username
 
     def save(self, *args, **kwargs):
+        if self.pk is not None:
+            original_user_id = type(self).all_objects.filter(pk=self.pk).values_list(
+                'user_id', flat=True,
+            ).first()
+            if original_user_id is not None and original_user_id != self.user_id:
+                raise PermissionDenied('Non è possibile assegnare un profilo a un altro utente.')
         if not self.iniziali:
             name = self.user.get_full_name() or self.user.username
             parts = [p for p in name.split() if p]

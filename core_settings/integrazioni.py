@@ -182,10 +182,15 @@ def _controlla_pec(request):
     """``sdi_pull`` subito, su poche email (resta ben dentro il timeout della
     richiesta): le altre le prende il timer."""
     from django.core.management import CommandError, call_command
+    from tenancy.context import current_azienda_id
 
     uscita = io.StringIO()
     try:
-        call_command('sdi_pull', limit=30, stdout=uscita, stderr=uscita)
+        azienda_id = current_azienda_id()
+        if azienda_id is None:
+            raise CommandError('Nessuna azienda associata alla richiesta.')
+        call_command('sdi_pull', azienda=azienda_id, limit=30,
+                     stdout=uscita, stderr=uscita)
         ok = True
     except CommandError as exc:
         uscita.write(f'\n{exc}')

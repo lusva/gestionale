@@ -400,6 +400,10 @@ def _file_locale(url: str) -> Path | None:
         radice = settings.STATIC_ROOT      # nomi con hash, dopo collectstatic
     elif url.startswith(media_url):
         nome = url[len(media_url):]
+        from gestionale.media_views import file_appartiene_azienda
+        from tenancy.context import current_azienda_id
+        if not file_appartiene_azienda(nome, current_azienda_id()):
+            return None
         radice = settings.MEDIA_ROOT
     else:
         return None

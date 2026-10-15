@@ -1,10 +1,11 @@
 from django.contrib import admin
+from tenancy.admin import TenantAdminMixin
 
 from .models import ApiToken, Webhook
 
 
 @admin.register(ApiToken)
-class ApiTokenAdmin(admin.ModelAdmin):
+class ApiTokenAdmin(TenantAdminMixin, admin.ModelAdmin):
     list_display = ('name', 'prefisso', 'user', 'scrittura', 'created_at', 'last_used_at', 'revoked')
     list_filter = ('revoked', 'scrittura')
     search_fields = ('name', 'prefisso', 'user__email', 'user__username')

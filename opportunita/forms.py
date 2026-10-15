@@ -4,6 +4,11 @@ from .models import Opportunita
 
 
 class OpportunitaForm(forms.ModelForm):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        from accounts.tenancy import utenti_azienda
+        self.fields['owner'].queryset = utenti_azienda()
+
     class Meta:
         model = Opportunita
         fields = ['cliente', 'titolo', 'descrizione', 'valore', 'stadio',

@@ -54,6 +54,11 @@ def valida_codice_fiscale(cf):
 
 
 class ClienteForm(forms.ModelForm):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        from accounts.tenancy import utenti_azienda
+        self.fields['account_manager'].queryset = utenti_azienda()
+
     ref_nome = forms.CharField(
         label='Nome referente', required=False, max_length=100,
         widget=forms.TextInput(attrs={'class': 'input'}),

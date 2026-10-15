@@ -7,9 +7,10 @@ finisce intero in ogni PDF. Qui se ne genera una copia ridotta per ogni uso,
 una volta sola: il nome della copia dipende da dimensione e data del file
 originale, quindi un nuovo caricamento produce una copia nuova.
 
-L'originale resta intatto in ``anagrafica/``; le copie stanno in
-``anagrafica/ridotti/`` e si possono cancellare in qualsiasi momento (si
-rigenerano alla prima richiesta).
+L'originale resta intatto; le copie stanno in
+``aziende/<id>/anagrafica/ridotti/`` e si possono cancellare in qualsiasi
+momento (si rigenerano alla prima richiesta). Anche i logo precedenti alla
+separazione per azienda generano le copie nella cartella dell'azienda.
 
 Nelle copie si toglie anche il margine vuoto attorno al disegno (trasparente o
 di un colore chiaro uniforme): molti logo esportati hanno il marchio piccolo
@@ -79,14 +80,20 @@ def _fondo_chiaro(rgb):
     return fondo if sum(fondo) / 3 >= 225 else None
 
 
-def _nome_copia(origine: Path, lato: int) -> str:
+def _nome_copia(origine: Path, lato: int, azienda_id=None) -> str:
+    from tenancy.context import current_azienda_id
+
+    if azienda_id is None:
+        azienda_id = current_azienda_id()
+    if azienda_id is None:
+        raise ValueError('Azienda necessaria per generare una copia del logo.')
     st = origine.stat()
     impronta = hashlib.sha1(
-        f'{origine.name}|{st.st_size}|{st.st_mtime_ns}|{lato}|{_VERSIONE}'.encode(),
+        f'{origine}|{st.st_size}|{st.st_mtime_ns}|{lato}|{_VERSIONE}'.encode(),
     ).hexdigest()[:10]
     # senza trasparenza il JPEG pesa un quinto del PNG (conta nei PDF)
     estensione = 'png' if _trasparente(origine) else 'jpg'
-    return f'{_CARTELLA}/{origine.stem}-{lato}-{impronta}.{estensione}'
+    return f'aziende/{azienda_id}/{_CARTELLA}/{origine.stem}-{lato}-{impronta}.{estensione}'
 
 
 def _estremi(valori, quota=0.0025):
