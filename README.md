@@ -190,6 +190,18 @@ non consentono l'accesso. Dopo il salvataggio si apre la dashboard della nuova
 azienda. Non è una registrazione pubblica: l'account iniziale viene creato
 dal gestore del sito.
 
+Se l'account è stato creato per errore nell'azienda attuale, un superuser può
+aprire **Admin → Utenti → Modifica → Accesso aziendale → Assegna questo utente
+a una nuova azienda**. La pagina mostra l'azienda attuale e richiede la conferma.
+L'operazione conserva username e password, prepara un'azienda vuota e chiude
+le sessioni dell'utente; al login successivo questi compila i dati aziendali.
+Il semplice accesso precedente è ammesso: i relativi eventi restano nello storico
+originale, senza un collegamento al profilo trasferito. Account con dati,
+attività aziendali, token, allegati, permessi Django o accesso all'admin non possono
+essere assegnati: in questi casi occorre un account nuovo. L'utente trasferito
+non compare più nell'elenco della vecchia azienda. L'operazione richiede il
+backend delle sessioni su database, già usato dalla configurazione del progetto.
+
 Per aggiungere invece un'azienda già nominata con un amministratore, senza la
 configurazione obbligatoria al primo accesso:
 

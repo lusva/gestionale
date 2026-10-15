@@ -1,4 +1,5 @@
 from django.conf import settings
+from django.contrib.auth import logout
 from django.http import HttpResponseForbidden
 from django.shortcuts import redirect
 from django.urls import reverse
@@ -12,6 +13,7 @@ class AziendaMiddleware:
 
     def __call__(self, request):
         from accounts.models import Profile, StatoUtente
+        from accounts.session_binding import SESSION_AZIENDA_KEY
 
         # Authenticate membership without the previous request's company scope.
         with azienda_context(None):
@@ -21,6 +23,22 @@ class AziendaMiddleware:
                 profile = Profile.all_objects.select_related('azienda').filter(
                     user_id=request.user.pk,
                 ).first()
+                # A login racing with company reassignment can save a session
+                # after its database revocation. Its old company binding must
+                # never authorize a request in the account's new company.
+                if SESSION_AZIENDA_KEY in request.session and (
+                    profile is None
+                    or str(request.session[SESSION_AZIENDA_KEY]) != str(profile.azienda_id)
+                ):
+                    logout(request)
+                    profile = None
+                    api = request.path.startswith('/api/') or request.path in {'/mcp', '/mcp/'}
+                    if not api:
+                        request.azienda_id = None
+                        response = redirect('accounts:login')
+                        if request.headers.get('HX-Request') == 'true':
+                            response['HX-Redirect'] = reverse('accounts:login')
+                        return response
                 if profile is not None and profile.azienda.attiva and profile.stato != StatoUtente.SOSPESO:
                     azienda_id = profile.azienda_id
                     da_configurare = not profile.azienda.configurata

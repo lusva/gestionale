@@ -1,11 +1,14 @@
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
 from django.contrib.auth.models import Group, User
-from django.core.exceptions import PermissionDenied
-from django.http import HttpResponseRedirect
-from django.urls import reverse
+from django.core.exceptions import PermissionDenied, ValidationError
+from django.http import Http404, HttpResponseBadRequest, HttpResponseNotAllowed, HttpResponseRedirect
+from django.template.response import TemplateResponse
+from django.urls import path, reverse
+from django.utils.html import format_html
 
 from .forms import CreaUtenteAdminForm
+from .company_assignment import motivo_blocco_nuova_azienda, prepara_azienda_per_utente_esistente
 from .models import Profile
 from .provisioning import crea_azienda_per_utente
 from .tenancy import utenti_azienda
@@ -17,12 +20,13 @@ class ProfileInline(admin.StackedInline):
     can_delete = False
     verbose_name_plural = 'Profilo'
     fk_name = 'user'
+    readonly_fields = ('ultimo_accesso',)
 
 
 class UserAdmin(BaseUserAdmin):
     add_form = CreaUtenteAdminForm
     inlines = [ProfileInline]
-    list_display = ('username', 'email', 'first_name', 'last_name', 'ruolo', 'stato_profilo', 'is_staff')
+    list_display = ('username', 'email', 'first_name', 'last_name', 'azienda_associata', 'ruolo', 'stato_profilo', 'is_staff')
     # Gruppi e permessi Django sono globali: la gestione applicativa usa i
     # ruoli del profilo, senza esporre o modificare configurazioni condivise.
     filter_horizontal = ()
@@ -35,13 +39,88 @@ class UserAdmin(BaseUserAdmin):
     )
 
     def get_queryset(self, request):
-        return super().get_queryset(request).filter(pk__in=utenti_azienda().values('pk'))
+        return (super().get_queryset(request).filter(pk__in=utenti_azienda().values('pk'))
+                .select_related('profile__azienda'))
+
+    def get_readonly_fields(self, request, obj=None):
+        fields = super().get_readonly_fields(request, obj)
+        if obj is not None:
+            fields = (*fields, 'azienda_associata', 'crea_utente_altra_azienda', 'last_login')
+        return fields
 
     def get_fieldsets(self, request, obj=None):
         fieldsets = super().get_fieldsets(request, obj)
         if obj is None and request.user.is_superuser:
             return (*fieldsets, ('Accesso aziendale', {'fields': ('destinazione_azienda',)}))
+        if obj is not None:
+            fields = ('azienda_associata',)
+            if request.user.is_superuser:
+                fields += ('crea_utente_altra_azienda',)
+            return (('Accesso aziendale', {'fields': fields}), *fieldsets)
         return fieldsets
+
+    @admin.display(description='Azienda')
+    def azienda_associata(self, obj):
+        profile = getattr(obj, 'profile', None)
+        if profile is None:
+            return 'Nessuna azienda associata'
+        azienda = profile.azienda
+        stato = 'Configurazione completata' if azienda.configurata else 'Da configurare al primo accesso'
+        return format_html('{} (ID {}) — {}', azienda.nome, azienda.pk, stato)
+
+    @admin.display(description='Account per una nuova azienda')
+    def crea_utente_altra_azienda(self, obj):
+        url = reverse('admin:auth_user_add') + '?destinazione_azienda=nuova'
+        assignment_url = reverse('admin:auth_user_nuova_azienda', args=[obj.pk])
+        return format_html(
+            '<a href="{}">Assegna questo utente a una nuova azienda</a>'
+            ' (solo account senza dati o attività aziendali).<br>'
+            '<a href="{}">Aggiungi un altro utente per una nuova azienda</a>',
+            assignment_url, url,
+        )
+
+    def get_urls(self):
+        return [path(
+            '<int:object_id>/nuova-azienda/',
+            self.admin_site.admin_view(self.nuova_azienda_view),
+            name='auth_user_nuova_azienda',
+        ), *super().get_urls()]
+
+    def nuova_azienda_view(self, request, object_id):
+        if not request.user.is_superuser:
+            raise PermissionDenied
+        if request.method not in ('GET', 'POST'):
+            return HttpResponseNotAllowed(['GET', 'POST'])
+        user = self.get_object(request, str(object_id))
+        if user is None:
+            raise Http404
+        reason = motivo_blocco_nuova_azienda(user, request.user)
+        if request.method == 'POST':
+            if request.POST.get('confirm') != 'yes':
+                return HttpResponseBadRequest('Conferma l’assegnazione dalla pagina dedicata.')
+            try:
+                prepara_azienda_per_utente_esistente(user, request.user)
+            except User.DoesNotExist:
+                raise Http404
+            except ValidationError as exc:
+                reason = ' '.join(exc.messages)
+            else:
+                self.log_change(request, user, 'Assegnato a una nuova azienda da configurare.')
+                self.message_user(
+                    request,
+                    f'Utente “{user.username}” assegnato a una nuova azienda. '
+                    'Username e password restano gli stessi. Al prossimo accesso compilerà i dati '
+                    'della sua azienda. Non compare più nell’elenco utenti di questa azienda.',
+                    level='SUCCESS',
+                )
+                return HttpResponseRedirect(reverse('admin:auth_user_changelist'))
+        return TemplateResponse(request, 'admin/accounts/user/nuova_azienda.html', {
+            **self.admin_site.each_context(request),
+            'title': 'Assegna una nuova azienda', 'opts': self.model._meta,
+            'original': user, 'azienda_attuale': user.profile.azienda,
+            'motivo_blocco': reason,
+            'change_url': reverse('admin:auth_user_change', args=[user.pk]),
+        })
 
     def get_form(self, request, obj=None, **kwargs):
         form = super().get_form(request, obj, **kwargs)

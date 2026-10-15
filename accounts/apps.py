@@ -8,3 +8,4 @@ class AccountsConfig(AppConfig):
 
     def ready(self):
         from . import models  # noqa: F401
+        from . import session_binding  # noqa: F401

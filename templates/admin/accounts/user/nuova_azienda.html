@@ -1,0 +1,32 @@
+{% extends "admin/base_site.html" %}
+{% load i18n admin_urls %}
+
+{% block breadcrumbs %}
+<div class="breadcrumbs">
+  <a href="{% url 'admin:index' %}">{% translate 'Home' %}</a>
+  &rsaquo; <a href="{% url 'admin:auth_user_changelist' %}">Utenti</a>
+  &rsaquo; <a href="{{ change_url }}">{{ original.username }}</a>
+  &rsaquo; Nuova azienda
+</div>
+{% endblock %}
+
+{% block content %}
+<p>Utente: <strong>{{ original.username }}</strong> (ID {{ original.pk }}).</p>
+<p>Azienda attuale: <strong>{{ azienda_attuale.nome }}</strong> (ID {{ azienda_attuale.pk }}).</p>
+{% if motivo_blocco %}
+<p class="errornote">{{ motivo_blocco }}</p>
+{% else %}
+<p>Verrà creata una nuova azienda vuota per questo utente. Username e password resteranno gli stessi.
+  Al prossimo accesso al gestionale l’utente inserirà i dati della propria azienda.</p>
+<p>L’utente perderà l’accesso all’azienda attuale e non comparirà più nel suo elenco utenti.
+  Le sue sessioni aperte verranno chiuse. Potrà amministrare la propria azienda nel gestionale.</p>
+<form method="post">
+  {% csrf_token %}
+  <input type="hidden" name="confirm" value="yes">
+  <div class="submit-row">
+    <input type="submit" class="default" value="Assegna la nuova azienda">
+  </div>
+</form>
+{% endif %}
+<p><a href="{{ change_url }}">Torna all’utente</a></p>
+{% endblock %}
