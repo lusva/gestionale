@@ -330,6 +330,14 @@ passive arrivano lì.
 
 ### Note tecniche e di deploy
 
+- Il login pubblico richiede HTTPS con un certificato valido per
+  `gestionale.aigislab.ai`; HTTP deve redirigere allo stesso indirizzo in HTTPS.
+  Dopo il riavvio, il workflow esegue
+  `python deploy/check_https.py https://gestionale.aigislab.ai`: controlla
+  certificato, redirect, cookie Secure e invio del form con e senza token CSRF.
+  Non usa credenziali e non autentica utenti. Un processo Gunicorn attivo, da solo,
+  non basta a considerare riuscito il deploy.
+
 - **Fatture ricorrenti**: le emette ogni mattina alle 6:00 il comando `genera_fatture_ricorrenti` (idempotente: un periodo non si emette mai due volte). Una volta sul server:
 
   ```bash

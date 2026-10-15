@@ -1,6 +1,8 @@
 name: Deploy to Ubuntu server
 
 on:
+  push:
+    branches: [main]
   workflow_dispatch:
 
 concurrency:
@@ -8,89 +10,47 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  repair:
-    name: Repair CRM HTTPS
+  deploy:
+    name: SSH deploy
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
+
     steps:
-      - name: Install dedicated certificate and verify CSRF
+      - name: Deploy via SSH (password auth)
         uses: appleboy/ssh-action@v1.2.0
         with:
           host: ${{ vars.SSH_HOST }}
           username: ${{ vars.SSH_USER }}
           port: ${{ vars.SSH_PORT }}
           password: ${{ secrets.SSH_PASSWORD }}
+          script_stop: true
           script: |
             set -euo pipefail
-            nginx -t
-            certbot plugins --authenticators --installers | grep -q nginx
-            nginx_conf=/etc/nginx/sites-available/gestionale.aigislab.ai
-            backup_dir=$(mktemp -d /root/gestionale-https-XXXXXXXX)
-            cp -a /etc/nginx "$backup_dir/nginx"
-            cp -a "$nginx_conf" "$backup_dir/vhost.conf"
-            rollback_nginx() {
-              cp -a "$backup_dir/vhost.conf" "$nginx_conf"
-              nginx -t && systemctl reload nginx
-            }
-            trap rollback_nginx ERR
-            python3 - <<'PYREMOTE'
-            from pathlib import Path
-            import re
-            path = Path('/etc/nginx/sites-available/gestionale.aigislab.ai')
-            config = path.read_text()
-            assert re.search(r'server_name\s+gestionale\.aigislab\.ai\s*;', config), 'Unexpected virtual host'
-            upstream = 'proxy_pass http://127.0.0.1:8001;'
-            assert upstream in config, 'Unexpected upstream'
-            for name, value in [('Host', '$host'), ('X-Forwarded-Proto', '$scheme')]:
-                header = f'proxy_set_header {name} {value};'
-                if not re.search(r'proxy_set_header\s+' + re.escape(name) + r'\s+' + re.escape(value) + r'\s*;', config, re.I):
-                    assert not re.search(r'proxy_set_header\s+' + re.escape(name) + r'\s', config, re.I), f'Unexpected {name} header'
-                    config = config.replace(upstream, upstream + '\n        ' + header)
-            path.write_text(config)
-            PYREMOTE
-            nginx -t
-            certbot --nginx --non-interactive --redirect --keep-until-expiring --cert-name gestionale.aigislab.ai -d gestionale.aigislab.ai
-            nginx -t
-            systemctl reload nginx
-            trap - ERR
-            python3 - <<'PYREMOTE'
-            import re
-            from http.cookiejar import CookieJar
-            from urllib.parse import urlencode
-            from urllib.request import build_opener, Request, HTTPRedirectHandler, HTTPCookieProcessor
-            from urllib.error import HTTPError
-            class NoRedirect(HTTPRedirectHandler):
-                def redirect_request(self, *args, **kwargs):
-                    return None
-            http_url = 'http://gestionale.aigislab.ai/accounts/login/?next=/'
-            https_url = http_url.replace('http:', 'https:', 1)
-            try:
-                r = build_opener(NoRedirect()).open(http_url, timeout=20)
-            except HTTPError as exc:
-                r = exc
-            assert r.status in (301, 302, 307, 308), f'HTTP does not redirect: {r.status}'
-            assert r.headers['Location'] == https_url, 'Incorrect HTTPS destination'
-            print('HTTP redirects to HTTPS: OK')
-            cookies = CookieJar()
-            client = build_opener(HTTPCookieProcessor(cookies))
-            r = client.open(https_url, timeout=20)
-            body = r.read().decode()
-            assert r.status == 200, f'Login status: {r.status}'
-            assert any(c.name == 'aigiscrm_csrftoken' and c.secure for c in cookies), 'Secure CSRF cookie missing'
-            token = re.search(r'name="csrfmiddlewaretoken" value="([^"]+)"', body).group(1)
-            data = urlencode({'csrfmiddlewaretoken': token, 'username': '', 'password': ''}).encode()
-            headers = {'Origin': 'https://gestionale.aigislab.ai', 'Referer': https_url}
-            r = client.open(Request(https_url, data=data, headers=headers), timeout=20)
-            assert r.status == 200, 'CSRF rejected valid cookie/token pair'
-            print('HTTPS certificate, Secure cookie and login form CSRF: OK')
-            try:
-                r = client.open(Request(https_url, data=b'username=&password=', headers=headers), timeout=20)
-            except HTTPError as exc:
-                r = exc
-            assert r.status == 403, 'CSRF protection is not active'
-            print('Missing CSRF token rejected: OK')
-            r = build_opener().open('https://aigislab.ai/', timeout=20)
-            assert r.status == 200, f'Main site status: {r.status}'
-            print('Main website HTTPS: OK')
-            PYREMOTE
-            systemctl is-active gestionale-gunicorn.service nginx
+
+            cd "${{ vars.DEPLOY_PATH }}"
+
+            echo "==> Pull ultimo commit dal branch main"
+            git fetch --all --prune
+            git reset --hard origin/main
+
+            echo "==> Attivo virtualenv"
+            source venv/bin/activate
+
+            echo "==> Aggiorno dipendenze"
+            pip install --upgrade pip
+            pip install -r requirements.txt
+
+            echo "==> Applico migrazioni database"
+            python manage.py migrate --noinput
+
+            echo "==> Raccolgo file statici"
+            python manage.py collectstatic --noinput
+
+            echo "==> Riavvio gunicorn"
+            systemctl restart "${{ vars.SERVICE_NAME }}"
+
+            echo "==> Stato servizio"
+            systemctl is-active "${{ vars.SERVICE_NAME }}"
+
+            echo "==> Verifica HTTPS e protezione CSRF del login pubblico"
+            python deploy/check_https.py https://gestionale.aigislab.ai
