@@ -1,8 +1,6 @@
 name: Deploy to Ubuntu server
 
 on:
-  push:
-    branches: [main]
   workflow_dispatch:
 
 concurrency:
@@ -10,44 +8,32 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  deploy:
-    name: SSH deploy
+  diagnose:
+    name: Read-only HTTPS diagnosis
     runs-on: ubuntu-latest
-    timeout-minutes: 15
-
+    timeout-minutes: 5
     steps:
-      - name: Deploy via SSH (password auth)
+      - name: Inspect HTTPS configuration
         uses: appleboy/ssh-action@v1.2.0
         with:
           host: ${{ vars.SSH_HOST }}
           username: ${{ vars.SSH_USER }}
           port: ${{ vars.SSH_PORT }}
           password: ${{ secrets.SSH_PASSWORD }}
-          script_stop: true
           script: |
-            set -euo pipefail
-
-            cd "${{ vars.DEPLOY_PATH }}"
-
-            echo "==> Pull ultimo commit dal branch main"
-            git fetch --all --prune
-            git reset --hard origin/main
-
-            echo "==> Attivo virtualenv"
-            source venv/bin/activate
-
-            echo "==> Aggiorno dipendenze"
-            pip install --upgrade pip
-            pip install -r requirements.txt
-
-            echo "==> Applico migrazioni database"
-            python manage.py migrate --noinput
-
-            echo "==> Raccolgo file statici"
-            python manage.py collectstatic --noinput
-
-            echo "==> Riavvio gunicorn"
-            systemctl restart "${{ vars.SERVICE_NAME }}"
-
-            echo "==> Stato servizio"
-            systemctl is-active "${{ vars.SERVICE_NAME }}"
+            set -eu
+            nginx -t
+            python3 - <<'PYREMOTE'
+            import subprocess
+            config = subprocess.run(['nginx', '-T'], capture_output=True, text=True, check=True).stdout
+            prefixes = ('# configuration file ', 'listen ', 'server_name ', 'ssl_certificate ', 'ssl_certificate_key ', 'proxy_pass ', 'return ', 'root ', 'include ')
+            for line in config.splitlines():
+                stripped = line.strip()
+                if stripped.startswith(prefixes):
+                    print(stripped)
+            PYREMOTE
+            ls -l /etc/nginx/sites-enabled/
+            if command -v certbot >/dev/null 2>&1; then
+              certbot certificates
+            fi
+            systemctl is-active gestionale-gunicorn.service
